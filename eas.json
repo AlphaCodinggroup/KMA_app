@@ -1,0 +1,9 @@
+{
+  "cli": { "version": ">= 14.0.0" },
+  "build": {
+    "dev": { "developmentClient": true, "distribution": "internal" },
+    "internal": { "developmentClient": true, "distribution": "internal" },
+    "production": { "distribution": "store" }
+  },
+  "submit": { "production": {} }
+}
