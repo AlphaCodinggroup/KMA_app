@@ -17,14 +17,23 @@
       "enabled": true,
       "checkAutomatically": "ON_ERROR_RECOVERY"
     },
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-file-system",
+      "expo-camera",
+      "expo-background-fetch",
+      "expo-task-manager"
+    ],
     "ios": {
       "bundleIdentifier": "com.kma.app",
       "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "Necesitamos la cámara para capturar fotos en formularios.",
         "NSPhotoLibraryUsageDescription": "Necesitamos acceder a tus fotos para adjuntarlas en formularios.",
-        "NSPhotoLibraryAddUsageDescription": "Guardamos fotos capturadas por la app en tu galería."
+        "NSPhotoLibraryAddUsageDescription": "Guardamos fotos capturadas por la app en tu galería.",
+        "UIBackgroundModes": ["fetch"]
       }
     },
     "android": {
@@ -33,11 +42,18 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "permissions": ["INTERNET", "CAMERA", "READ_MEDIA_IMAGES"],
+      "permissions": ["INTERNET", "ACCESS_NETWORK_STATE", "CAMERA", "READ_MEDIA_IMAGES"],
       "edgeToEdgeEnabled": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "BACKEND_BASE_URL": "https://example.com",
+      "AUTH_SCHEME": "Bearer",
+      "SYNC_BATCH_SIZE": 10,
+      "RETRY_MAX_ATTEMPTS": 3,
+      "RETRY_BASE_DELAY_MS": 600
     }
   }
 }
