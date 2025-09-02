@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "KMA_app",
-    "slug": "KMA_app",
+    "slug": "kma_app",
+    "scheme": "kma",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -12,14 +13,27 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "updates": {
+      "enabled": true,
+      "checkAutomatically": "ON_ERROR_RECOVERY"
+    },
+    "plugins": ["expo-router"],
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.kma.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Necesitamos la cámara para capturar fotos en formularios.",
+        "NSPhotoLibraryUsageDescription": "Necesitamos acceder a tus fotos para adjuntarlas en formularios.",
+        "NSPhotoLibraryAddUsageDescription": "Guardamos fotos capturadas por la app en tu galería."
+      }
     },
     "android": {
+      "package": "com.kma.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "permissions": ["INTERNET", "CAMERA", "READ_MEDIA_IMAGES"],
       "edgeToEdgeEnabled": true
     },
     "web": {
