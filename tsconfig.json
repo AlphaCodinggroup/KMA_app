@@ -9,25 +9,22 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,
-
     "skipLibCheck": true,
     "noEmit": true,
-
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-
     "baseUrl": ".",
     "paths": {
+      "@app/*": ["app/*"],
       "@shared/*": ["src/shared/*"],
       "@entities/*": ["src/entities/*"],
       "@features/*": ["src/features/*"],
       "@processes/*": ["src/processes/*"],
-      "@core/*": ["src/core/*"],
-      "@app/*": ["app/*"]
+      "@core/*": ["src/core/*"]
     },
     "moduleSuffixes": [".ios", ".native", ""]
   },
-  "include": ["**/*.ts", "**/*.tsx"],
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
   "exclude": ["node_modules", "dist", ".expo"]
 }
