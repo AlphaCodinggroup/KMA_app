@@ -1,9 +1,14 @@
+import { useEffect } from 'react'
+import { bootstrapApp } from '@processes/bootstrap'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
-import { useBootstrap } from '@processes/boostrap'
 
 export default function RootLayout() {
-  useBootstrap()
+  useEffect(() => {
+    bootstrapApp().catch(e => {
+      console.error('Bootstrap failed:', e)
+    })
+  }, [])
   return (
     <>
       <StatusBar style="dark" />

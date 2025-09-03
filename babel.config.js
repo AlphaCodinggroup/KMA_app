@@ -9,14 +9,15 @@ module.exports = function (api) {
           root: ['.'],
           extensions: ['.ts', '.tsx', '.js', '.jsx', '.json'],
           alias: {
+            '@app': './app',
             '@shared': './src/shared',
             '@entities': './src/entities',
             '@features': './src/features',
             '@processes': './src/processes',
             '@core': './src/core',
-            '@app': './app',
           },
         },
+        'react-native-reanimated/plugin',
       ],
     ],
   }
