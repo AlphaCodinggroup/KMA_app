@@ -1,18 +1,13 @@
-import { useEffect } from 'react'
-import { bootstrapApp } from '@processes/bootstrap'
 import { Stack } from 'expo-router'
-import { StatusBar } from 'expo-status-bar'
+import { AuthGuard } from '@processes/auth-guard'
 
 export default function RootLayout() {
-  useEffect(() => {
-    bootstrapApp().catch(e => {
-      console.error('Bootstrap failed:', e)
-    })
-  }, [])
   return (
-    <>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }} />
-    </>
+    <AuthGuard>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(app)" />
+      </Stack>
+    </AuthGuard>
   )
 }

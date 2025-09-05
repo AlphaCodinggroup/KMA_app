@@ -1,51 +1,28 @@
-import { apiGetAllFlows, apiGetFlow } from '@shared/api/flows.api'
-import { sqliteFlowRepo } from '@core/repos/sqliteFlowRepo'
-import type { FlowCatalogPort } from '@entities/flow/ports'
 import type { FlowSummary } from '@entities/flow/model'
+import { MOCK_FLOWS, allFlows, flowDetail } from '@shared/mocks/flows'
 
-/** Carga catálogo: primero local; si hay red, actualiza desde backend. */
-// export async function loadCatalog() {
-//   const local = await sqliteFlowRepo.getCatalog()
-//   try {
-//     const remote = await apiGetFlows()
-//     await sqliteFlowRepo.saveCatalog(remote)
-//     return remote
-//   } catch {
-//     return local
-//   }
-// }
-
-//!MOCK PARA ARMAR LA PANTALLA DE SELECTOR
-export async function loadCatalog(repo: FlowCatalogPort): Promise<FlowSummary[]> {
-  const items = await repo.fetchCatalog()
-  return [...items].sort((a, b) => a.title.localeCompare(b.title))
+/** Catálogo desde mocks de UI (sin HTTP ni SQLite). */
+export async function loadCatalog(): Promise<FlowSummary[]> {
+  return (MOCK_FLOWS.flows ?? []).map(f => ({
+    id: f.id,
+    title: f.title,
+    version: f.version,
+    description: f.description ?? '',
+    stepsCount: f.stepsCount ?? 0,
+  }))
 }
 
-/** Descarga y persiste un flow completo para uso offline. */
-export async function downloadFlow(flowId: string) {
-  const detail = await apiGetFlow(flowId)
-  await sqliteFlowRepo.saveFlowDetail(detail)
-  return detail
-}
+export type FlowDetail = {
+  flowId: string
+  title: string
+  version: string
+  steps: Array<any>
+} | null
 
-/** Sincronización en frío: trae todos los flows + steps y persiste todo. */
-export async function coldSyncAllFlows() {
-  const { flows: details } = await apiGetAllFlows()
-
-  // Construimos un catálogo mínimo a partir de los detalles
-  await sqliteFlowRepo.saveCatalog({
-    flows: details.map(d => ({
-      id: d.flowId,
-      title: d.title ?? d.flowId,
-      version: d.version,
-      stepsCount: d.steps?.length ?? 0,
-    })),
-  })
-
-  // Guardamos cada detalle (steps)
-  for (const d of details) {
-    await sqliteFlowRepo.saveFlowDetail(d)
-  }
-
-  return { count: details.length }
+/** Detalle desde mocks. */
+export async function loadFlowDetail(flowId: string): Promise<FlowDetail> {
+  const found = allFlows.flows.find(f => f.flowId === flowId)
+  if (found) return found
+  if (flowDetail.flowId === flowId) return flowDetail
+  return null
 }

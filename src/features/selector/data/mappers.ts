@@ -1,12 +1,11 @@
 import type { FlowSummary } from '@entities/flow/model'
-import type { FlowSummaryDto } from './dto'
 
-export function mapFlowSummaryDtoToDomain(dto: FlowSummaryDto): FlowSummary {
+export function mapToFlowSummary(dto: any): FlowSummary {
   return {
-    id: dto.id,
-    title: dto.title,
-    version: dto.version,
-    description: dto.description,
-    stepsCount: dto.stepsCount,
+    id: dto.id ?? dto.flowId,
+    title: dto.title ?? 'Sin título',
+    version: dto.version ?? 'v1.0',
+    description: dto.description ?? '',
+    stepsCount: dto.stepsCount ?? (Array.isArray(dto.steps) ? dto.steps.length : 0),
   }
 }

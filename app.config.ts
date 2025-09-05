@@ -30,6 +30,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-file-system',
     'expo-camera',
     'expo-task-manager',
+    'expo-background-task',
   ],
 
   ios: {

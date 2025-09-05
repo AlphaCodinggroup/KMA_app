@@ -1,5 +1,10 @@
 import axios from 'axios'
-import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios'
+import type {
+  AxiosError,
+  AxiosInstance,
+  AxiosRequestConfig,
+  InternalAxiosRequestConfig,
+} from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 import { ENV } from '@shared/config/env'
 
@@ -45,26 +50,26 @@ export const http: AxiosInstance = axios.create({
 })
 
 // ---------- Request: Auth + Idempotency ----------
-http.interceptors.request.use(async (config: HttpConfig) => {
-  config.headers = config.headers ?? {}
+http.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  // config.headers = config.headers ?? {}
 
-  // Auth (async-friendly)
-  const token = await tokenProvider?.()
-  if (token) {
-    ;(config.headers as any).Authorization = `${ENV.AUTH_SCHEME} ${token}`
-  }
+  // // Auth (async-friendly)
+  // const token = await tokenProvider?.()
+  // if (token) {
+  //   ;(config.headers as any).Authorization = `${ENV.AUTH_SCHEME} ${token}`
+  // }
 
-  // Idempotency: si no viene y está activo, generamos para métodos mutantes
-  const method = (config.method ?? 'get').toUpperCase()
-  const isMutating = method !== 'GET'
-  if (isMutating) {
-    const key = config.idempotencyKey ?? (config.headers as any)['Idempotency-Key']
-    if (!key && autoIdempotency) {
-      ;(config.headers as any)['Idempotency-Key'] = uuidv4()
-    } else if (key) {
-      ;(config.headers as any)['Idempotency-Key'] = key
-    }
-  }
+  // // Idempotency: si no viene y está activo, generamos para métodos mutantes
+  // const method = (config.method ?? 'get').toUpperCase()
+  // const isMutating = method !== 'GET'
+  // if (isMutating) {
+  //   const key = config.idempotencyKey ?? (config.headers as any)['Idempotency-Key']
+  //   if (!key && autoIdempotency) {
+  //     ;(config.headers as any)['Idempotency-Key'] = uuidv4()
+  //   } else if (key) {
+  //     ;(config.headers as any)['Idempotency-Key'] = key
+  //   }
+  // }
 
   return config
 })
