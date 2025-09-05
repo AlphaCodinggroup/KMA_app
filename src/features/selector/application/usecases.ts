@@ -1,16 +1,24 @@
-import { apiGetAllFlows, apiGetFlow, apiGetFlows } from '@shared/api/flows.api'
+import { apiGetAllFlows, apiGetFlow } from '@shared/api/flows.api'
 import { sqliteFlowRepo } from '@core/repos/sqliteFlowRepo'
+import type { FlowCatalogPort } from '@entities/flow/ports'
+import type { FlowSummary } from '@entities/flow/model'
 
 /** Carga catálogo: primero local; si hay red, actualiza desde backend. */
-export async function loadCatalog() {
-  const local = await sqliteFlowRepo.getCatalog()
-  try {
-    const remote = await apiGetFlows()
-    await sqliteFlowRepo.saveCatalog(remote)
-    return remote
-  } catch {
-    return local
-  }
+// export async function loadCatalog() {
+//   const local = await sqliteFlowRepo.getCatalog()
+//   try {
+//     const remote = await apiGetFlows()
+//     await sqliteFlowRepo.saveCatalog(remote)
+//     return remote
+//   } catch {
+//     return local
+//   }
+// }
+
+//!MOCK PARA ARMAR LA PANTALLA DE SELECTOR
+export async function loadCatalog(repo: FlowCatalogPort): Promise<FlowSummary[]> {
+  const items = await repo.fetchCatalog()
+  return [...items].sort((a, b) => a.title.localeCompare(b.title))
 }
 
 /** Descarga y persiste un flow completo para uso offline. */

@@ -3,7 +3,13 @@ import NetInfo from '@react-native-community/netinfo'
 import { initDatabase } from '@shared/storage/db'
 import { readJsonSecure } from '@shared/storage/secure'
 import { registerBackgroundSync, unregisterBackgroundSync } from '@shared/workers/background'
-import { setSessionTokens } from '@shared/session/session'
+import {
+  setSessionTokens,
+  getAccessToken,
+  refreshSessionTokens,
+  loadSessionFromSecure,
+} from '@shared/session/session' // NEW: suponiendo que existen
+import { configureHttp } from '@shared/api/http' // NEW
 
 /** Evita dobles arranques */
 let _bootPromise: Promise<void> | null = null
@@ -13,6 +19,10 @@ let _cleanup: (() => void) | null = null
 let _syncRunning = false
 let _syncQueued = false
 let _debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+// NEW: Cooldown anti-tormenta (evita syncs back-to-back desde múltiples triggers)
+const SYNC_COOLDOWN_MS = 7000
+let _lastSyncAt = 0
 
 /** Clave de sesión en SecureStore */
 const SECURE_SESSION_KEY = 'kma.session'
@@ -38,11 +48,32 @@ export async function bootstrapApp(): Promise<void> {
   _bootPromise = (async () => {
     await initDatabase()
     await rehydrateSessionSafe()
+    await loadSessionFromSecure()
+
+    configureHttp({
+      getAccessToken: async () => getAccessToken(),
+      refreshToken: async () => {
+        const t = await refreshSessionTokens()
+        return t?.accessToken
+      },
+      autoIdempotency: true,
+    })
+
     _cleanup = registerLifecycleTriggers({
       onForeground: () => triggerSync('foreground'),
       onOnline: () => triggerSync('online'),
     })
+
     await safeRegisterBackground()
+
+    triggerSync('startup').catch(e => console.warn('[bootstrap] startup sync error:', e))
+
+    try {
+      const ni = await NetInfo.fetch()
+      if (ni.isConnected && ni.isInternetReachable !== false) {
+        triggerSync('startup-online').catch(() => {})
+      }
+    } catch {}
   })().catch(e => {
     _bootPromise = null
     throw e
@@ -81,9 +112,7 @@ function registerLifecycleTriggers({
   })
 
   const netUnsub = NetInfo.addEventListener(state => {
-    // isConnected puede ser true sin salida a internet
     if (state.isConnected && state.isInternetReachable !== false) {
-      // Debounce para agrupar ráfagas de eventos
       if (_debounceTimer) clearTimeout(_debounceTimer)
       _debounceTimer = setTimeout(() => {
         _debounceTimer = null
@@ -119,8 +148,17 @@ async function safeRegisterBackground() {
 }
 
 /** Orquestador: asegura una sola sync a la vez y cola una extra si llega otra señal. */
-async function triggerSync(reason: 'foreground' | 'online' | 'background' | 'queued') {
+async function triggerSync(
+  reason: 'foreground' | 'online' | 'background' | 'queued' | 'startup' | 'startup-online',
+) {
+  const now = Date.now()
   console.log(`[bootstrap] triggerSync (${reason})`)
+
+  // NEW: cooldown para evitar syncs demasiado pegadas
+  if (!_syncRunning && now - _lastSyncAt < SYNC_COOLDOWN_MS && reason !== 'background') {
+    console.log('[bootstrap] cooldown activo; se omite sync')
+    return
+  }
 
   if (_syncRunning) {
     _syncQueued = true
@@ -130,6 +168,7 @@ async function triggerSync(reason: 'foreground' | 'online' | 'background' | 'que
   _syncRunning = true
   try {
     await maybeRunSync()
+    _lastSyncAt = Date.now()
   } finally {
     _syncRunning = false
     if (_syncQueued) {
@@ -165,6 +204,8 @@ export function teardownBootstrap() {
     clearTimeout(_debounceTimer)
     _debounceTimer = null
   }
+  _syncRunning = false
+  _syncQueued = false
 
   unregisterBackgroundSync().catch(() => {})
 }

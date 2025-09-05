@@ -8,7 +8,7 @@ export default function Index() {
   return (
     <GestureHandlerRootView>
       <SafeAreaProvider>
-        <Redirect href="/(auth)/Home" />
+        <Redirect href="/(auth)/login" />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   )

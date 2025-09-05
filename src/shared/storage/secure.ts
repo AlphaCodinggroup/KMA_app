@@ -9,15 +9,15 @@ export async function readSecure(key: string): Promise<string | null> {
 }
 
 export async function deleteSecure(key: string): Promise<void> {
-  await SecureStore.deleteItemAsync(key, { keychainService: 'kma_app' })
+  await SecureStore.deleteItemAsync(key)
 }
 
-export async function writeJsonSecure<T>(key: string, data: T): Promise<void> {
-  await writeSecure(key, JSON.stringify(data))
+export async function writeJsonSecure(key: string, value: unknown): Promise<void> {
+  await SecureStore.setItemAsync(key, JSON.stringify(value))
 }
 
 export async function readJsonSecure<T>(key: string): Promise<T | null> {
-  const raw = await readSecure(key)
+  const raw = await SecureStore.getItemAsync(key)
   if (!raw) return null
   try {
     return JSON.parse(raw) as T
