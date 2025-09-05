@@ -7,6 +7,8 @@ import {
 } from '@features/selector/application/usecases'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+//!SOLO PARA PROBAR MOCKS (BORRAR LUEGO)
+
 export default function Home() {
   const [catalog, setCatalog] = useState<{
     flows: Array<{ id: string; title: string; version: string; stepsCount?: number }>

@@ -1,3 +1,4 @@
+import type { FlowsCatalogDto } from '@features/selector/data/dto'
 import { http } from './http'
 import {
   AllFlowsSchema,
@@ -21,4 +22,9 @@ export async function apiGetAllFlows(): Promise<{ flows: FlowDetail[] }> {
   const { data } = await http.get('/flows/all')
   const parsed = AllFlowsSchema.parse(data)
   return parsed
+}
+
+export async function getFlowsCatalog(): Promise<FlowsCatalogDto> {
+  const res = await http.get<FlowsCatalogDto>('/flows')
+  return res.data
 }

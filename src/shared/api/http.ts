@@ -1,83 +1,154 @@
-import axios, { type AxiosError, type AxiosInstance } from 'axios'
+import axios from 'axios'
+import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios'
 import { v4 as uuidv4 } from 'uuid'
-import {
-  AUTH_SCHEME,
-  BACKEND_BASE_URL,
-  RETRY_BASE_DELAY_MS,
-  RETRY_MAX_ATTEMPTS,
-} from '@shared/config/env'
-import { getAccessToken, setSessionTokens, getRefreshToken } from '@shared/session/session'
+import { ENV } from '@shared/config/env'
 
-/** Firma opcional para refrescar tokens  */
-export type TokenRefresher = () => Promise<{ accessToken: string; refreshToken?: string } | null>
+type RetryState = {
+  _retryCount?: number
+  _didRefresh?: boolean
+}
 
-let _refresher: TokenRefresher | null = null
-let _refreshPromise: Promise<{ accessToken: string; refreshToken?: string } | null> | null = null
+/** Idempotency key explícita. Si no viene y autoIdempotency está activo, se genera. */
+export type HttpConfig = AxiosRequestConfig & {
+  idempotencyKey?: string
+}
 
-export function configureHttp(opts?: { tokenRefresher?: TokenRefresher }) {
-  _refresher = opts?.tokenRefresher ?? null
+let tokenProvider: () => Promise<string | undefined> = async () => undefined
+let tokenRefresher: (() => Promise<string | undefined>) | undefined
+let isRefreshing = false
+const refreshQueue: Array<(t?: string) => void> = []
+
+// Flag configurable para auto-generar Idempotency-Key en métodos mutantes
+let autoIdempotency = true
+
+export function configureHttp(
+  opts: {
+    getAccessToken?: () => Promise<string | undefined> | string | undefined
+    /** Debe refrescar y devolver el nuevo access token (ya guardado por fuera). */
+    refreshToken?: () => Promise<string | undefined>
+    autoIdempotency?: boolean
+  } = {},
+) {
+  if (opts.getAccessToken) {
+    tokenProvider = async () =>
+      Promise.resolve(
+        typeof opts.getAccessToken === 'function' ? await opts.getAccessToken() : undefined,
+      )
+  }
+  tokenRefresher = opts.refreshToken
+  if (typeof opts.autoIdempotency === 'boolean') autoIdempotency = opts.autoIdempotency
 }
 
 export const http: AxiosInstance = axios.create({
-  baseURL: BACKEND_BASE_URL,
+  baseURL: ENV.BACKEND_BASE_URL,
   timeout: 15000,
 })
 
-// REQUEST
-http.interceptors.request.use(async cfg => {
-  cfg.headers = cfg.headers ?? {}
+// ---------- Request: Auth + Idempotency ----------
+http.interceptors.request.use(async (config: HttpConfig) => {
+  config.headers = config.headers ?? {}
 
-  const token = getAccessToken()
-  if (token) cfg.headers.Authorization = `${AUTH_SCHEME} ${token}`
-
-  const method = (cfg.method ?? 'get').toUpperCase()
-  if (method !== 'GET' && !cfg.headers['Idempotency-Key']) {
-    cfg.headers['Idempotency-Key'] = uuidv4()
+  // Auth (async-friendly)
+  const token = await tokenProvider?.()
+  if (token) {
+    ;(config.headers as any).Authorization = `${ENV.AUTH_SCHEME} ${token}`
   }
 
-  return cfg
+  // Idempotency: si no viene y está activo, generamos para métodos mutantes
+  const method = (config.method ?? 'get').toUpperCase()
+  const isMutating = method !== 'GET'
+  if (isMutating) {
+    const key = config.idempotencyKey ?? (config.headers as any)['Idempotency-Key']
+    if (!key && autoIdempotency) {
+      ;(config.headers as any)['Idempotency-Key'] = uuidv4()
+    } else if (key) {
+      ;(config.headers as any)['Idempotency-Key'] = key
+    }
+  }
+
+  return config
 })
 
-// RESPONSE
+// ---------- Helpers retry ----------
+function isCanceled(error: AxiosError) {
+  return (error as any)?.code === 'ERR_CANCELED' || error.name === 'CanceledError'
+}
+
+function shouldRetry(error: AxiosError) {
+  if (isCanceled(error)) return false
+  if (error.code === 'ECONNABORTED') return true
+  if (!error.response) return true
+  const status = error.response.status
+  if (status === 408 || status === 425 || status === 429) return true
+  if (status >= 500 && status <= 599) return true
+  return false
+}
+
+function parseRetryAfterMs(error: AxiosError): number | null {
+  const h = error.response?.headers
+  const ra = h?.['retry-after'] ?? h?.['Retry-After']
+  if (!ra) return null
+  const asNumber = Number(ra)
+  if (!Number.isNaN(asNumber)) return Math.max(0, asNumber * 1000)
+  const dateMs = Date.parse(String(ra))
+  if (!Number.isNaN(dateMs)) return Math.max(0, dateMs - Date.now())
+  return null
+}
+
+function calcDelayMs(error: AxiosError, attempt: number): number {
+  const ra = parseRetryAfterMs(error)
+  if (ra != null) return Math.min(ra, 30_000)
+
+  const base = ENV.RETRY_BASE_DELAY_MS * Math.pow(2, attempt)
+  const jitter = Math.floor(Math.random() * 250)
+  return Math.min(base + jitter, 10_000)
+}
+
+// ---------- Response: refresh 401  ----------
 http.interceptors.response.use(
   res => res,
   async (error: AxiosError) => {
-    const cfg: any = error.config ?? {}
-    const status = error.response?.status
-    const isNetwork = !!error.message && !error.response
-    const retriable = isNetwork || status === 429 || (status && status >= 500)
-    cfg.__retryCount = cfg.__retryCount ?? 0
+    const original = error.config as HttpConfig & RetryState
 
-    // 401 → intentar refresh
-    if (status === 401 && _refresher && !cfg.__didRefresh) {
-      try {
-        if (!_refreshPromise) _refreshPromise = _refresher()
-        const newTokens = await _refreshPromise
-        _refreshPromise = null
-
-        if (newTokens?.accessToken) {
-          setSessionTokens({
-            accessToken: newTokens.accessToken,
-            refreshToken: newTokens.refreshToken ?? getRefreshToken() ?? undefined,
-          })
-          cfg.__didRefresh = true
-          cfg.headers = cfg.headers ?? {}
-          cfg.headers.Authorization = `${AUTH_SCHEME} ${newTokens.accessToken}`
-          return http(cfg)
+    // 401 → intentar refresh y sólo una vez por request
+    if (error.response?.status === 401 && tokenRefresher && original && !original._didRefresh) {
+      if (!isRefreshing) {
+        isRefreshing = true
+        try {
+          const newToken = await tokenRefresher()
+          // Despertamos a todos los encolados con el token
+          refreshQueue.forEach(resolve => resolve(newToken))
+        } finally {
+          isRefreshing = false
+          refreshQueue.length = 0
         }
-      } catch {
-        _refreshPromise = null
+      }
+
+      // Esperamos el resultado del refresh encolado
+      const nextToken = await new Promise<string | undefined>(resolve => {
+        refreshQueue.push(resolve)
+      })
+
+      if (nextToken) {
+        original._didRefresh = true
+        original.headers = original.headers ?? {}
+        ;(original.headers as any).Authorization = `${ENV.AUTH_SCHEME} ${nextToken}`
+        return http(original)
+      }
+      // Si no hay token nuevo, caemos al reject sin reintento automático
+    }
+
+    if (original && shouldRetry(error)) {
+      const attempt = original._retryCount ?? 0
+      if (attempt < ENV.RETRY_MAX_ATTEMPTS) {
+        original._retryCount = attempt + 1
+        const delay = calcDelayMs(error, attempt)
+        await new Promise(r => setTimeout(r, delay))
+        return http(original)
       }
     }
 
-    if (retriable && cfg.__retryCount < RETRY_MAX_ATTEMPTS) {
-      cfg.__retryCount++
-      const delay = Math.min(RETRY_BASE_DELAY_MS * 2 ** (cfg.__retryCount - 1), 10_000)
-      const jitter = Math.floor(Math.random() * 250)
-      await new Promise(r => setTimeout(r, delay + jitter))
-      return http(cfg)
-    }
-
+    // Caso no recuperable
     return Promise.reject(error)
   },
 )
