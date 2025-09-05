@@ -1,5 +1,8 @@
+import type { FlowSummary } from '@entities/flow/model'
 import { query, run, withTransaction } from '@shared/storage/db'
-import type { FlowCatalog, FlowDetail } from '@shared/validation/steps.schema'
+import type { FlowDetail } from '@shared/validation/steps.schema'
+
+export type FlowCatalog = { flows: FlowSummary[] }
 
 /**
  * Repositorio SQLite para catálogo de flows y sus steps.
@@ -65,13 +68,15 @@ export const sqliteFlowRepo = {
     }>(`SELECT id, title, version, description, stepsCount FROM flows ORDER BY title ASC`)
 
     return {
-      flows: rows.map(r => ({
-        id: r.id,
-        title: r.title,
-        version: r.version,
-        description: r.description ?? undefined,
-        stepsCount: r.stepsCount ?? undefined,
-      })),
+      flows: rows.map(
+        (r): FlowSummary => ({
+          id: r.id,
+          title: r.title,
+          version: r.version ?? 'v1.0',
+          description: r.description ?? '',
+          stepsCount: r.stepsCount ?? 0,
+        }),
+      ),
     }
   },
 
@@ -83,17 +88,19 @@ export const sqliteFlowRepo = {
     )
     if (flow.length === 0) return null
 
-    // Nota: ordenamos por rowid para preservar orden de inserción (suficiente en este caso)
+    // Nota: ordenamos por rowid para preservar orden de inserción
     const stepsRows = await query<{ step_json: string }>(
       `SELECT step_json FROM flow_steps WHERE flow_id = ? ORDER BY rowid ASC`,
       [flowId],
     )
+    const row = flow?.[0]
+    if (!row) return null as any
 
     const steps = stepsRows.map(r => JSON.parse(r.step_json))
     return {
       flowId,
-      title: flow[0].title,
-      version: flow[0].version,
+      title: row.title,
+      version: row.version,
       steps,
     }
   },

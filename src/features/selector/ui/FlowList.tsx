@@ -1,35 +1,39 @@
-import React from 'react'
-import { FlatList, type ListRenderItem, StyleSheet, View } from 'react-native'
+import { Text, TouchableOpacity, StyleSheet } from 'react-native'
 import type { FlowSummary } from '@entities/flow/model'
-import { FlowCard } from './FlowCard'
 import { AppColors } from '@shared/ui/colors'
 
 type Props = {
-  data: FlowSummary[]
-  onSelect?: (item: FlowSummary) => void
-  contentPadding?: number
+  item: FlowSummary
+  onPress?: (item: FlowSummary) => void // <- opcional
+  testID?: string
 }
 
-export const FlowList: React.FC<Props> = ({ data, onSelect, contentPadding = 16 }) => {
-  const renderItem: ListRenderItem<FlowSummary> = ({ item, index }) => (
-    <FlowCard item={item} onPress={onSelect} testID={`flow-card-${index}`} />
-  )
-
+export function FlowCard({ item, onPress, testID }: Props) {
   return (
-    <FlatList
-      data={data}
-      keyExtractor={it => it.id}
-      renderItem={renderItem}
-      ItemSeparatorComponent={() => <View style={styles.separator} />}
-      contentContainerStyle={{ padding: contentPadding }}
-      showsVerticalScrollIndicator={false}
-    />
+    <TouchableOpacity
+      testID={testID}
+      onPress={() => onPress?.(item)}
+      style={styles.card}
+      activeOpacity={0.85}
+    >
+      <Text style={styles.cardTitle}>{item.title}</Text>
+      {!!item.description && <Text style={styles.cardDesc}>{item.description}</Text>}
+      <Text style={styles.cardMeta}>
+        {item.stepsCount ?? 0} pasos · {item.version}
+      </Text>
+    </TouchableOpacity>
   )
 }
 
 const styles = StyleSheet.create({
-  separator: {
-    height: 12,
+  card: {
     backgroundColor: AppColors.Background,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: AppColors.Border,
   },
+  cardTitle: { fontSize: 16, fontWeight: '600', color: AppColors.Primary },
+  cardDesc: { marginTop: 4, color: AppColors.MutedText },
+  cardMeta: { marginTop: 8, fontSize: 12, color: AppColors.MutedText },
 })

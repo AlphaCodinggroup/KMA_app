@@ -1,84 +1,66 @@
-import React, { useEffect, useState } from 'react'
-import { ActivityIndicator, SafeAreaView, StyleSheet, Text, View } from 'react-native'
-import { AppColors } from '@shared/ui/colors'
+import React, { useMemo } from 'react'
+import { View, FlatList, Text, StyleSheet } from 'react-native'
 import type { FlowSummary } from '@entities/flow/model'
-import { MockFlowCatalogRepo } from '@features/selector/data/flowCatalog.mock'
-import { loadCatalog } from '@features/selector/application/usecases'
-import { FlowList } from '@features/selector/ui/FlowList'
+import { AppColors } from '@shared/ui/colors'
+import { MOCK_FLOWS } from '@shared/mocks/flows'
 
 export default function SelectorScreen() {
-  const [loading, setLoading] = useState(true)
-  const [flows, setFlows] = useState<FlowSummary[]>([])
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let mounted = true
-
-    ;(async () => {
-      try {
-        const repo = new MockFlowCatalogRepo()
-        // const repo = new HttpFlowCatalogRepo(); //!CAMBIAR PARA QUITAR MOCK
-        const data = await loadCatalog(repo)
-        if (mounted) {
-          setFlows(data)
-          setError(null)
-        }
-      } catch (e) {
-        if (mounted) setError('No se pudo cargar el catálogo.')
-      } finally {
-        if (mounted) setLoading(false)
-      }
-    })()
-
-    return () => {
-      mounted = false
-    }
-  }, [])
-
-  const handleSelect = (item: FlowSummary) => {
-    // Futuro: navegar al detalle del flow o al primer paso del flujo.
-    // Por ahora, mostramos un toast/log
-    console.log('Flow seleccionado:', item.id)
-  }
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Selector de Flows</Text>
-          <Text style={styles.subtitle}>Cargando...</Text>
-        </View>
-        <ActivityIndicator />
-      </SafeAreaView>
-    )
-  }
-
-  if (error) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Selector de Flows</Text>
-          <Text style={styles.error}>{error}</Text>
-        </View>
-      </SafeAreaView>
-    )
-  }
+  const data: FlowSummary[] = useMemo(
+    () =>
+      (MOCK_FLOWS.flows ?? []).map(f => ({
+        id: f.id,
+        title: f.title,
+        version: f.version,
+        description: f.description ?? '',
+        stepsCount: f.stepsCount ?? 0,
+      })),
+    [],
+  )
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Selector de Flows</Text>
-        <Text style={styles.subtitle}>Elegí un flujo para continuar</Text>
-      </View>
-      <FlowList data={flows} onSelect={handleSelect} />
-    </SafeAreaView>
+    <View style={styles.container}>
+      <Text style={styles.title}>Seleccioná un flujo</Text>
+      <FlatList
+        data={data}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => <FlowCard item={item} />}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        contentContainerStyle={{ padding: 16 }}
+      />
+    </View>
+  )
+}
+
+function FlowCard({ item }: { item: FlowSummary }) {
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>{item.title}</Text>
+      {!!item.description && <Text style={styles.cardDesc}>{item.description}</Text>}
+      <Text style={styles.cardMeta}>
+        {item.stepsCount} pasos · {item.version}
+      </Text>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: AppColors.Surface },
-  header: { padding: 16, paddingBottom: 8 },
-  title: { fontSize: 22, fontWeight: '800', color: AppColors.Text },
-  subtitle: { fontSize: 14, color: AppColors.Subtext, marginTop: 2 },
-  error: { fontSize: 14, color: AppColors.Error, marginTop: 6 },
+  container: { flex: 1, backgroundColor: AppColors.Background },
+  title: {
+    fontSize: 18,
+    fontWeight: '600',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    color: AppColors.Primary,
+  },
+  separator: { height: 12 },
+  card: {
+    backgroundColor: AppColors.Background,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: AppColors.Border,
+  },
+  cardTitle: { fontSize: 16, fontWeight: '600', color: AppColors.Primary },
+  cardDesc: { marginTop: 4, color: AppColors.MutedText },
+  cardMeta: { marginTop: 8, fontSize: 12, color: AppColors.MutedText },
 })

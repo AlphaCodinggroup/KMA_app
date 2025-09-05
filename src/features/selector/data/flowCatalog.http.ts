@@ -1,11 +1,15 @@
-import type { FlowCatalogPort } from '@entities/flow/ports'
 import type { FlowSummary } from '@entities/flow/model'
-import { getFlowsCatalog } from '@shared/api/flows.api'
-import { mapFlowSummaryDtoToDomain } from './mappers'
+import { MOCK_FLOWS } from '@shared/mocks/flows'
 
-export class HttpFlowCatalogRepo implements FlowCatalogPort {
-  async fetchCatalog(): Promise<FlowSummary[]> {
-    const dto = await getFlowsCatalog()
-    return dto.flows.map(mapFlowSummaryDtoToDomain)
-  }
+export async function getFlowsCatalog(): Promise<{ flows: FlowSummary[] }> {
+  const flows: FlowSummary[] =
+    (MOCK_FLOWS.flows ?? []).map(f => ({
+      id: f.id,
+      title: f.title,
+      version: f.version,
+      description: f.description ?? '',
+      stepsCount: f.stepsCount ?? 0,
+    })) ?? []
+
+  return { flows }
 }

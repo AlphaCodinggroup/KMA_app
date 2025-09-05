@@ -1,5 +1,5 @@
-import React, { memo } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import React from 'react'
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
 import type { FlowSummary } from '@entities/flow/model'
 import { AppColors } from '@shared/ui/colors'
 
@@ -9,82 +9,48 @@ type Props = {
   testID?: string
 }
 
-const FlowCardComponent: React.FC<Props> = ({ item, onPress, testID }) => {
+export function FlowCard({ item, onPress, testID }: Props) {
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Seleccionar flow ${item.title}`}
-      onPress={() => onPress?.(item)}
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+    <TouchableOpacity
       testID={testID}
+      onPress={() => onPress?.(item)}
+      style={styles.card}
+      activeOpacity={0.88}
     >
-      <View style={styles.headerRow}>
-        <Text style={styles.title} numberOfLines={1}>
-          {item.title}
-        </Text>
-        <Text style={styles.version}>{item.version}</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>{item.title}</Text>
       </View>
 
-      {!!item.description && (
-        <Text style={styles.description} numberOfLines={2}>
-          {item.description}
-        </Text>
-      )}
+      {!!item.description && <Text style={styles.description}>{item.description}</Text>}
 
-      <View style={styles.metaRow}>
-        <Text style={styles.meta}>
-          {typeof item.stepsCount === 'number' ? `${item.stepsCount} pasos` : '—'}
-        </Text>
+      <View style={styles.footer}>
+        <Text style={styles.meta}>{item.stepsCount} pasos</Text>
+        <Text style={styles.meta}>{item.version}</Text>
       </View>
-    </Pressable>
+    </TouchableOpacity>
   )
 }
-
-export const FlowCard = memo(FlowCardComponent)
 
 const styles = StyleSheet.create({
   card: {
     backgroundColor: AppColors.Background,
     borderRadius: 12,
-    padding: 14,
-    gap: 6,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: AppColors.Border,
     shadowColor: AppColors.Shadow,
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.5,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: AppColors.Divider,
+    elevation: 2,
   },
-  cardPressed: {
-    opacity: 0.95,
-    transform: [{ scale: 0.995 }],
-  },
-  headerRow: {
+  header: { marginBottom: 4, borderBottomWidth: 0, borderBottomColor: AppColors.Border },
+  title: { fontSize: 16, fontWeight: '700', color: AppColors.Primary },
+  description: { marginTop: 6, color: AppColors.MutedText },
+  footer: {
+    marginTop: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'baseline',
-    gap: 8,
   },
-  title: {
-    flex: 1,
-    color: AppColors.Text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  version: {
-    color: AppColors.Subtext,
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  description: {
-    color: AppColors.Subtext,
-    fontSize: 14,
-  },
-  metaRow: {
-    marginTop: 4,
-  },
-  meta: {
-    color: AppColors.Subtext,
-    fontSize: 12,
-  },
+  meta: { fontSize: 12, color: AppColors.MutedText },
 })
