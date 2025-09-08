@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router'
 import { AuthGuard } from '@processes/auth-guard'
 
-export default function RootLayout() {
+const RootLayout: React.FC = () => {
   return (
     <AuthGuard>
       <Stack screenOptions={{ headerShown: false }}>
@@ -11,3 +11,5 @@ export default function RootLayout() {
     </AuthGuard>
   )
 }
+
+export default RootLayout

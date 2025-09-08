@@ -1,39 +1,34 @@
-import { Text, TouchableOpacity, StyleSheet } from 'react-native'
+import { FlatList, View } from 'react-native'
 import type { FlowSummary } from '@entities/flow/model'
-import { AppColors } from '@shared/ui/colors'
+import { styles } from './styles/flowList.styles'
+import { useCallback } from 'react'
+import FlowCard from './FlowCard'
 
 type Props = {
-  item: FlowSummary
-  onPress?: (item: FlowSummary) => void // <- opcional
+  data: FlowSummary[]
+  onPressItem?: (item: FlowSummary) => void
   testID?: string
 }
 
-export function FlowCard({ item, onPress, testID }: Props) {
+const FlowList: React.FC<Props> = ({ data, onPressItem, testID }) => {
+  const itemSeparatorComponent = useCallback(() => <View style={styles.separator} />, [])
+
+  const renderItem = useCallback(
+    ({ item }: { item: FlowSummary }) => {
+      return <FlowCard item={item} onPress={onPressItem} />
+    },
+    [onPressItem],
+  )
+
   return (
-    <TouchableOpacity
+    <FlatList
       testID={testID}
-      onPress={() => onPress?.(item)}
-      style={styles.card}
-      activeOpacity={0.85}
-    >
-      <Text style={styles.cardTitle}>{item.title}</Text>
-      {!!item.description && <Text style={styles.cardDesc}>{item.description}</Text>}
-      <Text style={styles.cardMeta}>
-        {item.stepsCount ?? 0} pasos · {item.version}
-      </Text>
-    </TouchableOpacity>
+      data={data}
+      keyExtractor={it => it.id}
+      contentContainerStyle={styles.listContent}
+      ItemSeparatorComponent={itemSeparatorComponent}
+      renderItem={renderItem}
+    />
   )
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: AppColors.Background,
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: AppColors.Border,
-  },
-  cardTitle: { fontSize: 16, fontWeight: '600', color: AppColors.Primary },
-  cardDesc: { marginTop: 4, color: AppColors.MutedText },
-  cardMeta: { marginTop: 8, fontSize: 12, color: AppColors.MutedText },
-})
+export default FlowList

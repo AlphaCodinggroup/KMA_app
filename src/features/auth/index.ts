@@ -1,1 +1,3 @@
-export { LoginScreen } from './ui/LoginScreen'
+import LoginScreen from './ui/LoginScreen'
+
+export { LoginScreen }

@@ -1,5 +1,7 @@
 import { LoginScreen } from '@features/auth'
 
-export default function LoginRoute() {
+const LoginRoute: React.FC = () => {
   return <LoginScreen />
 }
+
+export default LoginRoute

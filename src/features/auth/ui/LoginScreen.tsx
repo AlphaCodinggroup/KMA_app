@@ -19,7 +19,7 @@ type LoginForm = z.infer<typeof LoginSchema>
 // import { setSessionTokens } from '@shared/session/session'
 // import { configureHttp } from '@shared/api/http' // para inyectar tokens/refresh
 
-export function LoginScreen() {
+const LoginScreen: React.FC = () => {
   const router = useRouter()
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -113,3 +113,5 @@ export function LoginScreen() {
     </KeyboardAvoidingView>
   )
 }
+
+export default LoginScreen
