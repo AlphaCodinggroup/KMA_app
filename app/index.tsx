@@ -4,7 +4,7 @@ import { Redirect } from 'expo-router'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 
-export default function Index() {
+const Index: React.FC = () => {
   return (
     <GestureHandlerRootView>
       <SafeAreaProvider>
@@ -13,3 +13,4 @@ export default function Index() {
     </GestureHandlerRootView>
   )
 }
+export default Index
