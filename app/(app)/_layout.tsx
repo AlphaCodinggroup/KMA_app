@@ -1,14 +1,22 @@
-import { AppColors } from '@shared/ui/colors'
 import { Stack } from 'expo-router'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { AppColors } from '@shared/ui/colors'
+import { StyleSheet } from 'react-native'
 
 export default function AppLayout() {
   return (
-    <Stack
-      screenOptions={{
-        headerShadowVisible: false,
-        headerStyle: { backgroundColor: AppColors.Background },
-        headerTitleStyle: { fontWeight: 'bold' },
-      }}
-    />
+    <SafeAreaView style={styles.container}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          headerStyle: { backgroundColor: AppColors.Background },
+          headerTitleStyle: { fontWeight: 'bold' },
+        }}
+      />
+    </SafeAreaView>
   )
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: AppColors.Background },
+})
