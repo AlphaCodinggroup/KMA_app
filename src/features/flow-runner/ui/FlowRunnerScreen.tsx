@@ -15,8 +15,9 @@ import {
   persistDraft,
 } from '../application/usecases'
 import EndView from './EndView'
+import type { SubmissionAnswer } from '@entities/submission/model'
 
-type Answers = Record<string, unknown>
+type Answers = Record<string, SubmissionAnswer>
 
 function mapById(steps: Step[]): Record<string, Step> {
   return steps.reduce<Record<string, Step>>((acc, s) => {
@@ -28,7 +29,7 @@ function mapById(steps: Step[]): Record<string, Step> {
 const FlowRunnerScreen: React.FC = () => {
   const router = useRouter()
   const { flowId: rawFlowId } = useLocalSearchParams<{ flowId?: string | string[] }>()
-  const flowId = Array.isArray(rawFlowId) ? rawFlowId[0] : (rawFlowId ?? '')
+  const flowId: string = Array.isArray(rawFlowId) ? (rawFlowId[0] ?? '') : (rawFlowId ?? '')
 
   const [detail, setDetail] = useState<FlowDetail | null>(null)
   const [currentId, setCurrentId] = useState<string | null>(null)

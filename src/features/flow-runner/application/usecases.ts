@@ -5,6 +5,7 @@ import type { FlowDetail } from '@shared/validation/steps.schema'
 import { allFlows, flowDetail as defaultFlowDetail } from '@shared/mocks/flows'
 
 // Submissions API
+import type { SubmissionAnswer, SubmissionDraft } from '@entities/submission/model'
 import { submitSubmissionMultipart, buildSubmissionMultipart } from '@shared/api/submissions.api'
 
 // TODO real: repos/servicios
@@ -14,6 +15,7 @@ import { submitSubmissionMultipart, buildSubmissionMultipart } from '@shared/api
 
 /** Best-effort: asegurar que el flow esté actualizado/local antes de ejecutar. */
 export async function ensureFlowSynced(flowId: string): Promise<void> {
+  console.log({ flowId })
   // En real: si hay red -> GET /flows/{id} y persistir en SQLite
   // Por ahora con mocks no hace nada.
   await Promise.resolve()
@@ -30,7 +32,7 @@ export async function loadFlowDetail(flowId: string): Promise<FlowDetail> {
 export async function persistDraft(params: {
   flowId: string
   title: string
-  answers: Record<string, unknown>
+  answers: Record<string, SubmissionAnswer>
 }): Promise<void> {
   const payload = {
     flowId: params.flowId,
@@ -45,13 +47,13 @@ export async function persistDraft(params: {
 export async function finalizeSubmission(params: {
   flowId: string
   title: string
-  answers: Record<string, unknown>
+  answers: Record<string, SubmissionAnswer>
   online?: boolean
 }): Promise<void> {
   const isOnline =
     typeof params.online === 'boolean' ? params.online : !!(await NetInfo.fetch()).isConnected
 
-  const draft = {
+  const draft: SubmissionDraft = {
     flowId: params.flowId,
     title: params.title,
     createdAt: Date.now(),

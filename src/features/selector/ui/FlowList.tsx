@@ -15,7 +15,7 @@ const FlowList: React.FC<Props> = ({ data, onPressItem, testID }) => {
 
   const renderItem = useCallback(
     ({ item }: { item: FlowSummary }) => {
-      return <FlowCard item={item} onPress={onPressItem} />
+      return onPressItem ? <FlowCard item={item} onPress={onPressItem} /> : <FlowCard item={item} />
     },
     [onPressItem],
   )
