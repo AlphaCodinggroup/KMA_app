@@ -8,12 +8,7 @@ import { QuestionCard } from '@features/question'
 import { DynamicForm } from '@features/dynamic-form'
 import { pickOrCapturePhoto } from '@features/camera'
 import { styles } from './styles/flowRunner.styles'
-import {
-  ensureFlowSynced,
-  finalizeSubmission,
-  loadFlowDetail,
-  persistDraft,
-} from '../application/usecases'
+import { ensureFlowSynced, loadFlowDetail, persistDraft } from '../application/usecases'
 import EndView from './EndView'
 import type { SubmissionAnswer } from '@entities/submission/model'
 
@@ -122,18 +117,18 @@ const FlowRunnerScreen: React.FC = () => {
   const onFinish = useCallback(async () => {
     if (!detail) return
     try {
-      await finalizeSubmission({
-        flowId: detail.flowId,
-        title: detail.title,
-        answers: answersRef.current,
-        online,
-      })
-      Alert.alert('OK', online ? 'Shipment completed.' : 'Saved to send when connected.')
+      // await finalizeSubmission({
+      //   flowId: detail.flowId,
+      //   title: detail.title,
+      //   answers: answersRef.current,
+      //   online,
+      // })
+      // Alert.alert('OK', online ? 'Shipment completed.' : 'Saved to send when connected.')
       router.replace('/(app)/selector')
     } catch {
       Alert.alert('Error', 'We were unable to complete the shipment.')
     }
-  }, [detail, online, router])
+  }, [detail, router])
 
   if (loading || !detail || !currentId) {
     return (
