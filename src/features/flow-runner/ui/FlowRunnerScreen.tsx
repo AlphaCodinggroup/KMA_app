@@ -56,7 +56,7 @@ const FlowRunnerScreen: React.FC = () => {
       const firstQ = data.steps.find(s => s.type === 'Question')
       setCurrentId(firstQ?.id ?? null)
     } catch {
-      Alert.alert('Error', 'No fue posible cargar el flujo.')
+      Alert.alert('Error', 'The stream could not be loaded.')
     } finally {
       setLoading(false)
     }
@@ -128,10 +128,10 @@ const FlowRunnerScreen: React.FC = () => {
         answers: answersRef.current,
         online,
       })
-      Alert.alert('OK', online ? 'Envío realizado.' : 'Guardado para enviar cuando haya conexión.')
+      Alert.alert('OK', online ? 'Shipment completed.' : 'Saved to send when connected.')
       router.replace('/(app)/selector')
     } catch {
-      Alert.alert('Error', 'No pudimos finalizar el envío.')
+      Alert.alert('Error', 'We were unable to complete the shipment.')
     }
   }, [detail, online, router])
 

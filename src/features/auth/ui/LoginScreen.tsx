@@ -12,10 +12,10 @@ import { styles } from './login.styles'
 const LoginSchema = z.object({
   username: z
     .string()
-    .min(1, 'El usuario es obligatorio')
-    .min(3, 'Mínimo 3 caracteres')
-    .max(30, 'Máximo 30 caracteres'),
-  password: z.string().min(6, 'Mínimo 6 caracteres'),
+    .min(1, 'The user is mandatory.')
+    .min(3, 'Minimum 3 characters.')
+    .max(30, 'Maximum 30 characters.'),
+  password: z.string().min(6, 'Minimum 6 characters.'),
 })
 type LoginForm = z.infer<typeof LoginSchema>
 
@@ -61,7 +61,7 @@ const LoginScreen: React.FC = () => {
         // Navegación temporal mientras el login real está desactivado
         router.replace('/(app)/selector')
       } catch (e) {
-        setSubmitError('Credenciales inválidas o error de red.')
+        setSubmitError('Invalid credentials or network error.')
       } finally {
         setSubmitting(false)
       }
@@ -75,14 +75,14 @@ const LoginScreen: React.FC = () => {
       behavior={Platform.select({ ios: 'padding', android: undefined })}
     >
       <View style={styles.card}>
-        <Text style={styles.title}>KMA_app</Text>
-        <Text style={styles.subtitle}>Ingresá con tu cuenta</Text>
+        <Text style={styles.title}>KMA App</Text>
+        <Text style={styles.subtitle}>Log in with your account</Text>
 
         <FormTextInput
           control={control}
           name="username"
-          label="Usuario"
-          placeholder="tu-usuario"
+          label="User"
+          placeholder="your-username"
           keyboardType="default"
           autoCapitalize="none"
           autoCorrect={false}
@@ -95,7 +95,7 @@ const LoginScreen: React.FC = () => {
         <FormTextInput
           control={control}
           name="password"
-          label="Contraseña"
+          label="Password"
           placeholder="••••••••"
           secureTextEntry
           textContentType="password"
@@ -105,7 +105,7 @@ const LoginScreen: React.FC = () => {
         />
 
         <PrimaryButton
-          label={submitting ? 'Ingresando…' : 'Ingresar'}
+          label={submitting ? 'Logging in...' : 'Log In'}
           onPress={handleSubmit(onSubmit)}
           disabled={!isValid || submitting}
           style={styles.primaryButton}

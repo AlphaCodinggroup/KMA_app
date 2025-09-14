@@ -31,7 +31,7 @@ const FlowCard: React.FC<Props> = ({ item, onPress, testID }) => {
 
       <View style={styles.footer}>
         <Text style={styles.meta}>
-          {item.stepsCount ? `${item.stepsCount} pasos` : '—'} · {item.version}
+          {item.stepsCount ? `${item.stepsCount} steps` : '—'} · {item.version}
         </Text>
       </View>
     </TouchableOpacity>
