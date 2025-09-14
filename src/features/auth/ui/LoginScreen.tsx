@@ -10,7 +10,11 @@ import { styles } from './login.styles'
 
 // Cuando activemos backend real, movemos el schema a model/
 const LoginSchema = z.object({
-  email: z.string().min(1, 'El email es obligatorio').email('Email inválido'),
+  username: z
+    .string()
+    .min(1, 'El usuario es obligatorio')
+    .min(3, 'Mínimo 3 caracteres')
+    .max(30, 'Máximo 30 caracteres'),
   password: z.string().min(6, 'Mínimo 6 caracteres'),
 })
 type LoginForm = z.infer<typeof LoginSchema>
@@ -31,7 +35,7 @@ const LoginScreen: React.FC = () => {
   } = useForm<LoginForm>({
     resolver: zodResolver(LoginSchema),
     mode: 'onChange',
-    defaultValues: { email: '', password: '' },
+    defaultValues: { username: '', password: '' },
   })
 
   // refs para “siguiente campo”
@@ -76,12 +80,13 @@ const LoginScreen: React.FC = () => {
 
         <FormTextInput
           control={control}
-          name="email"
-          label="Email"
-          placeholder="tu@email.com"
-          keyboardType="email-address"
+          name="username"
+          label="Usuario"
+          placeholder="tu-usuario"
+          keyboardType="default"
           autoCapitalize="none"
-          textContentType="emailAddress"
+          autoCorrect={false}
+          textContentType="username"
           returnKeyType="next"
           blurOnSubmit={false}
           onSubmitEditing={() => pwdRef.current?.focus?.()}
