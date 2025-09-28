@@ -8,7 +8,7 @@ const AppLayout: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <Stack
         screenOptions={{
-          headerShown: false,
+          headerTitle: 'Select Project',
           headerStyle: { backgroundColor: AppColors.Background },
           headerTitleStyle: { fontWeight: 'bold' },
         }}
