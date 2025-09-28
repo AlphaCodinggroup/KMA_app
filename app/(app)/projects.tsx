@@ -2,9 +2,9 @@ import { useMemo } from 'react'
 import { Stack, useRouter } from 'expo-router'
 import { StyleSheet, Text, View } from 'react-native'
 import { mockProjects } from '@features/selector/data/mockProjects'
-import ProjectsList from '@features/selector/ui/ProjectList'
 import { AppColors } from '@shared/ui/colors'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import ProjectsList from '@features/projects/ui/ProjectList'
 
 const SelectProjectScreen: React.FC = () => {
   const router = useRouter()

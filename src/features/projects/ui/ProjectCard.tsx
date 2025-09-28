@@ -1,9 +1,9 @@
 import React from 'react'
 import { Pressable, Text, View } from 'react-native'
 import type { Project } from '@entities/project/model'
-import { styles } from './styles/projectCard.styles'
 import Folder from '@shared/ui/icons/Folder'
 import ChevronRight from '@shared/ui/icons/ChevronRight'
+import { styles } from './styles/projectCard.styles'
 
 type Props = {
   project: Project
