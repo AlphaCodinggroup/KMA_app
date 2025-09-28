@@ -59,7 +59,7 @@ const LoginScreen: React.FC = () => {
         // })
 
         // Navegación temporal mientras el login real está desactivado
-        router.replace('/(app)/selector')
+        router.replace('/(app)/projects')
       } catch (e) {
         setSubmitError('Invalid credentials or network error.')
       } finally {
