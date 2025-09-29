@@ -4,7 +4,9 @@ export enum AppColors {
   MutedText = '#6B7280',
   Primary = '#111827',
   Error = '#B91C1C',
-
-  // Extras usados por UI
   Shadow = 'rgba(0,0,0,0.15)',
+  TextPrimary = '#0F172A',
+  IconMuted = '#9AA0A6',
+  SurfaceAlt = '#F8FAFC',
+  Ripple = 'rgba(0,0,0,0.08)',
 }

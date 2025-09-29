@@ -1,62 +1,45 @@
-import React from 'react'
-import { FlatList, type ListRenderItemInfo, View, StyleSheet, type ViewStyle } from 'react-native'
+import React, { memo, useCallback } from 'react'
+import type { StyleProp, ViewStyle } from 'react-native'
 import type { Building } from '@entities/building/model'
+import EntityList from '@shared/ui/list/EntityList'
 import BuildingCard from './BuildingCard'
 
 export interface BuildingListProps {
   items: ReadonlyArray<Building>
-  contentContainerStyle?: ViewStyle
-  onPressItem?: (building: Building) => void
+  onPressItem: (item: Building) => void
+  contentContainerStyle?: StyleProp<ViewStyle>
   testID?: string
 }
 
-/**
- * Lista virtualizada de Buildings (solo UI).
- * Reutiliza BuildingCard y define separadores/espaciados consistentes.
- */
 const BuildingList: React.FC<BuildingListProps> = ({
   items,
-  contentContainerStyle,
   onPressItem,
-  testID = 'building-list',
+  contentContainerStyle,
+  testID,
 }) => {
-  const renderItem = ({ item }: ListRenderItemInfo<Building>) => (
-    <BuildingCard
-      title={item.name}
-      onPress={() => onPressItem?.(item)}
-      testID={`building-card-${item.id}`}
-    />
+  const keyExtractor = useCallback((item: Building) => item.id, [])
+
+  const renderItem = useCallback(
+    (item: Building) => {
+      const baseProps = {
+        title: item.name,
+        onPress: () => onPressItem(item),
+      }
+      return <BuildingCard {...baseProps} {...(testID ? { testID } : {})} />
+    },
+    [onPressItem, testID],
   )
 
   return (
-    <FlatList
-      testID={testID}
-      data={items}
-      keyExtractor={it => it.id}
+    <EntityList<Building>
+      items={items}
       renderItem={renderItem}
-      ItemSeparatorComponent={() => <View style={styles.separator} />}
-      ListHeaderComponent={<View style={styles.headerSpacer} />}
-      ListFooterComponent={<View style={styles.footerSpacer} />}
-      contentContainerStyle={[styles.container, contentContainerStyle]}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
+      keyExtractor={keyExtractor}
+      {...(contentContainerStyle ? { contentContainerStyle } : {})}
+      {...(testID ? { testID } : {})}
+      itemSpacing={12}
     />
   )
 }
 
-export default BuildingList
-
-const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 16,
-  },
-  headerSpacer: {
-    height: 8,
-  },
-  footerSpacer: {
-    height: 16,
-  },
-  separator: {
-    height: 12,
-  },
-})
+export default memo(BuildingList)

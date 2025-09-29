@@ -1,26 +1,49 @@
-import React from 'react'
-import { FlatList, View } from 'react-native'
-import type { Project } from '@entities/project/model'
+import React, { memo, useCallback } from 'react'
+import type { StyleProp, ViewStyle } from 'react-native'
+import EntityList from '@shared/ui/list/EntityList'
 import ProjectCard from './ProjectCard'
-import { styles } from './styles/projectList.styles'
 
-type Props = {
-  items: Project[]
-  onSelect?: (p: Project) => void
+export interface ProjectListItem {
+  id: string
+  name: string
 }
 
-const keyExtractor = (item: Project) => item.id
+export interface ProjectListProps {
+  items: ReadonlyArray<ProjectListItem>
+  onPressItem: (item: ProjectListItem) => void
+  contentContainerStyle?: StyleProp<ViewStyle>
+  testID?: string
+}
 
-const ProjectsList: React.FC<Props> = ({ items, onSelect }) => {
+const ProjectList: React.FC<ProjectListProps> = ({
+  items,
+  onPressItem,
+  contentContainerStyle,
+  testID,
+}) => {
+  const keyExtractor = useCallback((item: ProjectListItem) => item.id, [])
+
+  const renderItem = useCallback(
+    (item: ProjectListItem) => {
+      const baseProps = {
+        title: item.name,
+        onPress: () => onPressItem(item),
+      }
+      return <ProjectCard {...baseProps} />
+    },
+    [onPressItem],
+  )
+
   return (
-    <FlatList
-      contentContainerStyle={styles.content}
-      data={items}
+    <EntityList<ProjectListItem>
+      items={items}
+      renderItem={renderItem}
       keyExtractor={keyExtractor}
-      ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
-      renderItem={({ item }) => <ProjectCard project={item} onPress={onSelect} />}
+      {...(contentContainerStyle ? { contentContainerStyle } : {})}
+      {...(testID ? { testID } : {})}
+      itemSpacing={12}
     />
   )
 }
 
-export default ProjectsList
+export default memo(ProjectList)
