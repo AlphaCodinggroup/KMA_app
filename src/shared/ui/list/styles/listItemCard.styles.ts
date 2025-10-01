@@ -21,6 +21,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: P,
     paddingVertical: P,
     gap: 12,
+    backgroundColor: AppColors.SurfaceAlt,
   },
   pressed: {
     opacity: 0.96,

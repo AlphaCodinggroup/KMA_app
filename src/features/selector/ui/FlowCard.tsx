@@ -20,7 +20,7 @@ const FlowCard: React.FC<FlowCardProps> = ({
 }) => {
   const baseProps = {
     title: title,
-    chevron: false,
+    chevron: true,
     version: version ?? '',
     steps: stepsCount,
     description: description,
