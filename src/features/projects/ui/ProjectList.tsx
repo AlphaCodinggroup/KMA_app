@@ -1,37 +1,41 @@
 import React, { memo, useCallback } from 'react'
 import type { StyleProp, ViewStyle } from 'react-native'
-import type { Building } from '@entities/building/model'
 import EntityList from '@shared/ui/list/EntityList'
-import BuildingCard from './BuildingCard'
+import ProjectCard from './ProjectCard'
 
-export interface BuildingListProps {
-  items: ReadonlyArray<Building>
-  onPressItem: (item: Building) => void
+export interface ProjectListItem {
+  id: string
+  name: string
+}
+
+export interface ProjectListProps {
+  items: ReadonlyArray<ProjectListItem>
+  onPressItem: (item: ProjectListItem) => void
   contentContainerStyle?: StyleProp<ViewStyle>
   testID?: string
 }
 
-const BuildingList: React.FC<BuildingListProps> = ({
+const ProjectList: React.FC<ProjectListProps> = ({
   items,
   onPressItem,
   contentContainerStyle,
   testID,
 }) => {
-  const keyExtractor = useCallback((item: Building) => item.id, [])
+  const keyExtractor = useCallback((item: ProjectListItem) => item.id, [])
 
   const renderItem = useCallback(
-    (item: Building) => {
+    (item: ProjectListItem) => {
       const baseProps = {
         title: item.name,
         onPress: () => onPressItem(item),
       }
-      return <BuildingCard {...baseProps} {...(testID ? { testID } : {})} />
+      return <ProjectCard {...baseProps} />
     },
-    [onPressItem, testID],
+    [onPressItem],
   )
 
   return (
-    <EntityList<Building>
+    <EntityList<ProjectListItem>
       items={items}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
@@ -42,4 +46,4 @@ const BuildingList: React.FC<BuildingListProps> = ({
   )
 }
 
-export default memo(BuildingList)
+export default memo(ProjectList)

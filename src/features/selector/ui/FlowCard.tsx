@@ -1,41 +1,32 @@
-import { View, Text, TouchableOpacity } from 'react-native'
-import type { FlowSummary } from '@entities/flow/model'
-import { styles } from './styles/flowCard.styles'
+import ListItemCard from '@shared/ui/list/ListItemCard'
+import { memo } from 'react'
 
-type Props = {
-  item: FlowSummary
-  onPress?: (item: FlowSummary) => void
+export interface FlowCardProps {
+  title: string
+  version?: string
+  description?: string
+  stepsCount?: number
+  onPress: () => void
   testID?: string
 }
 
-const FlowCard: React.FC<Props> = ({ item, onPress, testID }) => {
-  return (
-    <TouchableOpacity
-      testID={testID}
-      onPress={() => onPress?.(item)}
-      style={styles.card}
-      activeOpacity={0.88}
-      accessibilityRole="button"
-    >
-      <View style={styles.header}>
-        <Text style={styles.title} numberOfLines={2}>
-          {item.title}
-        </Text>
-      </View>
-
-      {!!item.description && (
-        <Text style={styles.description} numberOfLines={3}>
-          {item.description}
-        </Text>
-      )}
-
-      <View style={styles.footer}>
-        <Text style={styles.meta}>
-          {item.stepsCount ? `${item.stepsCount} steps` : '—'} · {item.version}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  )
+const FlowCard: React.FC<FlowCardProps> = ({
+  title,
+  version,
+  stepsCount,
+  description,
+  onPress,
+  testID,
+}) => {
+  const baseProps = {
+    title: title,
+    chevron: false,
+    version: version ?? '',
+    steps: stepsCount,
+    description: description,
+    onPress: onPress,
+  }
+  return <ListItemCard {...baseProps} {...(testID ? { testID } : {})} />
 }
 
-export default FlowCard
+export default memo(FlowCard)

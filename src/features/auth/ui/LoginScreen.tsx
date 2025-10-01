@@ -5,8 +5,8 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { FormTextInput } from '@shared/ui/forms/FormTextInput'
-import { PrimaryButton } from '@shared/ui/buttons/PrimaryButton'
 import { styles } from './login.styles'
+import PrimaryButton from '@shared/ui/buttons/PrimaryButton'
 
 // Cuando activemos backend real, movemos el schema a model/
 const LoginSchema = z.object({

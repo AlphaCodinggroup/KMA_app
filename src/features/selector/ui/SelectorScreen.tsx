@@ -48,7 +48,7 @@ const SelectorScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <FlowList data={items} onPressItem={onPressItem} />
+      <FlowList items={items} onPressItem={onPressItem} />
     </View>
   )
 }

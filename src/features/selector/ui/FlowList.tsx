@@ -1,34 +1,48 @@
-import { FlatList, View } from 'react-native'
+import React, { memo, useCallback } from 'react'
+import type { StyleProp, ViewStyle } from 'react-native'
 import type { FlowSummary } from '@entities/flow/model'
-import { styles } from './styles/flowList.styles'
-import { useCallback } from 'react'
+import EntityList from '@shared/ui/list/EntityList'
 import FlowCard from './FlowCard'
 
-type Props = {
-  data: FlowSummary[]
-  onPressItem?: (item: FlowSummary) => void
+export interface FlowListProps {
+  items: ReadonlyArray<FlowSummary>
+  onPressItem: (item: FlowSummary) => void
+  contentContainerStyle?: StyleProp<ViewStyle>
   testID?: string
 }
 
-const FlowList: React.FC<Props> = ({ data, onPressItem, testID }) => {
-  const itemSeparatorComponent = useCallback(() => <View style={styles.separator} />, [])
+const FlowList: React.FC<FlowListProps> = ({
+  items,
+  onPressItem,
+  contentContainerStyle,
+  testID,
+}) => {
+  const keyExtractor = useCallback((item: FlowSummary) => item.id, [])
 
   const renderItem = useCallback(
-    ({ item }: { item: FlowSummary }) => {
-      return onPressItem ? <FlowCard item={item} onPress={onPressItem} /> : <FlowCard item={item} />
+    (item: FlowSummary) => {
+      const baseProps = {
+        title: item.title,
+        version: item.version,
+        description: item.description ?? '',
+        stepsCount: item.stepsCount ?? 0,
+        onPress: () => onPressItem(item),
+      }
+      return <FlowCard {...baseProps} {...(testID ? { testID } : {})} />
     },
-    [onPressItem],
+    [onPressItem, testID],
   )
 
   return (
-    <FlatList
-      testID={testID}
-      data={data}
-      keyExtractor={it => it.id}
-      contentContainerStyle={styles.listContent}
-      ItemSeparatorComponent={itemSeparatorComponent}
+    <EntityList<FlowSummary>
+      items={items}
       renderItem={renderItem}
+      keyExtractor={keyExtractor}
+      {...(contentContainerStyle ? { contentContainerStyle } : {})}
+      {...(testID ? { testID } : {})}
+      itemSpacing={12}
     />
   )
 }
-export default FlowList
+
+export default memo(FlowList)
