@@ -1,17 +1,16 @@
-import { Text, View } from 'react-native'
+import { View } from 'react-native'
 import { useRouter } from 'expo-router'
 import BuildingList from '@features/building/ui/BuildingList'
 import { MOCK_BUILDINGS } from '@features/building/data/mockBuildings'
 import { styles } from './styles/buildings.styles'
+import SubHeadline from '@shared/ui/subheadline/subHeadline'
 
 const BuildingsScreen: React.FC = () => {
   const router = useRouter()
   return (
     <View style={styles.container}>
       {/* Subtítulo */}
-      <Text style={styles.subtitle} accessibilityRole="header">
-        Select the building to audits
-      </Text>
+      <SubHeadline text="Select the building to audits" stylesText={styles.text} />
 
       {/* Lista (UI) */}
       <BuildingList

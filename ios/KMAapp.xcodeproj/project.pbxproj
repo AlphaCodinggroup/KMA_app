@@ -8,25 +8,25 @@
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		316A367C522F674886563F8D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B7BBE39625DF626E3E31D598 /* PrivacyInfo.xcprivacy */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		53630500E51D46DE09CDF0AF /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CF1747985EB218A6A50990D /* ExpoModulesProvider.swift */; };
+		6CBD51DD6AE2733D38DA2166 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D2184B8A0282680C6FE77DD9 /* PrivacyInfo.xcprivacy */; };
+		A8EEFD95E378CFFBD7F6B0F4 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47151268B4C03DDB5440E53A /* ExpoModulesProvider.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		EB87394302697695BBCD0887 /* libPods-KMAapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = ACC8DB5207B60362218050F1 /* libPods-KMAapp.a */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
-		F85BCC082FE28A3202B0397F /* libPods-KMAapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 583BF0AB5339497AFEEFE9FE /* libPods-KMAapp.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		13B07F961A680F5B00A75B9A /* KMAapp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KMAapp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = KMAapp/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = KMAapp/Info.plist; sourceTree = "<group>"; };
-		4CF1747985EB218A6A50990D /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-KMAapp/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		583BF0AB5339497AFEEFE9FE /* libPods-KMAapp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-KMAapp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		9F62447A86738BD97B67D08E /* Pods-KMAapp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-KMAapp.debug.xcconfig"; path = "Target Support Files/Pods-KMAapp/Pods-KMAapp.debug.xcconfig"; sourceTree = "<group>"; };
+		303D3D6BA6F19F90FFFDABA1 /* Pods-KMAapp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-KMAapp.debug.xcconfig"; path = "Target Support Files/Pods-KMAapp/Pods-KMAapp.debug.xcconfig"; sourceTree = "<group>"; };
+		47151268B4C03DDB5440E53A /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-KMAapp/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = KMAapp/SplashScreen.storyboard; sourceTree = "<group>"; };
-		B7BBE39625DF626E3E31D598 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = KMAapp/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		ACC8DB5207B60362218050F1 /* libPods-KMAapp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-KMAapp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		D284BBFF4BE7A732FA044365 /* Pods-KMAapp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-KMAapp.release.xcconfig"; path = "Target Support Files/Pods-KMAapp/Pods-KMAapp.release.xcconfig"; sourceTree = "<group>"; };
+		D2184B8A0282680C6FE77DD9 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = KMAapp/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		E2181582480EE158A20E9D29 /* Pods-KMAapp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-KMAapp.release.xcconfig"; path = "Target Support Files/Pods-KMAapp/Pods-KMAapp.release.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = KMAapp/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* KMAapp-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "KMAapp-Bridging-Header.h"; path = "KMAapp/KMAapp-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -37,7 +37,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F85BCC082FE28A3202B0397F /* libPods-KMAapp.a in Frameworks */,
+				EB87394302697695BBCD0887 /* libPods-KMAapp.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -53,7 +53,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				B7BBE39625DF626E3E31D598 /* PrivacyInfo.xcprivacy */,
+				D2184B8A0282680C6FE77DD9 /* PrivacyInfo.xcprivacy */,
 			);
 			name = KMAapp;
 			sourceTree = "<group>";
@@ -62,9 +62,27 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				583BF0AB5339497AFEEFE9FE /* libPods-KMAapp.a */,
+				ACC8DB5207B60362218050F1 /* libPods-KMAapp.a */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		48E82F2B29C7EBA03F8AAEC7 /* KMAapp */ = {
+			isa = PBXGroup;
+			children = (
+				47151268B4C03DDB5440E53A /* ExpoModulesProvider.swift */,
+			);
+			name = KMAapp;
+			sourceTree = "<group>";
+		};
+		7AFB39101560118B17216B23 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				303D3D6BA6F19F90FFFDABA1 /* Pods-KMAapp.debug.xcconfig */,
+				E2181582480EE158A20E9D29 /* Pods-KMAapp.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -74,6 +92,14 @@
 			name = Libraries;
 			sourceTree = "<group>";
 		};
+		836ECCD751E23C25E2FC3D2B /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				48E82F2B29C7EBA03F8AAEC7 /* KMAapp */,
+			);
+			name = ExpoModulesProviders;
+			sourceTree = "<group>";
+		};
 		83CBB9F61A601CBA00E9B192 = {
 			isa = PBXGroup;
 			children = (
@@ -81,8 +107,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				DDBBAF509D36BC606DC6051E /* Pods */,
-				F949A7DCF4911F9ED8CB0200 /* ExpoModulesProviders */,
+				7AFB39101560118B17216B23 /* Pods */,
+				836ECCD751E23C25E2FC3D2B /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -97,14 +123,6 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		B96C13BFC500DA95E7E3803B /* KMAapp */ = {
-			isa = PBXGroup;
-			children = (
-				4CF1747985EB218A6A50990D /* ExpoModulesProvider.swift */,
-			);
-			name = KMAapp;
-			sourceTree = "<group>";
-		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
 			isa = PBXGroup;
 			children = (
@@ -112,24 +130,6 @@
 			);
 			name = Supporting;
 			path = KMAapp/Supporting;
-			sourceTree = "<group>";
-		};
-		DDBBAF509D36BC606DC6051E /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				9F62447A86738BD97B67D08E /* Pods-KMAapp.debug.xcconfig */,
-				D284BBFF4BE7A732FA044365 /* Pods-KMAapp.release.xcconfig */,
-			);
-			name = Pods;
-			path = Pods;
-			sourceTree = "<group>";
-		};
-		F949A7DCF4911F9ED8CB0200 /* ExpoModulesProviders */ = {
-			isa = PBXGroup;
-			children = (
-				B96C13BFC500DA95E7E3803B /* KMAapp */,
-			);
-			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -140,13 +140,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "KMAapp" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				4B161D88D1A39FFE0493B06F /* [Expo] Configure project */,
+				035A862F0A635321A06B6FC1 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				BA86D0DAAF62DD8219D12D4D /* [CP] Embed Pods Frameworks */,
+				DACD87183088A5EBC2229564 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -196,7 +196,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				316A367C522F674886563F8D /* PrivacyInfo.xcprivacy in Resources */,
+				6CBD51DD6AE2733D38DA2166 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -217,6 +217,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "if [[ -f \"$PODS_ROOT/../.xcode.env\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env\"\nfi\nif [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.local\"\nfi\n\n# The project root by default is one level up from the ios directory\nexport PROJECT_ROOT=\"$PROJECT_DIR\"/..\n\nif [[ \"$CONFIGURATION\" = *Debug* ]]; then\n  export SKIP_BUNDLING=1\nfi\nif [[ -z \"$ENTRY_FILE\" ]]; then\n  # Set the entry JS file using the bundler's entry resolution.\n  export ENTRY_FILE=\"$(\"$NODE_BINARY\" -e \"require('expo/scripts/resolveAppEntry')\" \"$PROJECT_ROOT\" ios absolute | tail -n 1)\"\nfi\n\nif [[ -z \"$CLI_PATH\" ]]; then\n  # Use Expo CLI\n  export CLI_PATH=\"$(\"$NODE_BINARY\" --print \"require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })\")\"\nfi\nif [[ -z \"$BUNDLE_COMMAND\" ]]; then\n  # Default Expo CLI command for bundling\n  export BUNDLE_COMMAND=\"export:embed\"\nfi\n\n# Source .xcode.env.updates if it exists to allow\n# SKIP_BUNDLING to be unset if needed\nif [[ -f \"$PODS_ROOT/../.xcode.env.updates\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.updates\"\nfi\n# Source local changes to allow overrides\n# if needed\nif [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.local\"\nfi\n\n`\"$NODE_BINARY\" --print \"require('path').dirname(require.resolve('react-native/package.json')) + '/scripts/react-native-xcode.sh'\"`\n\n";
+		};
+		035A862F0A635321A06B6FC1 /* [Expo] Configure project */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "[Expo] Configure project";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-KMAapp/expo-configure-project.sh\"\n";
 		};
 		08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -239,25 +258,6 @@
 			shellPath = /bin/sh;
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
-		};
-		4B161D88D1A39FFE0493B06F /* [Expo] Configure project */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "[Expo] Configure project";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-KMAapp/expo-configure-project.sh\"\n";
 		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -301,7 +301,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-KMAapp/Pods-KMAapp-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		BA86D0DAAF62DD8219D12D4D /* [CP] Embed Pods Frameworks */ = {
+		DACD87183088A5EBC2229564 /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -327,7 +327,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				53630500E51D46DE09CDF0AF /* ExpoModulesProvider.swift in Sources */,
+				A8EEFD95E378CFFBD7F6B0F4 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -336,7 +336,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 9F62447A86738BD97B67D08E /* Pods-KMAapp.debug.xcconfig */;
+			baseConfigurationReference = 303D3D6BA6F19F90FFFDABA1 /* Pods-KMAapp.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -372,7 +372,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = D284BBFF4BE7A732FA044365 /* Pods-KMAapp.release.xcconfig */;
+			baseConfigurationReference = E2181582480EE158A20E9D29 /* Pods-KMAapp.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
