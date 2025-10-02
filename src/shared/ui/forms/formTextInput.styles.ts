@@ -16,6 +16,7 @@ export const styles = StyleSheet.create({
     borderColor: AppColors.Border,
     borderRadius: RFValue(8),
     padding: RFValue(12),
+    fontSize: setResponsiveSize({ size: 12 }),
   },
   inputError: { borderColor: AppColors.Error, fontSize: setResponsiveSize({ size: 10 }) },
   error: {

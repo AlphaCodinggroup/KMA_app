@@ -1,8 +1,10 @@
 import { AppColors } from '@shared/ui/colors'
+import { setResponsiveSize } from '@shared/ui/responsive/setResponsiveSize'
 import { StyleSheet } from 'react-native'
+import { RFValue } from 'react-native-responsive-fontsize'
 
-const RADIUS = 12
-const P = 12
+const RADIUS = RFValue(12)
+const P = RFValue(12)
 
 export const styles = StyleSheet.create({
   card: {
@@ -12,9 +14,7 @@ export const styles = StyleSheet.create({
     backgroundColor: AppColors.Background,
     overflow: 'hidden',
   },
-  cardSelected: {
-    borderColor: AppColors.Primary,
-  },
+  cardSelected: { borderColor: AppColors.Primary },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -23,13 +23,11 @@ export const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: AppColors.SurfaceAlt,
   },
-  pressed: {
-    opacity: 0.96,
-  },
+  pressed: { opacity: 0.5 },
   left: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
+    width: RFValue(36),
+    height: RFValue(36),
+    borderRadius: RFValue(8),
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: AppColors.SurfaceAlt,
@@ -41,24 +39,23 @@ export const styles = StyleSheet.create({
   },
   title: {
     color: AppColors.TextPrimary,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: setResponsiveSize({ size: 14 }),
+    fontWeight: 'bold',
   },
   subtitle: {
     color: AppColors.MutedText,
-    fontSize: 13,
+    fontSize: setResponsiveSize({ size: 13 }),
   },
   description: {
     color: AppColors.MutedText,
-    fontSize: 12,
-    lineHeight: 16,
-    marginTop: 2,
+    fontSize: setResponsiveSize({ size: 12 }),
+    marginTop: RFValue(2),
   },
   right: {
-    marginLeft: 8,
-    minWidth: 20,
+    marginLeft: RFValue(8),
+    minWidth: RFValue(20),
     alignItems: 'center',
     justifyContent: 'center',
   },
-  meta: { fontSize: 12, color: AppColors.MutedText },
+  meta: { fontSize: setResponsiveSize({ size: 10 }), color: AppColors.MutedText },
 })

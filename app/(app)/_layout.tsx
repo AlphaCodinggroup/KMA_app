@@ -3,6 +3,7 @@ import Icon from '@shared/ui/icons/Icon'
 import { Stack, useRouter } from 'expo-router'
 import { useCallback } from 'react'
 import { Pressable } from 'react-native'
+import { RFValue } from 'react-native-responsive-fontsize'
 
 const AppLayout: React.FC = () => {
   const router = useRouter()
@@ -14,9 +15,9 @@ const AppLayout: React.FC = () => {
         hitSlop={12}
         accessibilityRole="button"
         accessibilityLabel="Go back"
-        style={{ paddingRight: 8, paddingLeft: 4 }}
+        style={{ paddingRight: RFValue(8), paddingLeft: RFValue(4) }}
       >
-        <Icon name="chevronLeft" color={AppColors.Primary} size={22} />
+        <Icon name="chevronLeft" color={AppColors.Primary} size={RFValue(22)} />
       </Pressable>
     ),
     [router],
@@ -28,7 +29,7 @@ const AppLayout: React.FC = () => {
         headerShown: true,
         gestureEnabled: true,
         headerStyle: { backgroundColor: AppColors.Background },
-        headerTitleStyle: { fontWeight: 'bold' },
+        headerTitleStyle: { fontWeight: 'bold', fontSize: RFValue(16) },
       }}
     >
       <Stack.Screen
