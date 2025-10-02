@@ -7,7 +7,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   slug: 'kma_app',
   scheme: 'kma',
   version: '1.0.0',
-  orientation: 'portrait',
+  orientation: 'default',
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
   newArchEnabled: true,
@@ -35,12 +35,18 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
 
   ios: {
     bundleIdentifier: 'com.kma.app',
-    supportsTablet: false,
+    supportsTablet: true,
+    requireFullScreen: false,
     infoPlist: {
-      NSCameraUsageDescription: 'Necesitamos la cámara para capturar fotos en formularios.',
-      NSPhotoLibraryUsageDescription:
-        'Necesitamos acceder a tus fotos para adjuntarlas en formularios.',
-      NSPhotoLibraryAddUsageDescription: 'Guardamos fotos capturadas por la app en tu galería.',
+      UISupportedInterfaceOrientations: [
+        'UIInterfaceOrientationPortrait',
+        'UIInterfaceOrientationPortraitUpsideDown',
+        'UIInterfaceOrientationLandscapeLeft',
+        'UIInterfaceOrientationLandscapeRight',
+      ],
+      NSCameraUsageDescription: 'We need the camera to capture photos on forms.',
+      NSPhotoLibraryUsageDescription: 'We need access to your photos to attach them to forms.',
+      NSPhotoLibraryAddUsageDescription: 'We save photos captured by the app to your gallery.',
       UIBackgroundModes: ['fetch'],
     },
   },

@@ -88,7 +88,6 @@ const LoginScreen: React.FC = () => {
           autoCorrect={false}
           textContentType="username"
           returnKeyType="next"
-          blurOnSubmit={false}
           onSubmitEditing={() => pwdRef.current?.focus?.()}
         />
 
@@ -108,6 +107,7 @@ const LoginScreen: React.FC = () => {
           label={submitting ? 'Logging in...' : 'Log In'}
           onPress={handleSubmit(onSubmit)}
           disabled={!isValid || submitting}
+          size="sm"
           style={styles.primaryButton}
         />
 
