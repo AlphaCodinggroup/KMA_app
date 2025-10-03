@@ -32,13 +32,8 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  disabled: {
-    opacity: 0.6,
-  },
-  label: {
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
+  disabled: { opacity: 0.5 },
+  label: { fontWeight: 'bold', textAlign: 'center' },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -50,12 +45,8 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconSpacer: {
-    width: RFValue(22),
-  },
-  fullWidth: {
-    alignSelf: 'stretch',
-  },
+  iconSpacer: { width: RFValue(22) },
+  fullWidth: { alignSelf: 'stretch' },
 })
 
 /** Contenedor por variante */

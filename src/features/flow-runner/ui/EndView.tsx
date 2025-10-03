@@ -9,7 +9,7 @@ const EndView: React.FC<Props> = ({ step, onFinish }) => {
   return (
     <View style={styles.content}>
       <Text style={styles.endMessage}>{step.message}</Text>
-      <PrimaryButton label="Back to selector" onPress={onFinish} />
+      <PrimaryButton label="Back to selector" size="sm" onPress={onFinish} />
     </View>
   )
 }
