@@ -26,7 +26,7 @@ export const FormTextInput = forwardRef<TextInput, Props<any>>(function FormText
             <TextInput
               ref={ref}
               style={[styles.input, hasError && styles.inputError, style]}
-              value={value as any}
+              value={value}
               onChangeText={onChange}
               onBlur={onBlur}
               placeholderTextColor={AppColors.MutedText}

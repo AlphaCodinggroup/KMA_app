@@ -1,5 +1,6 @@
 import { StyleSheet } from 'react-native'
 import { AppColors } from '@shared/ui/colors'
+import { RFValue } from 'react-native-responsive-fontsize'
 
 export const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: AppColors.Background },
@@ -9,5 +10,5 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: AppColors.Background,
   },
-  text: { paddingHorizontal: 16, paddingVertical: 16 },
+  text: { paddingHorizontal: RFValue(16), paddingVertical: RFValue(16) },
 })

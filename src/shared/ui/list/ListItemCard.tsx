@@ -86,18 +86,14 @@ const ListItemCard: React.FC<ListItemCardProps> = ({
 
         <View style={styles.center}>
           {typeof title === 'string' ? (
-            <Text numberOfLines={1} style={[styles.title, titleStyle]}>
-              {title}
-            </Text>
+            <Text style={[styles.title, titleStyle]}>{title}</Text>
           ) : (
             title
           )}
 
           {subtitle ? (
             typeof subtitle === 'string' ? (
-              <Text numberOfLines={1} style={[styles.subtitle, subtitleStyle]}>
-                {subtitle}
-              </Text>
+              <Text style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text>
             ) : (
               subtitle
             )
@@ -105,9 +101,7 @@ const ListItemCard: React.FC<ListItemCardProps> = ({
 
           {description ? (
             typeof description === 'string' ? (
-              <Text numberOfLines={3} style={[styles.description, descriptionStyle]}>
-                {description}
-              </Text>
+              <Text style={[styles.description, descriptionStyle]}>{description}</Text>
             ) : (
               description
             )

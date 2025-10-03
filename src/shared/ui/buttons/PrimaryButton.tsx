@@ -10,9 +10,18 @@ import {
   type TextStyle,
 } from 'react-native'
 import { AppColors } from '../colors'
-import { type ButtonSize, FONTS, H_PADDING, HEIGHTS, styles } from './styles/primaryButton.styles'
-
-export type ButtonVariant = 'primary' | 'outline' | 'danger'
+import {
+  type ButtonSize,
+  type ButtonVariant,
+  FONTS,
+  getVariantContainerStyle,
+  getVariantLabelStyle,
+  H_PADDING,
+  HEIGHTS,
+  styles,
+} from './styles/primaryButton.styles'
+import { RFValue } from 'react-native-responsive-fontsize'
+import { setResponsiveSize } from '../responsive/setResponsiveSize'
 
 export interface PrimaryButtonProps {
   label?: string
@@ -64,8 +73,8 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = ({
           styles.base,
           getVariantContainerStyle(variant),
           {
-            height: HEIGHTS[size],
-            paddingHorizontal: H_PADDING[size],
+            height: RFValue(HEIGHTS[size]),
+            paddingHorizontal: RFValue(H_PADDING[size]),
             opacity: pressed && isPressable ? 0.94 : 1,
           },
           (disabled || loading) && styles.disabled,
@@ -91,7 +100,7 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = ({
               style={[
                 styles.label,
                 getVariantLabelStyle(variant),
-                { fontSize: FONTS[size] },
+                { fontSize: setResponsiveSize({ size: FONTS[size] }) },
                 labelStyle,
               ]}
             >
@@ -109,51 +118,6 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = ({
       </Pressable>
     </View>
   )
-}
-
-/** Contenedor por variante */
-function getVariantContainerStyle(variant: ButtonVariant): ViewStyle {
-  switch (variant) {
-    case 'primary':
-      return {
-        backgroundColor: AppColors.Primary,
-        borderColor: AppColors.Primary,
-      }
-    case 'outline':
-      return {
-        backgroundColor: AppColors.Background,
-        borderColor: AppColors.Border,
-      }
-    case 'danger':
-      return {
-        backgroundColor: AppColors.Error,
-        borderColor: AppColors.Error,
-      }
-    default:
-      return {
-        backgroundColor: AppColors.Primary,
-        borderColor: AppColors.Primary,
-      }
-  }
-}
-
-/** Texto por variante */
-function getVariantLabelStyle(variant: ButtonVariant): TextStyle {
-  switch (variant) {
-    case 'primary':
-    case 'danger':
-      return {
-        color: AppColors.Background,
-      }
-    case 'outline':
-      return {
-        color: AppColors.TextPrimary,
-      }
-    default:
-      return {
-        color: AppColors.Background,
-      }
-  }
 }
 
 export default memo(PrimaryButton)
