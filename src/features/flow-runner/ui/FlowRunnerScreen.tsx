@@ -11,6 +11,7 @@ import { styles } from './styles/flowRunner.styles'
 import { ensureFlowSynced, loadFlowDetail, persistDraft } from '../application/usecases'
 import EndView from './EndView'
 import type { SubmissionAnswer } from '@entities/submission/model'
+import StepIllustration from './StepIllustration'
 
 type Answers = Record<string, SubmissionAnswer>
 
@@ -28,8 +29,9 @@ const FlowRunnerScreen: React.FC = () => {
 
   const [detail, setDetail] = useState<FlowDetail | null>(null)
   const [currentId, setCurrentId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState<boolean>(true)
   const [online, setOnline] = useState<boolean>(true)
+  const [zoomed, setZoomed] = useState<boolean>(false)
 
   const answersRef = useRef<Answers>({})
 
@@ -147,7 +149,8 @@ const FlowRunnerScreen: React.FC = () => {
         <Text style={styles.subtitle}>{detail.version}</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} scrollEnabled={!zoomed}>
+        {current && <StepIllustration stepId={current.id} onZoomChange={setZoomed} />}
         {current && current.type === 'Question' && (
           <QuestionCard
             step={current}
