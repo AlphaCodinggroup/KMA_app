@@ -7,10 +7,11 @@ type Props = {
   step: QuestionStep
   onYes: (payload?: { option?: string }) => void
   onNo: (payload?: { option?: string }) => void
+  onSkip: (step: QuestionStep) => void
 }
 
 /** Presentacional: muestra el texto de la pregunta, opcionalmente opciones, y botones YES/NO */
-function QuestionCardBase({ step, onYes, onNo }: Props) {
+function QuestionCardBase({ step, onYes, onNo, onSkip }: Props) {
   const [selected, setSelected] = useState<string | null>(null)
 
   return (
@@ -50,6 +51,16 @@ function QuestionCardBase({ step, onYes, onNo }: Props) {
           accessibilityLabel="Yes"
         >
           <Text style={[styles.btnText, styles.btnYesText]}>YES</Text>
+        </Pressable>
+      </View>
+      <View>
+        <Pressable
+          onPress={() => onSkip(step)}
+          style={({ pressed }) => [styles.button, styles.btnNo, pressed && styles.btnPressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Next"
+        >
+          <Text style={styles.btnText}>SKIP</Text>
         </Pressable>
       </View>
     </View>

@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react'
-import { View, Text, ActivityIndicator, ScrollView, Alert } from 'react-native'
+import { View, Text, ActivityIndicator, ScrollView, Alert, TouchableOpacity } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import NetInfo from '@react-native-community/netinfo'
@@ -82,6 +82,28 @@ const FlowRunnerScreen: React.FC = () => {
     [stepsById],
   )
 
+  const onSkip = useCallback(
+    async (step: QuestionStep) => {
+      // Guardamos answer: null en el JSON
+      answersRef.current[step.id] = {
+        type: 'Question',
+        answer: null,
+        option: null,
+      }
+      if (detail) {
+        await persistDraft({
+          flowId: detail.flowId,
+          title: detail.title,
+          answers: answersRef.current,
+        })
+      }
+      // Elegimos el próximo paso posible: yesNext > noNext > END/auto
+      const next = step.yesNext ?? step.noNext
+      goToNext(next)
+    },
+    [detail, goToNext],
+  )
+
   const onAnswer = useCallback(
     async (step: QuestionStep, yes: boolean, extra?: { option?: string }) => {
       answersRef.current[step.id] = {
@@ -125,8 +147,11 @@ const FlowRunnerScreen: React.FC = () => {
       //   answers: answersRef.current,
       //   online,
       // })
-      // Alert.alert('OK', online ? 'Shipment completed.' : 'Saved to send when connected.')
-      router.replace('/(app)/selector')
+      if (router.canGoBack()) {
+        router.back()
+      } else {
+        router.replace('/(app)/selector')
+      }
     } catch {
       Alert.alert('Error', 'We were unable to complete the shipment.')
     }
@@ -156,6 +181,7 @@ const FlowRunnerScreen: React.FC = () => {
             step={current}
             onYes={opt => onAnswer(current, true, opt)}
             onNo={opt => onAnswer(current, false, opt)}
+            onSkip={onSkip}
           />
         )}
 
