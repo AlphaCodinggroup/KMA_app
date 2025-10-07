@@ -11,6 +11,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
   newArchEnabled: true,
+  runtimeVersion: { policy: 'sdkVersion' },
 
   splash: {
     image: './assets/splash-icon.png',
@@ -19,8 +20,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
 
   updates: {
-    enabled: false,
-    // checkAutomatically: 'ON_ERROR_RECOVERY',
+    enabled: true,
+    checkAutomatically: 'ON_ERROR_RECOVERY',
   },
 
   plugins: [
@@ -35,7 +36,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
 
   ios: {
     bundleIdentifier: 'com.kma.app',
-    buildNumber: '1',
+    buildNumber: '2',
     supportsTablet: true,
     requireFullScreen: false,
     infoPlist: {

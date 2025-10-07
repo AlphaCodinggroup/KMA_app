@@ -1,5 +1,5 @@
 {
-  "cli": { "version": ">= 14.0.0" },
+  "cli": { "version": ">= 14.0.0", "appVersionSource": "remote" },
   "build": {
     "development": {
       "developmentClient": true,
@@ -8,7 +8,8 @@
       "env": {
         "EXPO_PUBLIC_BACKEND_BASE_URL": "https://api.dev.tu-backend.com",
         "EXPO_PUBLIC_ENV": "development"
-      }
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
@@ -16,7 +17,8 @@
       "env": {
         "EXPO_PUBLIC_BACKEND_BASE_URL": "https://api.staging.tu-backend.com",
         "EXPO_PUBLIC_ENV": "staging"
-      }
+      },
+      "channel": "staging"
     },
     "production": {
       "distribution": "store",
@@ -24,7 +26,8 @@
       "env": {
         "EXPO_PUBLIC_BACKEND_BASE_URL": "https://api.tu-backend.com",
         "EXPO_PUBLIC_ENV": "production"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {
