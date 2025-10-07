@@ -1,9 +1,35 @@
 {
   "cli": { "version": ">= 14.0.0" },
   "build": {
-    "dev": { "developmentClient": true, "distribution": "internal" },
-    "internal": { "developmentClient": true, "distribution": "internal" },
-    "production": { "distribution": "store" }
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": { "simulator": false },
+      "env": {
+        "EXPO_PUBLIC_BACKEND_BASE_URL": "https://api.dev.tu-backend.com",
+        "EXPO_PUBLIC_ENV": "development"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": { "enterpriseProvisioning": "adhoc", "simulator": false },
+      "env": {
+        "EXPO_PUBLIC_BACKEND_BASE_URL": "https://api.staging.tu-backend.com",
+        "EXPO_PUBLIC_ENV": "staging"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "ios": { "image": "latest", "simulator": false },
+      "env": {
+        "EXPO_PUBLIC_BACKEND_BASE_URL": "https://api.tu-backend.com",
+        "EXPO_PUBLIC_ENV": "production"
+      }
+    }
   },
-  "submit": { "production": {} }
+  "submit": {
+    "production": {
+      "ios": {}
+    }
+  }
 }
