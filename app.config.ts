@@ -7,7 +7,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   slug: 'kma_app',
   scheme: 'kma',
   version: '1.0.0',
-  orientation: 'default',
+  orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
   newArchEnabled: true,
@@ -19,8 +19,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
 
   updates: {
-    enabled: true,
-    checkAutomatically: 'ON_ERROR_RECOVERY',
+    enabled: false,
+    // checkAutomatically: 'ON_ERROR_RECOVERY',
   },
 
   plugins: [
@@ -35,19 +35,21 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
 
   ios: {
     bundleIdentifier: 'com.kma.app',
+    buildNumber: '1',
     supportsTablet: true,
     requireFullScreen: false,
     infoPlist: {
-      UISupportedInterfaceOrientations: [
-        'UIInterfaceOrientationPortrait',
-        'UIInterfaceOrientationPortraitUpsideDown',
-        'UIInterfaceOrientationLandscapeLeft',
-        'UIInterfaceOrientationLandscapeRight',
-      ],
+      // UISupportedInterfaceOrientations: [
+      //   'UIInterfaceOrientationPortrait',
+      //   'UIInterfaceOrientationPortraitUpsideDown',
+      //   'UIInterfaceOrientationLandscapeLeft',
+      //   'UIInterfaceOrientationLandscapeRight',
+      // ],
       NSCameraUsageDescription: 'We need the camera to capture photos on forms.',
       NSPhotoLibraryUsageDescription: 'We need access to your photos to attach them to forms.',
       NSPhotoLibraryAddUsageDescription: 'We save photos captured by the app to your gallery.',
-      UIBackgroundModes: ['fetch'],
+      UIBackgroundModes: ['fetch', 'processing'],
+      BGTaskSchedulerPermittedIdentifiers: ['com.kma.app.sync'],
     },
   },
 
@@ -72,6 +74,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     SYNC_BATCH_SIZE: 10,
     RETRY_MAX_ATTEMPTS: 3,
     RETRY_BASE_DELAY_MS: 600,
+    eas: {
+      projectId: '1b6bf518-a922-462a-814e-460280053abf',
+    },
   },
 
   // Tipados de Expo Router (opcional pero útil)
