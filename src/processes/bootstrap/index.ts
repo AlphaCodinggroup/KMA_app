@@ -1,9 +1,8 @@
 import { AppState } from 'react-native'
 import NetInfo from '@react-native-community/netinfo'
 import { initDatabase } from '@shared/storage/db'
-import { readJsonSecure } from '@shared/storage/secure'
 import { registerBackgroundSync, unregisterBackgroundSync } from '@shared/workers/background'
-import { setSessionTokens } from '@shared/session/session'
+import { initSession, subscribe } from '@shared/session/session'
 import { SyncService, type OutboxRepo, type OutboxItem } from '@processes/sync/SyncService'
 
 let _bootPromise: Promise<void> | null = null
@@ -22,28 +21,25 @@ const NoopOutboxRepo: OutboxRepo = {
   },
 }
 
-// Dispatcher mínimo (cuando haya backend: inyectar aquí)
+// Dispatcher mínimo
 async function dispatchItem(_item: OutboxItem) {
   // TODO: implementar envío real (HTTP + idempotencia)
   return 'success' as const
 }
 
-const sync = new SyncService({
-  outbox: NoopOutboxRepo,
-  dispatch: dispatchItem,
-})
+const sync = new SyncService({ outbox: NoopOutboxRepo, dispatch: dispatchItem })
 
 export async function bootstrapApp(): Promise<void> {
   if (_bootPromise) return _bootPromise
 
   _bootPromise = (async () => {
+    // Infra base primero
     await initDatabase()
 
-    // Rehidratación de sesión (login sigue desactivado, dejamos tokens si existieran)
-    const storedTokens = await readJsonSecure('sessionTokens').catch(() => null)
-    setSessionTokens(storedTokens ?? {})
+    // Rehidratación de sesión
+    await initSession()
 
-    // Triggers de ciclo de vida
+    // Triggers de ciclo de vida → encolar sync
     const appStateSub = AppState.addEventListener('change', state => {
       if (state === 'active') sync.queue()
     })
@@ -52,11 +48,24 @@ export async function bootstrapApp(): Promise<void> {
       if (state.isConnected) sync.queue()
     })
 
+    // Eventos de sesión: encolar sync en login/refresh. En logout, limpiar procesos si hace falta
+    const unsubSession = subscribe(e => {
+      if (e.type === 'login' || e.type === 'refresh') {
+        sync.queue()
+      }
+      if (e.type === 'logout') {
+        // En caso de implementar workers dependientes de sesión, cancelarlos aquí
+      }
+    })
+
+    // Background fetch
     await registerBackgroundSync(() => sync.runOnce())
 
+    // Cleanup centralizado
     _cleanup = () => {
       appStateSub.remove()
       netUnsub && netUnsub()
+      unsubSession()
       unregisterBackgroundSync().catch(() => void 0)
     }
 

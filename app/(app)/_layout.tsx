@@ -4,6 +4,7 @@ import { Stack, useRouter } from 'expo-router'
 import { useCallback } from 'react'
 import { Pressable } from 'react-native'
 import { RFValue } from 'react-native-responsive-fontsize'
+import AuthGuard from '@processes/auth-guard'
 
 const AppLayout: React.FC = () => {
   const router = useRouter()
@@ -24,43 +25,45 @@ const AppLayout: React.FC = () => {
   )
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: true,
-        gestureEnabled: true,
-        headerStyle: { backgroundColor: AppColors.Background },
-        headerTitleStyle: { fontWeight: 'bold', fontSize: RFValue(16) },
-      }}
-    >
-      <Stack.Screen
-        name="projects"
-        options={{ title: 'Select Project', headerBackVisible: false }}
-      />
-      <Stack.Screen
-        name="buildings"
-        options={{
-          title: 'Select Buildings',
-          headerLeft: BackButton,
-          headerBackVisible: false,
+    <AuthGuard>
+      <Stack
+        screenOptions={{
+          headerShown: true,
+          gestureEnabled: true,
+          headerStyle: { backgroundColor: AppColors.Background },
+          headerTitleStyle: { fontWeight: 'bold', fontSize: RFValue(16) },
         }}
-      />
-      <Stack.Screen
-        name="selector"
-        options={{
-          title: 'Audit Type',
-          headerLeft: BackButton,
-          headerBackVisible: false,
-        }}
-      />
-      <Stack.Screen
-        name="flow/[flowId]"
-        options={{
-          title: 'Inspection',
-          headerLeft: BackButton,
-          headerBackVisible: false,
-        }}
-      />
-    </Stack>
+      >
+        <Stack.Screen
+          name="projects"
+          options={{ title: 'Select Project', headerBackVisible: false }}
+        />
+        <Stack.Screen
+          name="buildings"
+          options={{
+            title: 'Select Buildings',
+            headerLeft: BackButton,
+            headerBackVisible: false,
+          }}
+        />
+        <Stack.Screen
+          name="selector"
+          options={{
+            title: 'Audit Type',
+            headerLeft: BackButton,
+            headerBackVisible: false,
+          }}
+        />
+        <Stack.Screen
+          name="flow/[flowId]"
+          options={{
+            title: 'Inspection',
+            headerLeft: BackButton,
+            headerBackVisible: false,
+          }}
+        />
+      </Stack>
+    </AuthGuard>
   )
 }
 

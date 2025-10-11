@@ -1,4 +1,4 @@
-import { http } from '@shared/api/http'
+// import { http } from '@shared/api/http'
 import { ensureWebImage, type WebImage } from '@features/camera/application/ensureWebImage'
 import type { SubmissionDraft, SubmissionAnswer } from '@entities/submission/model'
 
@@ -72,10 +72,10 @@ export async function submitSubmissionMultipart(
   endpoint: string = `/flows/${draft.flowId}/submit`,
 ): Promise<void> {
   const { formData } = await buildSubmissionMultipart(draft)
-  await http.post(endpoint, formData, {
-    // Importante: en React Native, axios arma el boundary.
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
+  // await http.post(endpoint, formData, {
+  //   // Importante: en React Native, axios arma el boundary.
+  //   headers: { 'Content-Type': 'multipart/form-data' },
+  // })
 }
 
 //! JSON QUE RECIBE BACKEND (VER SI HAY QUE MODIFICAR ALGO)

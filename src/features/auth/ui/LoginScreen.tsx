@@ -7,6 +7,9 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { FormTextInput } from '@shared/ui/forms/FormTextInput'
 import { styles } from './login.styles'
 import PrimaryButton from '@shared/ui/buttons/PrimaryButton'
+import { loginUseCase } from '@features/auth/application/usecases'
+import { saveSession } from '@shared/session/session'
+import { normalizeAuthError } from '../lib/utils'
 
 // Cuando activemos backend real, movemos el schema a model/
 const LoginSchema = z.object({
@@ -17,16 +20,14 @@ const LoginSchema = z.object({
     .max(30, 'Maximum 30 characters.'),
   password: z.string().min(6, 'Minimum 6 characters.'),
 })
-type LoginForm = z.infer<typeof LoginSchema>
 
-// import { loginUseCase } from '../application/usecases' // real
-// import { setSessionTokens } from '@shared/session/session'
-// import { configureHttp } from '@shared/api/http' // para inyectar tokens/refresh
+type LoginForm = z.infer<typeof LoginSchema>
 
 const LoginScreen: React.FC = () => {
   const router = useRouter()
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const pwdRef = useRef(null)
 
   const {
     control,
@@ -38,30 +39,17 @@ const LoginScreen: React.FC = () => {
     defaultValues: { username: '', password: '' },
   })
 
-  // refs para “siguiente campo”
-  const pwdRef = useRef<any>(null)
-
   const onSubmit = useCallback(
     async (data: LoginForm) => {
       if (submitting) return
       setSubmitting(true)
       setSubmitError(null)
       try {
-        // Lógica real comentada por ahora
-        // const tokens = await loginUseCase(data.email, data.password)
-        // await setSessionTokens(tokens)
-        // configureHttp({
-        //   getAccessToken: () => tokens.accessToken,
-        //   refreshToken: async () => {
-        //     const refreshed = await refreshSessionTokens()
-        //     return refreshed?.accessToken
-        //   },
-        // })
-
-        // Navegación temporal mientras el login real está desactivado
+        const tokens = await loginUseCase(data.username.trim(), data.password)
+        await saveSession(tokens)
         router.replace('/(app)/projects')
       } catch (e) {
-        setSubmitError('Invalid credentials or network error.')
+        setSubmitError(normalizeAuthError(e))
       } finally {
         setSubmitting(false)
       }
