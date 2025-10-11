@@ -1,90 +1,160 @@
-import axios from 'axios'
-import { ENV } from '@shared/config/env'
-import { readJsonSecure, writeJsonSecure, deleteSecure } from '@shared/storage/secure'
+import { AppState } from 'react-native'
+import { refreshTokensUseCase, type LoginTokens } from '@features/auth/application/usecases'
+import { SessionError, type SessionRecord } from '@entities/user/model'
+import type { UserSessionRepo } from '@entities/user/ports'
+import { createUserSessionSecureRepo } from '@core/repos/user.secure-store.repo'
 
-/** Tokens de sesión */
-export type SessionTokens = {
-  accessToken?: string
-  refreshToken?: string
-  /** opcional, si el backend lo provee */
-  expiresAt?: number
+// --- Tipos públicos
+export type SessionSnapshot = {
+  idToken: string | null
+  refreshToken: string | null
+  expiresAt: number | null // epoch ms
 }
 
-const SECURE_SESSION_KEY = 'kma.session'
+export type SessionEvent =
+  | { type: 'login'; snapshot: SessionSnapshot }
+  | { type: 'logout' }
+  | { type: 'refresh'; snapshot: SessionSnapshot }
+  | { type: 'change'; snapshot: SessionSnapshot }
 
-let _tokens: SessionTokens = {}
+// --- Config
+const EXPIRY_SKEW_SEC = 30 // vencer antes para evitar 401 por reloj del dispositivo
 
-/** Setea tokens en memoria y, por defecto, los persiste en SecureStore */
-export function setSessionTokens(tokens?: SessionTokens | null, opts: { persist?: boolean } = {}) {
-  const { persist = true } = opts
-  _tokens = tokens ?? {}
-  if (persist) {
-    if (_tokens.accessToken || _tokens.refreshToken) {
-      writeJsonSecure(SECURE_SESSION_KEY, _tokens).catch(e =>
-        console.warn('[session] writeJsonSecure error:', e),
-      )
-    } else {
-      deleteSecure(SECURE_SESSION_KEY).catch(() => {})
+// --- Dependencias (DI): repo de sesión – por defecto, SecureStore
+let repo: UserSessionRepo = createUserSessionSecureRepo()
+export function setSessionRepo(custom: UserSessionRepo) {
+  repo = custom
+}
+
+// Caché en memoria
+const mem: SessionSnapshot = { idToken: null, refreshToken: null, expiresAt: null }
+
+// Observadores simples
+const listeners = new Set<(e: SessionEvent) => void>()
+function emit(e: SessionEvent) {
+  listeners.forEach(cb => {
+    try {
+      cb(e)
+    } catch {}
+  })
+}
+
+// Control de refresh concurrente
+let inflightRefresh: Promise<string> | null = null
+
+// --- Utilidades
+function isExpired(expiresAt: number | null, skewSec = EXPIRY_SKEW_SEC): boolean {
+  if (!expiresAt) return true
+  return Date.now() >= expiresAt - skewSec * 1000
+}
+
+function snapshot(): SessionSnapshot {
+  return { ...mem }
+}
+
+function toSnapshot(r: SessionRecord | null): SessionSnapshot {
+  if (!r) return { idToken: null, refreshToken: null, expiresAt: null }
+  return { idToken: r.idToken, refreshToken: r.refreshToken, expiresAt: r.expiresAt }
+}
+
+// --- API pública
+export async function initSession(): Promise<SessionSnapshot> {
+  const rec = await repo.read()
+  mem.idToken = rec?.idToken ?? null
+  mem.refreshToken = rec?.refreshToken ?? null
+  mem.expiresAt = rec?.expiresAt ?? null
+
+  // Hook: al volver a foreground, si expira, intentar refresh best-effort
+  AppState.addEventListener('change', state => {
+    if (state === 'active') {
+      if (mem.refreshToken && isExpired(mem.expiresAt)) {
+        void getValidToken().catch(() => {
+          /* noop */
+        })
+      }
     }
+  })
+
+  const snap = snapshot()
+  emit({ type: 'change', snapshot: snap })
+  return snap
+}
+
+export async function saveSession(tokens: LoginTokens): Promise<void> {
+  const rec: SessionRecord = {
+    idToken: tokens.idToken,
+    refreshToken: tokens.refreshToken,
+    expiresAt: tokens.expiresAt,
   }
-}
-
-export function getAccessToken(): string | undefined {
-  return _tokens.accessToken ?? undefined
-}
-
-export function getRefreshToken(): string | undefined {
-  return _tokens.refreshToken ?? undefined
-}
-
-/** Lee SecureStore y deja la sesión en memoria. Útil en bootstrap. */
-export async function loadSessionFromSecure(): Promise<SessionTokens | null> {
   try {
-    const sess = await readJsonSecure<SessionTokens>(SECURE_SESSION_KEY)
-    setSessionTokens(sess ?? {}, { persist: false })
-    return sess ?? null
-  } catch (e) {
-    console.warn('[session] loadSessionFromSecure error:', e)
-    return null
+    await repo.save(rec)
+  } catch (e: any) {
+    if (e?.name === 'SessionError') throw e
+    throw new SessionError('PERSISTENCE_FAILED', String(e?.message ?? e))
   }
+  mem.idToken = rec.idToken
+  mem.refreshToken = rec.refreshToken
+  mem.expiresAt = rec.expiresAt
+  const snap = snapshot()
+  emit({ type: 'login', snapshot: snap })
+  emit({ type: 'change', snapshot: snap })
 }
 
-/** Limpia tokens en memoria y SecureStore */
-export async function clearSessionTokens(): Promise<void> {
-  _tokens = {}
-  await deleteSecure(SECURE_SESSION_KEY).catch(() => {})
+export async function clearSession(): Promise<void> {
+  await repo.clear()
+  mem.idToken = null
+  mem.refreshToken = null
+  mem.expiresAt = null
+  emit({ type: 'logout' })
+  emit({ type: 'change', snapshot: snapshot() })
+}
+
+export function getSnapshot(): SessionSnapshot {
+  return snapshot()
 }
 
 /**
- * Intenta refrescar tokens contra el backend usando el refreshToken actual.
- * - Usa un axios “crudo” (sin interceptores) para evitar dependencias circulares.
- * - Si el refresh es exitoso, persiste nuevos tokens y los devuelve.
- * - Si falla, NO tira error (retorna null). Podés decidir limpiar sesión arriba.
+ * Devuelve un bearer válido.
+ * Si está a punto de expirar/expirado, refresca usando REFRESH_TOKEN_AUTH.
+ * Single-flight: múltiples llamados comparten el mismo refresh en curso.
  */
-export async function refreshSessionTokens(): Promise<SessionTokens | null> {
-  const rt = getRefreshToken()
-  if (!rt) return null
-
-  try {
-    const client = axios.create({
-      baseURL: ENV.BACKEND_BASE_URL,
-      timeout: 12000,
-    })
-
-    // Ajustá el payload según tu backend
-    const res = await client.post(ENV.AUTH_REFRESH_PATH, { refreshToken: rt })
-
-    const next: SessionTokens = {
-      accessToken: res.data?.accessToken,
-      refreshToken: res.data?.refreshToken ?? rt, // conserva RT si no envían uno nuevo
-      expiresAt: res.data?.expiresAt,
-    }
-
-    if (!next.accessToken) return null
-    setSessionTokens(next) // persiste
-    return next
-  } catch (e) {
-    console.warn('[session] refreshSessionTokens error:', e)
-    return null
+export async function getValidToken(): Promise<string> {
+  //token válido en memoria
+  if (mem.idToken && !isExpired(mem.expiresAt)) {
+    return mem.idToken
   }
+
+  //sin refresh token, no podemos recuperar
+  if (!mem.refreshToken) {
+    throw new Error('NotAuthorized: missing refresh token')
+  }
+
+  //refresh single-flight
+  if (!inflightRefresh) {
+    inflightRefresh = (async () => {
+      const next = await refreshTokensUseCase(mem.refreshToken!)
+      // persistimos sólo cambios de idToken/expiración; el refreshToken se conserva
+      const updated: SessionRecord = {
+        idToken: next.idToken,
+        refreshToken: mem.refreshToken!,
+        expiresAt: next.expiresAt,
+      }
+      await repo.save(updated)
+      mem.idToken = updated.idToken
+      mem.expiresAt = updated.expiresAt
+      const snap = toSnapshot(updated)
+      emit({ type: 'refresh', snapshot: snap })
+      emit({ type: 'change', snapshot: snap })
+      return updated.idToken
+    })().finally(() => {
+      inflightRefresh = null
+    })
+  }
+
+  return inflightRefresh
+}
+
+export function subscribe(cb: (e: SessionEvent) => void): () => void {
+  listeners.add(cb)
+  return () => listeners.delete(cb)
 }
