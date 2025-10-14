@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react'
-import { View, Text, ActivityIndicator, ScrollView, Alert, TouchableOpacity } from 'react-native'
+import { View, Text, ActivityIndicator, ScrollView, Alert } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import NetInfo from '@react-native-community/netinfo'
@@ -48,7 +48,7 @@ const FlowRunnerScreen: React.FC = () => {
     setLoading(true)
     try {
       await ensureFlowSynced(flowId) // best-effort
-      const data = await loadFlowDetail(flowId)
+      const data = await loadFlowDetail('flow_ramp_accessibility_verification_20251009190307') //! usar el flowId real de la ruta cuando este el back
       setDetail(data)
       const firstQ = data.steps.find(s => s.type === 'Question')
       setCurrentId(firstQ?.id ?? null)
@@ -138,6 +138,27 @@ const FlowRunnerScreen: React.FC = () => {
     [detail, goToNext],
   )
 
+  // Handler para pasos Select reutilizando QuestionCard
+  const onSelectOption = useCallback(
+    async (stepId: string, payload: { label: string; next: string }) => {
+      // Persistimos como "Question" con answer null + option seleccionada (compatibilidad)
+      answersRef.current[stepId] = {
+        type: 'Question',
+        answer: null,
+        option: payload.label,
+      }
+      if (detail) {
+        await persistDraft({
+          flowId: detail.flowId,
+          title: detail.title,
+          answers: answersRef.current,
+        })
+      }
+      goToNext(payload.next)
+    },
+    [detail, goToNext],
+  )
+
   const onFinish = useCallback(async () => {
     if (!detail) return
     try {
@@ -171,7 +192,7 @@ const FlowRunnerScreen: React.FC = () => {
     <View style={styles.screen}>
       <View style={styles.header}>
         <Text style={styles.title}>{detail.title}</Text>
-        <Text style={styles.subtitle}>{detail.version}</Text>
+        <Text style={styles.subtitle}>v{detail.version}</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} scrollEnabled={!zoomed}>
@@ -190,6 +211,23 @@ const FlowRunnerScreen: React.FC = () => {
             step={current}
             onSubmit={values => onSubmitForm(current, values)}
             capturePhoto={pickOrCapturePhoto}
+          />
+        )}
+
+        {current && current.type === 'Select' && (
+          <QuestionCard
+            step={{
+              id: current.id,
+              type: 'Question',
+              text: current.title ?? current.text ?? '',
+            }}
+            onYes={() => {}}
+            onNo={() => {}}
+            onSkip={onSkip}
+            {...(current.title ? { selectTitle: current.title } : {})}
+            {...(current.text ? { selectText: current.text } : {})}
+            selectOptions={current.options}
+            onSelectOption={opt => void onSelectOption(current.id, opt)}
           />
         )}
 

@@ -1,70 +1,94 @@
 import { z } from 'zod'
 
-/** Fields de formularios dinámicos */
-export const FieldSchema = z.discriminatedUnion('type', [
-  z.object({
-    id: z.string(),
-    type: z.literal('text'),
-    label: z.string(),
-  }),
-  z.object({
-    id: z.string(),
-    type: z.literal('number'),
-    label: z.string(),
-  }),
-  z.object({
-    id: z.string(),
-    type: z.literal('photo'),
-    label: z.string(),
-  }),
-  z.object({
-    id: z.string(),
-    type: z.literal('button'),
-    label: z.string(),
-  }),
-])
-export type Field = z.infer<typeof FieldSchema>
+/**
+ * Tipos de campo permitidos en formularios dinámicos.
+ */
+export const FieldTypeSchema = z.enum(['text', 'number', 'photo', 'button'])
+export type FieldType = z.infer<typeof FieldTypeSchema>
 
-/** Steps */
+/* --------------------------------- Form ---------------------------------- */
+
+export const FormFieldSchema = z.object({
+  id: z.string(),
+  type: FieldTypeSchema,
+  label: z.string(),
+})
+export type FormField = z.infer<typeof FormFieldSchema>
+
+export const FormStepSchema = z.object({
+  id: z.string(),
+  type: z.literal('Form'),
+  title: z.string(),
+  next: z.string().optional(),
+  // barrierId no se usaba en UI; si en el futuro hace falta, descomentar:
+  // barrierId: z.string().optional(),
+  fields: z.array(FormFieldSchema).min(1),
+})
+export type FormStep = z.infer<typeof FormStepSchema>
+
+/* ------------------------------- Question -------------------------------- */
+
 export const QuestionStepSchema = z.object({
   id: z.string(),
   type: z.literal('Question'),
   text: z.string(),
   yesNext: z.string().optional(),
   noNext: z.string().optional(),
-  options: z.array(z.string()).optional(),
+  // barrierId: z.string().optional(), // disponible en dominio pero omitido en FlowDetail actual
 })
+export type QuestionStep = z.infer<typeof QuestionStepSchema>
 
-export const FormStepSchema = z.object({
-  id: z.string(),
-  type: z.literal('Form'),
-  title: z.string(),
-  fields: z.array(FieldSchema),
-  next: z.string().optional(),
+/* -------------------------------- Select --------------------------------- */
+
+export const SelectOptionSchema = z.object({
+  label: z.string(),
+  next: z.string(),
 })
+export type SelectOption = z.infer<typeof SelectOptionSchema>
+
+export const SelectStepSchema = z.object({
+  id: z.string(),
+  type: z.literal('Select'),
+  title: z.string().optional(),
+  text: z.string().optional(),
+  options: z.array(SelectOptionSchema).min(1),
+})
+export type SelectStep = z.infer<typeof SelectStepSchema>
+
+/* ---------------------------------- End ---------------------------------- */
 
 export const EndStepSchema = z.object({
   id: z.string(),
   type: z.literal('End'),
-  message: z.string(),
 })
+export type EndStep = z.infer<typeof EndStepSchema>
 
+/* ------------------------- Unión discriminada Step ------------------------ */
+/**
+ * Discriminated union por "type" para inferencia exhaustiva en la UI.
+ */
 export const StepSchema = z.discriminatedUnion('type', [
   QuestionStepSchema,
   FormStepSchema,
+  SelectStepSchema,
   EndStepSchema,
 ])
-
-export type QuestionStep = z.infer<typeof QuestionStepSchema>
-export type FormStep = z.infer<typeof FormStepSchema>
-export type EndStep = z.infer<typeof EndStepSchema>
 export type Step = z.infer<typeof StepSchema>
 
-/** Detalle de Flow completo */
+/* ------------------------------ FlowDetail ------------------------------- */
+
 export const FlowDetailSchema = z.object({
   flowId: z.string(),
   title: z.string(),
   version: z.string(),
-  steps: z.array(StepSchema),
+  // description?: si hiciera falta en la UI, se puede agregar luego
+  steps: z.array(StepSchema).min(1),
 })
 export type FlowDetail = z.infer<typeof FlowDetailSchema>
+
+/* ---------------------------- Type Guards (opc) --------------------------- */
+
+export const isQuestionStep = (s: Step): s is QuestionStep => s.type === 'Question'
+export const isFormStep = (s: Step): s is FormStep => s.type === 'Form'
+export const isSelectStep = (s: Step): s is SelectStep => s.type === 'Select'
+export const isEndStep = (s: Step): s is EndStep => s.type === 'End'
