@@ -1,34 +1,89 @@
 import NetInfo from '@react-native-community/netinfo'
 import type { FlowDetail } from '@shared/validation/steps.schema'
-
-// Mocks actuales
-import { allFlows, flowDetail as defaultFlowDetail } from '@shared/mocks/flows'
-
-// Submissions API
 import type { SubmissionAnswer, SubmissionDraft } from '@entities/submission/model'
 import { submitSubmissionMultipart, buildSubmissionMultipart } from '@shared/api/submissions.api'
+import type { Flow, Step } from '@entities/flow/model'
+import { createHttpFlowRepo } from '../data/flow.repo.http'
 
-// TODO real: repos/servicios
-// import { FlowRepo } from '@core/repos/flowRepo'
-// import { OutboxRepo } from '@core/repos/outboxRepo'
-// import { FileStore } from '@shared/storage/files'
+// Instancia del repositorio HTTP
+const flowRepo = createHttpFlowRepo()
 
-/** Best-effort: asegurar que el flow esté actualizado/local antes de ejecutar. */
+/** Best-effort: asegurar que el flow esté actualizado/local antes de ejecutar.
+ */
 export async function ensureFlowSynced(flowId: string): Promise<void> {
-  console.log({ flowId })
-  // En real: si hay red -> GET /flows/{id} y persistir en SQLite
-  // Por ahora con mocks no hace nada.
-  await Promise.resolve()
+  // En una versión con cache/SQLite: verificar staleness y refrescar.
+  void flowId
+  return Promise.resolve()
 }
 
-/** Carga detalle del flow (mock first). */
+/** Mapper de dominio → FlowDetail */
+function mapToFlowDetail(flow: Flow): FlowDetail {
+  return {
+    flowId: flow.id,
+    title: flow.title,
+    version: String(flow.version),
+    steps: flow.steps.map(mapStepToDetail),
+  }
+}
+
+/** Paso: dominio → FlowDetail.Step */
+function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
+  switch (step.type) {
+    case 'Question': {
+      return {
+        id: step.id,
+        type: 'Question',
+        text: step.text,
+        yesNext: step.yesNext,
+        noNext: step.noNext,
+      }
+    }
+    case 'Form': {
+      return {
+        id: step.id,
+        type: 'Form',
+        title: step.title,
+        next: step.next,
+        fields: step.fields.map(f => ({
+          id: f.id,
+          type: f.type,
+          label: f.label,
+        })),
+      }
+    }
+    case 'Select': {
+      return {
+        id: step.id,
+        type: 'Select',
+        title: step.title,
+        text: step.text,
+        options: step.options.map(o => ({ label: o.label, next: o.next })),
+      }
+    }
+    case 'End': {
+      return {
+        id: step.id,
+        type: 'End',
+      }
+    }
+    default: {
+      const _exhaustive: never = step as never
+      throw new Error(`mapStepToDetail: Tipo de Step no soportado: ${_exhaustive}`)
+    }
+  }
+}
+
+/** Carga detalle del flow desde la API (sin mocks). */
 export async function loadFlowDetail(flowId: string): Promise<FlowDetail> {
-  const found = allFlows.flows.find(f => f.flowId === flowId)
-  const data = found ?? defaultFlowDetail
-  return data
+  const flow = await flowRepo.getById(flowId)
+  if (!flow) {
+    // Si la API no trae el id solicitado, devolvemos error explícito.
+    throw new Error(`Flow ${flowId} no encontrado`)
+  }
+  return mapToFlowDetail(flow)
 }
 
-/** Guarda borrador localmente (mock). En real -> SQLite submissions.drafts */
+/** Guarda borrador localmente (mock mínimo). En real → SQLite submissions.drafts */
 export async function persistDraft(params: {
   flowId: string
   title: string
@@ -68,7 +123,6 @@ export async function finalizeSubmission(params: {
     return
   }
 
-  // Offline → Outbox (mock)
-  // En real: OutboxRepo.enqueue({ kind:'submission', body:draft, idempotencyKey: uuidv4() })
+  // Offline → Outbox (placeholder). En real: OutboxRepo.enqueue(...)
   console.log('[OUTBOX] Enqueued submission (offline):', JSON.stringify(draft, null, 2))
 }
