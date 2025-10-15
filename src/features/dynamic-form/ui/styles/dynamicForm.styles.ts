@@ -23,30 +23,11 @@ export const styles = StyleSheet.create({
     fontSize: setResponsiveSize({ size: 10 }),
   },
   photoRow: { flexDirection: 'row', alignItems: 'center', gap: RFValue(12) },
-  photoThumb: {
-    width: RFValue(100),
-    height: RFValue(100),
-    borderRadius: RFValue(8),
-    backgroundColor: AppColors.SurfaceAlt,
-  },
   button: {
     borderRadius: RFValue(12),
     paddingVertical: RFValue(14),
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-  },
-  smallBtn: {
-    borderRadius: RFValue(8),
-    paddingVertical: RFValue(8),
-    paddingHorizontal: RFValue(12),
-    borderWidth: StyleSheet.hairlineWidth,
-    backgroundColor: '#F9FAFB',
-    borderColor: AppColors.Border,
-  },
-  smallBtnText: {
-    color: AppColors.Primary,
-    fontWeight: 'bold',
-    fontSize: setResponsiveSize({ size: 12 }),
   },
   primaryBtn: { backgroundColor: AppColors.Primary, borderColor: AppColors.Primary },
   primaryBtnText: {
@@ -55,9 +36,6 @@ export const styles = StyleSheet.create({
     fontSize: setResponsiveSize({ size: 12 }),
   },
   secondaryBtn: { backgroundColor: AppColors.Background, borderColor: AppColors.Border },
-  btnText: {
-    color: AppColors.Primary,
-    fontWeight: 'bold',
-  },
+  btnText: { color: AppColors.Primary, fontWeight: 'bold' },
   btnPressed: { opacity: 0.5 },
 })
