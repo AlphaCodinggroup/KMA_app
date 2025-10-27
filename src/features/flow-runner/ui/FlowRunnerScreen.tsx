@@ -4,13 +4,18 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import NetInfo from '@react-native-community/netinfo'
 import type { FlowDetail, Step, QuestionStep, FormStep } from '@shared/validation/steps.schema'
+import type { SubmissionAnswer } from '@entities/submission/model'
 import { QuestionCard } from '@features/question'
 import { DynamicForm } from '@features/dynamic-form'
 import { pickOrCapturePhoto } from '@features/camera'
 import { styles } from './styles/flowRunner.styles'
-import { ensureFlowSynced, loadFlowDetail, persistDraft } from '../application/usecases'
+import {
+  ensureFlowSynced,
+  finalizeSubmission,
+  loadFlowDetail,
+  persistDraft,
+} from '../application/usecases'
 import EndView from './EndView'
-import type { SubmissionAnswer } from '@entities/submission/model'
 import StepIllustration from './StepIllustration'
 
 type Answers = Record<string, SubmissionAnswer>
@@ -32,14 +37,18 @@ const FlowRunnerScreen: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true)
   const [online, setOnline] = useState<boolean>(true)
   const [zoomed, setZoomed] = useState<boolean>(false)
+  const [submitting, setSubmitting] = useState<boolean>(false)
 
+  // answersRef va acumulando todas las respuestas/valores/fotos del flujo
   const answersRef = useRef<Answers>({})
 
   // Estado de red (para feedback/decisiones de envío)
   useFocusEffect(
     useCallback(() => {
       const sub = NetInfo.addEventListener(s => setOnline(!!s.isConnected))
-      return () => sub && sub()
+      return () => {
+        sub && sub()
+      }
     }, []),
   )
 
@@ -47,12 +56,18 @@ const FlowRunnerScreen: React.FC = () => {
   const boot = useCallback(async () => {
     setLoading(true)
     try {
-      await ensureFlowSynced(flowId) // best-effort
-      const data = await loadFlowDetail('flow_ramp_accessibility_verification_20251009190307') //! usar el flowId real de la ruta cuando este el back
+      // Sincronizamos catálogo/detalle offline-first (best effort)
+      await ensureFlowSynced(flowId)
+
+      // TODO: usar flowId real cuando esté disponible desde router
+      const data = await loadFlowDetail('flow_ramp_accessibility_verification_20251009190307')
       setDetail(data)
+
+      // Paso inicial = primer Question encontrada
       const firstQ = data.steps.find(s => s.type === 'Question')
       setCurrentId(firstQ?.id ?? null)
-    } catch {
+    } catch (err) {
+      console.warn('[FlowRunnerScreen.boot] error loading flow', err)
       Alert.alert('Error', 'The stream could not be loaded.')
     } finally {
       setLoading(false)
@@ -70,6 +85,7 @@ const FlowRunnerScreen: React.FC = () => {
   const goToNext = useCallback(
     (next?: string) => {
       let target: string | null = null
+
       if (!next) {
         target = stepsById['END'] ? 'END' : null
       } else if (next === 'END') {
@@ -77,6 +93,7 @@ const FlowRunnerScreen: React.FC = () => {
       } else {
         target = stepsById[next] ? next : stepsById['END'] ? 'END' : null
       }
+
       setCurrentId(target)
     },
     [stepsById],
@@ -90,6 +107,7 @@ const FlowRunnerScreen: React.FC = () => {
         answer: null,
         option: null,
       }
+
       if (detail) {
         await persistDraft({
           flowId: detail.flowId,
@@ -97,6 +115,7 @@ const FlowRunnerScreen: React.FC = () => {
           answers: answersRef.current,
         })
       }
+
       // Elegimos el próximo paso posible: yesNext > noNext > END/auto
       const next = step.yesNext ?? step.noNext
       goToNext(next)
@@ -111,6 +130,7 @@ const FlowRunnerScreen: React.FC = () => {
         answer: yes ? 'YES' : 'NO',
         ...(extra?.option ? { option: extra.option } : {}),
       }
+
       if (detail) {
         await persistDraft({
           flowId: detail.flowId,
@@ -118,6 +138,7 @@ const FlowRunnerScreen: React.FC = () => {
           answers: answersRef.current,
         })
       }
+
       goToNext(yes ? step.yesNext : step.noNext)
     },
     [detail, goToNext],
@@ -126,6 +147,7 @@ const FlowRunnerScreen: React.FC = () => {
   const onSubmitForm = useCallback(
     async (step: FormStep, values: Record<string, unknown>) => {
       answersRef.current[step.id] = { type: 'Form', values }
+
       if (detail) {
         await persistDraft({
           flowId: detail.flowId,
@@ -133,12 +155,13 @@ const FlowRunnerScreen: React.FC = () => {
           answers: answersRef.current,
         })
       }
+
       goToNext(step.next)
     },
     [detail, goToNext],
   )
 
-  // Handler para pasos Select reutilizando QuestionCard
+  // Handler para pasos de tipo "Select" reutilizando QuestionCard
   const onSelectOption = useCallback(
     async (stepId: string, payload: { label: string; next: string }) => {
       // Persistimos como "Question" con answer null + option seleccionada (compatibilidad)
@@ -147,6 +170,7 @@ const FlowRunnerScreen: React.FC = () => {
         answer: null,
         option: payload.label,
       }
+
       if (detail) {
         await persistDraft({
           flowId: detail.flowId,
@@ -154,30 +178,52 @@ const FlowRunnerScreen: React.FC = () => {
           answers: answersRef.current,
         })
       }
+
       goToNext(payload.next)
     },
     [detail, goToNext],
   )
 
+  /**
+   * onFinish:
+   * - Si está offline => se encola para sync posterior (finalizeSubmission se encarga).
+   * - Si está online => sube fotos a S3 (PUT presignadas), luego POST /audits al backend.
+   *
+   * Navegación:
+   * - Si hay historial volvemos atrás.
+   * - Si no, mandamos al selector.
+   */
   const onFinish = useCallback(async () => {
     if (!detail) return
+    if (submitting) return
+
     try {
-      // await finalizeSubmission({
-      //   flowId: detail.flowId,
-      //   title: detail.title,
-      //   answers: answersRef.current,
-      //   online,
-      // })
+      setSubmitting(true)
+
+      await finalizeSubmission({
+        flowId: detail.flowId,
+        title: detail.title,
+        answers: answersRef.current,
+        online,
+        // TODO: wire real project/facility IDs cuando el usuario seleccione dónde audita
+        projectId: 'p4a51',
+        facilityId: 'f_7fc49228-e68d-4a51-b805',
+      })
+
       if (router.canGoBack()) {
         router.back()
       } else {
         router.replace('/(app)/selector')
       }
-    } catch {
+    } catch (err) {
+      console.warn('[FlowRunnerScreen.onFinish] finalizeSubmission error', err)
       Alert.alert('Error', 'We were unable to complete the shipment.')
+    } finally {
+      setSubmitting(false)
     }
-  }, [detail, router])
+  }, [detail, online, router, submitting])
 
+  // Loading state inicial / fallback si no hay steps
   if (loading || !detail || !currentId) {
     return (
       <View style={styles.center}>
@@ -197,6 +243,7 @@ const FlowRunnerScreen: React.FC = () => {
 
       <ScrollView contentContainerStyle={styles.content} scrollEnabled={!zoomed}>
         {current && <StepIllustration stepId={current.id} onZoomChange={setZoomed} />}
+
         {current && current.type === 'Question' && (
           <QuestionCard
             step={current}
