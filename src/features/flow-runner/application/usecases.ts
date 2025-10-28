@@ -546,8 +546,6 @@ export async function finalizeSubmission(params: {
     answers: answersForApi,
   }
 
-  console.log({ body })
-
   await request({
     method: 'POST',
     url: '/audits',

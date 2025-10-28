@@ -278,7 +278,7 @@ const FlowRunnerScreen: React.FC = () => {
           />
         )}
 
-        {current && current.type === 'End' && <EndView step={current} onFinish={onFinish} />}
+        {current && current.type === 'End' && <EndView onFinish={onFinish} loading={submitting} />}
       </ScrollView>
     </View>
   )
