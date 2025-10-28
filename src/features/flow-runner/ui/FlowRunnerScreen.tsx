@@ -46,9 +46,7 @@ const FlowRunnerScreen: React.FC = () => {
   useFocusEffect(
     useCallback(() => {
       const sub = NetInfo.addEventListener(s => setOnline(!!s.isConnected))
-      return () => {
-        sub && sub()
-      }
+      return () => sub && sub()
     }, []),
   )
 

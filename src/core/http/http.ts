@@ -168,8 +168,6 @@ export async function request<T = unknown>(cfg: AxiosRequestConfig): Promise<T> 
  * Sube un binario (ej. foto) a una URL presignada de S3.
  *
  * - Usa axios directo SIN interceptores de Authorization.
- *   El RFC especifica que el PUT hacia upload_url NO debe llevar Authorization
- *   porque la URL ya está firmada con credenciales temporales.
  *
  * - Content-Type debe coincidir con el tipo real (image/png, image/jpeg, etc.).
  *
