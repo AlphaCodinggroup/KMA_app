@@ -11,6 +11,7 @@ import {
 import { AppColors } from '../colors'
 import { styles } from './styles/listItemCard.styles'
 import Icon from '../icons/Icon'
+import { RFValue } from 'react-native-responsive-fontsize'
 
 export interface ListItemCardProps {
   title: string | React.ReactNode
@@ -124,7 +125,7 @@ const ListItemCard: React.FC<ListItemCardProps> = ({
           ) : right ? (
             right
           ) : chevron && isPressable ? (
-            <Icon name="chevronRight" size={22} color={AppColors.IconMuted} />
+            <Icon name="chevronRight" size={RFValue(16)} color={AppColors.IconMuted} />
           ) : null}
         </View>
       </Pressable>
