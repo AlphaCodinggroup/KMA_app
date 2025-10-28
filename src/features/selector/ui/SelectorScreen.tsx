@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { View, ActivityIndicator } from 'react-native'
+import { View, ActivityIndicator, Alert } from 'react-native'
 import { useRouter } from 'expo-router'
 import type { Flow, FlowSummary } from '@entities/flow/model'
 import { loadAllFlowsWithSteps, coldSyncAllFlows } from '@features/selector/application/usecases'
 import { styles } from './styles/selector.styles'
-import FlowList from './FlowList'
+import FlowList, { type FlowListItem } from './FlowList'
 import SubHeadline from '@shared/ui/subheadline/subHeadline'
 import LetterFilter from './LetterFilter'
 import { getKeyLetter, type LetterKey } from '../lib/getKeyLetter'
@@ -47,15 +47,30 @@ const SelectorScreen: React.FC = () => {
   )
 
   const onPressItem = useCallback(
-    (item: FlowSummary) => {
-      // Navegación actual: por ahora solo por id/título.
-      // Más adelante pasaremos steps o flow completo por params.
+    (item: FlowListItem) => {
+      // Si ya tenemos un Flow completo, lo usamos; si no, resolvemos por id
+      const flow = (item as Flow).flowId
+        ? (item as Flow)
+        : flows.find(f => f.flowId === (item as FlowSummary).id)
+      if (!flow) {
+        Alert.alert('Flow no disponible', 'No se pudo localizar el flujo seleccionado en memoria.')
+        return
+      }
+
+      // Enviar steps (camelCase) como string JSON en params
+      const stepsParam = JSON.stringify(flow.steps)
+
       router.push({
         pathname: '/(app)/flow/[flowId]',
-        params: { flowId: item.id, title: item.title },
+        params: {
+          flowId: flow.flowId,
+          title: flow.flowType,
+          steps: stepsParam,
+          description: flow.description || '',
+        },
       })
     },
-    [router],
+    [flows, router],
   )
 
   // Letras únicas disponibles (derivadas del backend)

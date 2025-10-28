@@ -9,17 +9,13 @@ import { QuestionCard } from '@features/question'
 import { DynamicForm } from '@features/dynamic-form'
 import { pickOrCapturePhoto } from '@features/camera'
 import { styles } from './styles/flowRunner.styles'
-import {
-  ensureFlowSynced,
-  finalizeSubmission,
-  loadFlowDetail,
-  persistDraft,
-} from '../application/usecases'
+import { finalizeSubmission, persistDraft } from '../application/usecases'
 import EndView from './EndView'
 import StepIllustration from './StepIllustration'
 
-type Answers = Record<string, SubmissionAnswer>
-
+// --------------------
+// Helpers
+// --------------------
 function mapById(steps: Step[]): Record<string, Step> {
   return steps.reduce<Record<string, Step>>((acc, s) => {
     acc[s.id] = s
@@ -27,10 +23,28 @@ function mapById(steps: Step[]): Record<string, Step> {
   }, {})
 }
 
+function isValidStepsPayload(v: unknown): v is Step[] {
+  return (
+    Array.isArray(v) &&
+    v.every(
+      s => s && typeof s === 'object' && typeof s.id === 'string' && typeof s.type === 'string',
+    )
+  )
+}
+
 const FlowRunnerScreen: React.FC = () => {
   const router = useRouter()
-  const { flowId: rawFlowId } = useLocalSearchParams<{ flowId?: string | string[] }>()
-  const flowId: string = Array.isArray(rawFlowId) ? (rawFlowId[0] ?? '') : (rawFlowId ?? '')
+  const {
+    flowId,
+    title,
+    steps: rawSteps,
+    description,
+  } = useLocalSearchParams<{
+    flowId: string
+    title: string
+    steps?: string | string[]
+    description: string
+  }>()
 
   const [detail, setDetail] = useState<FlowDetail | null>(null)
   const [currentId, setCurrentId] = useState<string | null>(null)
@@ -40,7 +54,7 @@ const FlowRunnerScreen: React.FC = () => {
   const [submitting, setSubmitting] = useState<boolean>(false)
 
   // answersRef va acumulando todas las respuestas/valores/fotos del flujo
-  const answersRef = useRef<Answers>({})
+  const answersRef = useRef<Record<string, SubmissionAnswer>>({})
 
   // Estado de red (para feedback/decisiones de envío)
   useFocusEffect(
@@ -50,27 +64,46 @@ const FlowRunnerScreen: React.FC = () => {
     }, []),
   )
 
-  // Carga + sync automática al ingresar
+  // Boot a partir de params.steps (JSON string)
   const boot = useCallback(async () => {
     setLoading(true)
     try {
-      // Sincronizamos catálogo/detalle offline-first (best effort)
-      await ensureFlowSynced(flowId)
+      const stepsStr = Array.isArray(rawSteps) ? rawSteps[0] : rawSteps
+      if (!stepsStr) throw new Error('Missing steps payload in navigation params')
 
-      // TODO: usar flowId real cuando esté disponible desde router
-      const data = await loadFlowDetail('flow_ramp_accessibility_verification_20251009190307')
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(stepsStr)
+      } catch (e) {
+        throw new Error(`Invalid steps JSON in navigation params, ${e}`)
+      }
+
+      if (!isValidStepsPayload(parsed)) {
+        throw new Error('Steps payload does not match expected shape')
+      }
+
+      const steps = parsed as Step[]
+      // Construimos el FlowDetail local (no dependemos de GET en esta pantalla)
+      const data: FlowDetail = {
+        flowId,
+        title,
+        steps,
+        description,
+      }
+
       setDetail(data)
 
-      // Paso inicial = primer Question encontrada
+      // Paso inicial = primera Question encontrada si existe; si no, primer step o END
       const firstQ = data.steps.find(s => s.type === 'Question')
-      setCurrentId(firstQ?.id ?? null)
+      setCurrentId(firstQ?.id ?? data.steps[0]?.id ?? null)
     } catch (err) {
-      console.warn('[FlowRunnerScreen.boot] error loading flow', err)
-      Alert.alert('Error', 'The stream could not be loaded.')
+      console.warn('[FlowRunnerScreen.boot] error reading steps from params', err)
+      Alert.alert('Error', 'The flow could not be loaded from the provided steps.')
+      if (router.canGoBack()) router.back()
     } finally {
       setLoading(false)
     }
-  }, [flowId])
+  }, [description, flowId, rawSteps, router, title])
 
   useFocusEffect(
     useCallback(() => {
@@ -85,11 +118,11 @@ const FlowRunnerScreen: React.FC = () => {
       let target: string | null = null
 
       if (!next) {
-        target = stepsById['END'] ? 'END' : null
+        target = stepsById.END ? 'END' : null
       } else if (next === 'END') {
         target = 'END'
       } else {
-        target = stepsById[next] ? next : stepsById['END'] ? 'END' : null
+        target = stepsById[next] ? next : stepsById.END ? 'END' : null
       }
 
       setCurrentId(target)
@@ -162,7 +195,7 @@ const FlowRunnerScreen: React.FC = () => {
   // Handler para pasos de tipo "Select" reutilizando QuestionCard
   const onSelectOption = useCallback(
     async (stepId: string, payload: { label: string; next: string }) => {
-      // Persistimos como "Question" con answer null + option seleccionada (compatibilidad)
+      // Persistimos como "Question" con answer null + option seleccionada
       answersRef.current[stepId] = {
         type: 'Question',
         answer: null,
@@ -236,7 +269,7 @@ const FlowRunnerScreen: React.FC = () => {
     <View style={styles.screen}>
       <View style={styles.header}>
         <Text style={styles.title}>{detail.title}</Text>
-        <Text style={styles.subtitle}>v{detail.version}</Text>
+        <Text style={styles.subtitle}>{detail.description}</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} scrollEnabled={!zoomed}>
@@ -272,7 +305,7 @@ const FlowRunnerScreen: React.FC = () => {
             {...(current.title ? { selectTitle: current.title } : {})}
             {...(current.text ? { selectText: current.text } : {})}
             selectOptions={current.options}
-            onSelectOption={opt => void onSelectOption(current.id, opt)}
+            onSelectOption={opt => onSelectOption(current.id, opt)}
           />
         )}
 
