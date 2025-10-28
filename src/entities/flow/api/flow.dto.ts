@@ -1,6 +1,26 @@
 import { z } from 'zod'
 
-// Question
+/**
+ * DTOs Zod para GET /flows
+ * Mantienen los nombres EXACTOS del payload (snake_case en algunas claves)
+ * para validar y luego mapear a dominio (camelCase) en los mappers.
+ */
+
+// ---- Subtipos comunes
+export const StepFieldDtoSchema = z.object({
+  id: z.string(),
+  type: z.enum(['text', 'number', 'photo', 'button']),
+  label: z.string(),
+})
+export type StepFieldDTO = z.infer<typeof StepFieldDtoSchema>
+
+export const SelectOptionDtoSchema = z.object({
+  label: z.string(),
+  next: z.string(),
+})
+export type SelectOptionDTO = z.infer<typeof SelectOptionDtoSchema>
+
+// ---- Variantes de Step
 export const QuestionStepDtoSchema = z.object({
   id: z.string(),
   type: z.literal('Question'),
@@ -9,82 +29,61 @@ export const QuestionStepDtoSchema = z.object({
   no_next: z.string().optional(),
   barrier_id: z.string().optional(),
 })
+export type QuestionStepDTO = z.infer<typeof QuestionStepDtoSchema>
 
-// Form fields
-export const FormFieldDtoSchema = z.object({
-  id: z.string(),
-  type: z.enum(['text', 'number', 'photo', 'button']),
-  label: z.string(),
-})
-
-// Form
 export const FormStepDtoSchema = z.object({
   id: z.string(),
   type: z.literal('Form'),
   title: z.string(),
   next: z.string().optional(),
   barrier_id: z.string().optional(),
-  fields: z.array(FormFieldDtoSchema),
+  fields: z.array(StepFieldDtoSchema),
 })
+export type FormStepDTO = z.infer<typeof FormStepDtoSchema>
 
-// Select option
-export const SelectOptionDtoSchema = z.object({
-  label: z.string(),
-  next: z.string(),
-})
-
-// Select
+// "Select" puede venir con `text` o con `title` (según el flujo)
 export const SelectStepDtoSchema = z.object({
   id: z.string(),
   type: z.literal('Select'),
-  title: z.string().optional(),
   text: z.string().optional(),
-  options: z.array(SelectOptionDtoSchema).min(1),
+  title: z.string().optional(),
+  options: z.array(SelectOptionDtoSchema),
 })
+export type SelectStepDTO = z.infer<typeof SelectStepDtoSchema>
 
-// End
 export const EndStepDtoSchema = z.object({
   id: z.string(),
   type: z.literal('End'),
 })
+export type EndStepDTO = z.infer<typeof EndStepDtoSchema>
 
-// Unión de Steps
 export const StepDtoSchema = z.union([
   QuestionStepDtoSchema,
   FormStepDtoSchema,
   SelectStepDtoSchema,
   EndStepDtoSchema,
 ])
+export type StepDTO = z.infer<typeof StepDtoSchema>
 
-// ---------- Flow (DTO) ----------
-export const FlowDtoSchema = z.object({
+// ---- Flow item
+export const FlowItemDtoSchema = z.object({
   id: z.string(),
   title: z.string(),
   description: z.string().optional(),
-  steps: z.array(StepDtoSchema).min(1),
+  steps: z.array(StepDtoSchema),
   flow_type: z.string().optional(),
   version: z.number(),
-  is_active: z.boolean(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  is_active: z.boolean().optional(),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
 })
+export type FlowItemDTO = z.infer<typeof FlowItemDtoSchema>
 
-// ---------- Respuesta raíz ----------
+// ---- Respuesta GET /flows
 export const FlowsResponseDtoSchema = z.object({
-  flows: z.array(FlowDtoSchema),
+  flows: z.array(FlowItemDtoSchema),
   total: z.number(),
   limit: z.number(),
   offset: z.number(),
 })
-
-// ---------- Tipos inferidos ----------
-export type QuestionStepDto = z.infer<typeof QuestionStepDtoSchema>
-export type FormFieldDto = z.infer<typeof FormFieldDtoSchema>
-export type FormStepDto = z.infer<typeof FormStepDtoSchema>
-export type SelectOptionDto = z.infer<typeof SelectOptionDtoSchema>
-export type SelectStepDto = z.infer<typeof SelectStepDtoSchema>
-export type EndStepDto = z.infer<typeof EndStepDtoSchema>
-export type StepDto = z.infer<typeof StepDtoSchema>
-
-export type FlowDto = z.infer<typeof FlowDtoSchema>
-export type FlowsResponseDto = z.infer<typeof FlowsResponseDtoSchema>
+export type FlowsResponseDTO = z.infer<typeof FlowsResponseDtoSchema>
