@@ -41,7 +41,7 @@ function QuestionCardBase({
     <View style={styles.container}>
       {/* Header */}
       <Text style={styles.question}>{isSelectMode ? (selectTitle ?? step.text) : step.text}</Text>
-      {isSelectMode && selectText ? <Text style={styles.optionText}>{selectText}</Text> : null}
+      {isSelectMode && selectText && <Text style={styles.optionText}>{selectText}</Text>}
 
       {/* Selector */}
       {isSelectMode ? (

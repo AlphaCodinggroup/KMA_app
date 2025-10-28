@@ -4,8 +4,8 @@ import { Buffer } from 'buffer'
 import type { FlowDetail } from '@shared/validation/steps.schema'
 import type { SubmissionAnswer, SubmissionDraft } from '@entities/submission/model'
 import type { Flow, Step } from '@entities/flow/model'
-import { createHttpFlowRepo } from '../data/flow.repo.http'
 import { putPresignedBinary, request } from '@core/http/http'
+import { createHttpFlowRepo } from '@features/selector/data/flow.repo.http'
 
 // -----------------------------------------------------------------------------
 // Repositorio HTTP de Flows
@@ -24,9 +24,9 @@ export async function ensureFlowSynced(flowId: string): Promise<void> {
 // -----------------------------------------------------------------------------
 function mapToFlowDetail(flow: Flow): FlowDetail {
   return {
-    flowId: flow.id,
+    flowId: flow.flowId,
     title: flow.title,
-    version: String(flow.version),
+    description: flow.description || '',
     steps: flow.steps.map(mapStepToDetail),
   }
 }

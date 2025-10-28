@@ -1,16 +1,16 @@
-export interface FlowSummary {
-  id: string
-  title: string
-  version: string
-  description?: string
-  stepsCount?: number
-}
+/**
+ * Dominio: Flow
+ * -------------
+ * - Tipos puros para representar Flows y Steps en camelCase.
+ * - Incluye helpers de type guards para facilitar el renderizado condicional en UI.
+ */
 
-/* ------------------------------ Dominio completo ------------------------------ */
-
+// --------------------
+// Fields de formularios
+// --------------------
 export type FieldType = 'text' | 'number' | 'photo' | 'button'
 
-export interface FormField {
+export interface Field {
   id: string
   type: FieldType
   label: string
@@ -21,7 +21,9 @@ export interface SelectOption {
   next: string
 }
 
-/** Paso: Pregunta binaria (sí/no) con ramificaciones */
+// --------------------
+// Variantes de Step
+// --------------------
 export interface QuestionStep {
   id: string
   type: 'Question'
@@ -31,49 +33,66 @@ export interface QuestionStep {
   barrierId?: string
 }
 
-/** Paso: Formulario dinámico con campos */
 export interface FormStep {
   id: string
   type: 'Form'
   title: string
   next?: string
   barrierId?: string
-  fields: FormField[]
+  fields: Field[]
 }
 
-/** Paso: Selección de una opción (cada opción define su “next”) */
+// "Select" puede venir con `text` o con `title` según el flujo
 export interface SelectStep {
   id: string
   type: 'Select'
-  title?: string
   text?: string
+  title?: string
   options: SelectOption[]
 }
 
-/** Paso terminal */
 export interface EndStep {
-  id: string
+  id: string // suele ser "END"
   type: 'End'
 }
 
-/** Unión discriminada de pasos soportados por el FlowRunner */
 export type Step = QuestionStep | FormStep | SelectStep | EndStep
 
-/** Flow completo listo para ejecutar en el runner */
+// --------------------
+// Entidad Flow (completa con metadatos)
+// --------------------
 export interface Flow {
-  id: string
+  flowId: string // mapea desde DTO.id
   title: string
   description?: string
   steps: Step[]
   flowType?: string
   version: number
-  isActive: boolean
-  createdAt: string
-  updatedAt: string
+  isActive?: boolean
+  createdAt?: string // ISO
+  updatedAt?: string // ISO
 }
 
-/* ------------------------------ Type Guards útiles (opcionales) ------------------------------ */
+// --------------------
+// View Models simples
+// --------------------
+/** Resumen para tarjetas en Selector */
+export interface FlowSummary {
+  id: string
+  title: string
+  version?: string | number
+  description?: string
+  stepsCount?: number
+  flowType?: string
+  isActive?: boolean
+}
 
+/** Payload mínimo que espera el Runner (según requerimiento del cliente) */
+export type StepsPayload = Step[]
+
+// --------------------
+// Type Guards
+// --------------------
 export const isQuestionStep = (s: Step): s is QuestionStep => s.type === 'Question'
 export const isFormStep = (s: Step): s is FormStep => s.type === 'Form'
 export const isSelectStep = (s: Step): s is SelectStep => s.type === 'Select'

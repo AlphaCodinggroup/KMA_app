@@ -14,12 +14,12 @@ export const styles = StyleSheet.create({
     backgroundColor: AppColors.Background,
   },
   title: {
-    fontSize: setResponsiveSize({ size: 14 }),
+    fontSize: setResponsiveSize({ size: 16 }),
     fontWeight: 'bold',
     color: AppColors.Primary,
   },
   subtitle: {
-    fontSize: setResponsiveSize({ size: 10 }),
+    fontSize: setResponsiveSize({ size: 12 }),
     color: AppColors.MutedText,
     marginTop: RFValue(2),
   },

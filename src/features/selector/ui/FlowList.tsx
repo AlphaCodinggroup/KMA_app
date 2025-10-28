@@ -1,15 +1,22 @@
 import React, { memo, useCallback } from 'react'
 import type { StyleProp, ViewStyle } from 'react-native'
-import type { FlowSummary } from '@entities/flow/model'
+import type { FlowSummary, Flow } from '@entities/flow/model'
 import EntityList from '@shared/ui/list/EntityList'
 import FlowCard from './FlowCard'
 
+// Permite usar el resumen actual o el flow completo
+export type FlowListItem = FlowSummary | Flow
+
 export interface FlowListProps {
-  items: ReadonlyArray<FlowSummary>
-  onPressItem: (item: FlowSummary) => void
+  items: ReadonlyArray<FlowListItem>
+  onPressItem: (item: FlowListItem) => void
   contentContainerStyle?: StyleProp<ViewStyle>
   testID?: string
 }
+
+const isFlow = (item: FlowListItem): item is Flow =>
+  // Heurística simple: Flow tiene `flowId` y `steps`
+  (item as Flow).flowId !== undefined
 
 const FlowList: React.FC<FlowListProps> = ({
   items,
@@ -17,24 +24,34 @@ const FlowList: React.FC<FlowListProps> = ({
   contentContainerStyle,
   testID,
 }) => {
-  const keyExtractor = useCallback((item: FlowSummary) => item.id, [])
+  const keyExtractor = useCallback(
+    (item: FlowListItem) => (isFlow(item) ? item.flowId : item.id),
+    [],
+  )
 
   const renderItem = useCallback(
-    (item: FlowSummary) => {
-      const baseProps = {
-        title: item.title,
-        version: item.version,
-        description: item.description ?? '',
-        stepsCount: item.stepsCount ?? 0,
-        onPress: () => onPressItem(item),
-      }
-      return <FlowCard {...baseProps} {...(testID ? { testID } : {})} />
+    (item: FlowListItem) => {
+      const title = item.flowType ?? ''
+      const version = `v ${isFlow(item) ? String(item.version) : item.version}`
+      const description = (item as FlowSummary).description ?? (item as Flow).description ?? ''
+      const stepsCount = isFlow(item) ? item.steps.length : (item.stepsCount ?? 0)
+
+      return (
+        <FlowCard
+          title={title}
+          version={version}
+          description={description}
+          stepsCount={stepsCount}
+          onPress={() => onPressItem(item)}
+          {...(testID ? { testID } : {})}
+        />
+      )
     },
     [onPressItem, testID],
   )
 
   return (
-    <EntityList<FlowSummary>
+    <EntityList<FlowListItem>
       items={items}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
