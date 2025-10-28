@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useRouter } from 'expo-router'
 import { Text, View } from 'react-native'
-import { mockProjects } from '@features/selector/data/mockProjects'
+import { mockProjects } from '@shared/mocks/mockProjects'
 import ProjectsList from '@features/projects/ui/ProjectList'
 import { styles } from './styles/projects.styles'
 import SubHeadline from '@shared/ui/subheadline/subHeadline'
