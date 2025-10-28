@@ -2,6 +2,7 @@ import React, { memo } from 'react'
 import type { ViewStyle, TextStyle } from 'react-native'
 import Icon, { type IconName } from '@shared/ui/icons/Icon'
 import ListItemCard from '@shared/ui/list/ListItemCard'
+import { RFValue } from 'react-native-responsive-fontsize'
 
 export interface BuildingCardProps {
   title: string
@@ -20,7 +21,7 @@ const BuildingCard: React.FC<BuildingCardProps> = ({
 }) => {
   const baseProps = {
     title,
-    left: <Icon name={leftIconName} size={22} />,
+    left: <Icon name={leftIconName} size={RFValue(22)} />,
     chevron: true,
     onPress: onPress,
   }

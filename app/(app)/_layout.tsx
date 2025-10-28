@@ -41,7 +41,7 @@ const AppLayout: React.FC = () => {
         <Stack.Screen
           name="buildings"
           options={{
-            title: 'Select Buildings',
+            title: 'Select Facility',
             headerLeft: BackButton,
             headerBackVisible: false,
           }}
@@ -49,7 +49,7 @@ const AppLayout: React.FC = () => {
         <Stack.Screen
           name="selector"
           options={{
-            title: 'Audit Type',
+            title: 'Select Flow',
             headerLeft: BackButton,
             headerBackVisible: false,
           }}
@@ -57,7 +57,7 @@ const AppLayout: React.FC = () => {
         <Stack.Screen
           name="flow/[flowId]"
           options={{
-            title: 'Inspection',
+            title: 'Audit',
             headerLeft: BackButton,
             headerBackVisible: false,
           }}

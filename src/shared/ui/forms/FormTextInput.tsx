@@ -32,7 +32,7 @@ export const FormTextInput = forwardRef<TextInput, Props<any>>(function FormText
               placeholderTextColor={AppColors.MutedText}
               {...inputProps}
             />
-            {hasError ? <Text style={styles.error}>{error.message}</Text> : null}
+            {hasError && <Text style={styles.error}>{error.message}</Text>}
           </View>
         )
       }}

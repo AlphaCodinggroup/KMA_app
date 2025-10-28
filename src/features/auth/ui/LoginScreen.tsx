@@ -99,7 +99,7 @@ const LoginScreen: React.FC = () => {
           style={styles.primaryButton}
         />
 
-        {submitError ? <Text style={styles.errorText}>{submitError}</Text> : null}
+        {submitError && <Text style={styles.errorText}>{submitError}</Text>}
       </View>
 
       <Text style={styles.footerText}>v1.0.0</Text>

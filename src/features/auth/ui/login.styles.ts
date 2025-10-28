@@ -39,6 +39,7 @@ export const styles = StyleSheet.create({
     color: AppColors.Error,
     marginTop: RFValue(8),
     textAlign: 'center',
+    fontSize: setResponsiveSize({ size: 12 }),
   },
   footerText: {
     textAlign: 'center',
