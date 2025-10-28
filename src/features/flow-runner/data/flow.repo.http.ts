@@ -40,7 +40,7 @@ function toSummary(f: Flow): FlowSummary {
  */
 export class HttpFlowRepo implements FlowRepo {
   async getAll(query?: FlowsQuery): Promise<Flow[]> {
-    const url = buildUrl('/api/v1/flows')
+    const url = buildUrl('/flows')
 
     const config: AxiosRequestConfig | undefined = query?.signal
       ? { signal: query.signal as unknown as GenericAbortSignal }
