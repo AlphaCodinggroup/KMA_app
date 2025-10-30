@@ -12,4 +12,6 @@ export const styles = StyleSheet.create({
     color: AppColors.TextPrimary,
     marginBottom: RFValue(6),
   },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  notContent: { fontSize: setResponsiveSize({ size: 22 }) },
 })

@@ -13,6 +13,8 @@ export interface ProjectListProps {
   onPressItem: (item: ProjectListItem) => void
   contentContainerStyle?: StyleProp<ViewStyle>
   testID?: string
+  refreshing?: boolean
+  onRefresh?: () => void
 }
 
 const ProjectList: React.FC<ProjectListProps> = ({
@@ -20,6 +22,8 @@ const ProjectList: React.FC<ProjectListProps> = ({
   onPressItem,
   contentContainerStyle,
   testID,
+  refreshing = false,
+  onRefresh,
 }) => {
   const keyExtractor = useCallback((item: ProjectListItem) => item.id, [])
 
@@ -39,6 +43,8 @@ const ProjectList: React.FC<ProjectListProps> = ({
       items={items}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
+      refreshing={refreshing}
+      {...(onRefresh ? { onRefresh } : {})}
       {...(contentContainerStyle ? { contentContainerStyle } : {})}
       {...(testID ? { testID } : {})}
       itemSpacing={12}
