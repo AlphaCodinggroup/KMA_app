@@ -39,9 +39,9 @@ const AppLayout: React.FC = () => {
           options={{ title: 'Select Project', headerBackVisible: false }}
         />
         <Stack.Screen
-          name="buildings"
+          name="facilities"
           options={{
-            title: 'Select Buildings',
+            title: 'Select Facility',
             headerLeft: BackButton,
             headerBackVisible: false,
           }}

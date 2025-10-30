@@ -1,40 +1,46 @@
 import React, { memo, useCallback } from 'react'
 import type { StyleProp, ViewStyle } from 'react-native'
-import type { Building } from '@entities/building/model'
 import EntityList from '@shared/ui/list/EntityList'
-import BuildingCard from './BuildingCard'
+import type { Facility } from '@entities/facility/model'
+import ListItemCard from '@shared/ui/list/ListItemCard'
 
-export interface BuildingListProps {
-  items: ReadonlyArray<Building>
-  onPressItem: (item: Building) => void
+export interface FacilityListProps {
+  items: ReadonlyArray<Facility>
+  onPressItem: (item: Facility) => void
   contentContainerStyle?: StyleProp<ViewStyle>
   testID?: string
+  refreshing?: boolean
+  onRefresh?: () => void
 }
 
-const BuildingList: React.FC<BuildingListProps> = ({
+const FacilityList: React.FC<FacilityListProps> = ({
   items,
   onPressItem,
   contentContainerStyle,
   testID,
+  refreshing = false,
+  onRefresh,
 }) => {
-  const keyExtractor = useCallback((item: Building) => item.id, [])
+  const keyExtractor = useCallback((item: Facility) => item.id, [])
 
   const renderItem = useCallback(
-    (item: Building) => {
+    (item: Facility) => {
       const baseProps = {
         title: item.name,
         onPress: () => onPressItem(item),
       }
-      return <BuildingCard {...baseProps} {...(testID ? { testID } : {})} />
+      return <ListItemCard {...baseProps} {...(testID ? { testID } : {})} />
     },
     [onPressItem, testID],
   )
 
   return (
-    <EntityList<Building>
+    <EntityList<Facility>
       items={items}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
+      refreshing={refreshing}
+      {...(onRefresh ? { onRefresh } : {})}
       {...(contentContainerStyle ? { contentContainerStyle } : {})}
       {...(testID ? { testID } : {})}
       itemSpacing={12}
@@ -42,4 +48,4 @@ const BuildingList: React.FC<BuildingListProps> = ({
   )
 }
 
-export default memo(BuildingList)
+export default memo(FacilityList)

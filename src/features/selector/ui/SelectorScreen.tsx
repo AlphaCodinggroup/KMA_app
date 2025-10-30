@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { View, ActivityIndicator, Alert } from 'react-native'
+import { View, Alert } from 'react-native'
 import { useRouter } from 'expo-router'
 import type { Flow, FlowSummary } from '@entities/flow/model'
 import { loadAllFlowsWithSteps, coldSyncAllFlows } from '@features/selector/application/usecases'
@@ -8,6 +8,7 @@ import FlowList, { type FlowListItem } from './FlowList'
 import SubHeadline from '@shared/ui/subheadline/subHeadline'
 import LetterFilter from './LetterFilter'
 import { getKeyLetter, type LetterKey } from '../lib/getKeyLetter'
+import Loader from '@shared/ui/loader/Loader'
 
 const SelectorScreen: React.FC = () => {
   const router = useRouter()
@@ -86,13 +87,7 @@ const SelectorScreen: React.FC = () => {
     return summaries.filter(it => getKeyLetter(it) === selectedLetter)
   }, [summaries, selectedLetter])
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-      </View>
-    )
-  }
+  if (loading) return <Loader loading={loading} />
 
   return (
     <View style={styles.container}>

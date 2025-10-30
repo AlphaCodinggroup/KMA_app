@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react'
-import { View, Text, ActivityIndicator, ScrollView, Alert } from 'react-native'
+import { View, Text, ScrollView, Alert } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import NetInfo from '@react-native-community/netinfo'
@@ -12,6 +12,7 @@ import { styles } from './styles/flowRunner.styles'
 import { finalizeSubmission, persistDraft } from '../application/usecases'
 import EndView from './EndView'
 import StepIllustration from './StepIllustration'
+import Loader from '@shared/ui/loader/Loader'
 
 // --------------------
 // Helpers
@@ -255,13 +256,7 @@ const FlowRunnerScreen: React.FC = () => {
   }, [detail, online, router, submitting])
 
   // Loading state inicial / fallback si no hay steps
-  if (loading || !detail || !currentId) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-      </View>
-    )
-  }
+  if (loading || !detail || !currentId) return <Loader loading={loading} />
 
   const current = stepsById[currentId]
 

@@ -1,10 +1,11 @@
 import React, { useCallback } from 'react'
-import { ActivityIndicator, Text, View } from 'react-native'
+import { Text, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import ProjectsList, { type ProjectListItem } from '@features/projects/ui/ProjectList'
 import { useProjects } from '@features/projects'
 import { styles } from './styles/projects.styles'
 import SubHeadline from '@shared/ui/subheadline/subHeadline'
+import Loader from '@shared/ui/loader/Loader'
 
 const ProjectsScreen: React.FC = () => {
   const router = useRouter()
@@ -13,27 +14,15 @@ const ProjectsScreen: React.FC = () => {
   const handleNavigate = useCallback(
     (item: ProjectListItem) => {
       router.push({
-        pathname: '/(app)/buildings',
+        pathname: '/(app)/facilities',
         params: { projectId: item.id },
       })
     },
     [router],
   )
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
-      </View>
-    )
-  }
+  if (loading) return <Loader loading={loading} />
 
-  if (!loading && items.length === 0) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.notContent}>No projects to display.</Text>
-      </View>
-    )
-  }
+  if (!loading && items.length === 0) return <Loader text="No projects to display." />
 
   return (
     <View style={styles.container}>
