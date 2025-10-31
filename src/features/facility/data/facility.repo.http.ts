@@ -24,7 +24,7 @@ export class HttpFacilityRepo implements FacilityRepo {
     projectId: ProjectId,
     params?: ListFacilitiesParams,
   ): Promise<FacilitiesPage> {
-    const { data } = await this.client.get(`/api/projects/${projectId}/facilities`, {
+    const { data } = await this.client.get(`/projects/${projectId}/facilities`, {
       params: {
         limit: params?.limit,
         cursor: params?.cursor,
@@ -43,7 +43,7 @@ export class HttpFacilityRepo implements FacilityRepo {
   }
 
   async getById(projectId: ProjectId, facilityId: string): Promise<Facility> {
-    const { data } = await this.client.get(`/api/projects/${projectId}/facilities/${facilityId}`)
+    const { data } = await this.client.get(`/projects/${projectId}/facilities/${facilityId}`)
 
     const parsed = FacilityDetailResponseDtoSchema.safeParse(data)
     if (!parsed.success) {

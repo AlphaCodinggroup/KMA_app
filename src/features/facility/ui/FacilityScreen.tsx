@@ -10,7 +10,7 @@ import type { Facility } from '@entities/facility/model'
 
 const FacilityScreen: React.FC = () => {
   const router = useRouter()
-  const { projectId } = useLocalSearchParams<{ projectId?: string }>()
+  const { projectId } = useLocalSearchParams<{ projectId: string }>()
   const { items, loading, refresh, refreshing } = useFacilitiesByProject(projectId)
 
   const handlePressItem = useCallback(

@@ -2,7 +2,7 @@ import React, { memo, useCallback } from 'react'
 import type { StyleProp, ViewStyle } from 'react-native'
 import EntityList from '@shared/ui/list/EntityList'
 import type { Facility } from '@entities/facility/model'
-import ListItemCard from '@shared/ui/list/ListItemCard'
+import FacilityCard from './FacilityCard'
 
 export interface FacilityListProps {
   items: ReadonlyArray<Facility>
@@ -29,7 +29,7 @@ const FacilityList: React.FC<FacilityListProps> = ({
         title: item.name,
         onPress: () => onPressItem(item),
       }
-      return <ListItemCard {...baseProps} {...(testID ? { testID } : {})} />
+      return <FacilityCard {...baseProps} {...(testID ? { testID } : {})} />
     },
     [onPressItem, testID],
   )

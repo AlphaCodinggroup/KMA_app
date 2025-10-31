@@ -20,7 +20,7 @@ const ProjectsScreen: React.FC = () => {
     },
     [router],
   )
-  if (loading) return <Loader loading={loading} />
+  if (loading && items.length === 0) return <Loader loading={loading} />
 
   if (!loading && items.length === 0) return <Loader text="No projects to display." />
 

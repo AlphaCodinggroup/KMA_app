@@ -40,11 +40,15 @@ const FlowRunnerScreen: React.FC = () => {
     title,
     steps: rawSteps,
     description,
+    projectId,
+    facilityId,
   } = useLocalSearchParams<{
     flowId: string
     title: string
     steps?: string | string[]
     description: string
+    projectId: string
+    facilityId: string
   }>()
 
   const [detail, setDetail] = useState<FlowDetail | null>(null)
@@ -237,23 +241,19 @@ const FlowRunnerScreen: React.FC = () => {
         title: detail.title,
         answers: answersRef.current,
         online,
-        // TODO: wire real project/facility IDs cuando el usuario seleccione dónde audita
-        projectId: 'p4a51',
-        facilityId: 'f_7fc49228-e68d-4a51-b805',
+        projectId,
+        facilityId,
       })
 
-      if (router.canGoBack()) {
-        router.back()
-      } else {
-        router.replace('/(app)/selector')
-      }
+      if (router.canGoBack()) return router.canGoBack()
+      return router.replace('/(app)/selector')
     } catch (err) {
       console.warn('[FlowRunnerScreen.onFinish] finalizeSubmission error', err)
       Alert.alert('Error', 'We were unable to complete the shipment.')
     } finally {
       setSubmitting(false)
     }
-  }, [detail, online, router, submitting])
+  }, [detail, facilityId, online, projectId, router, submitting])
 
   // Loading state inicial / fallback si no hay steps
   if (loading || !detail || !currentId) return <Loader loading={loading} />
