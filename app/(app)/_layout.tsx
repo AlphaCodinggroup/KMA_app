@@ -2,7 +2,7 @@ import { AppColors } from '@shared/ui/colors'
 import Icon from '@shared/ui/icons/Icon'
 import { Stack, useRouter } from 'expo-router'
 import { useCallback } from 'react'
-import { Pressable } from 'react-native'
+import { TouchableOpacity } from 'react-native'
 import { RFValue } from 'react-native-responsive-fontsize'
 import AuthGuard from '@processes/auth-guard'
 
@@ -11,7 +11,7 @@ const AppLayout: React.FC = () => {
 
   const BackButton = useCallback(
     () => (
-      <Pressable
+      <TouchableOpacity
         onPress={() => router.back()}
         hitSlop={12}
         accessibilityRole="button"
@@ -19,7 +19,7 @@ const AppLayout: React.FC = () => {
         style={{ paddingRight: RFValue(8), paddingLeft: RFValue(4) }}
       >
         <Icon name="chevronLeft" color={AppColors.Primary} size={RFValue(22)} />
-      </Pressable>
+      </TouchableOpacity>
     ),
     [router],
   )
@@ -49,7 +49,7 @@ const AppLayout: React.FC = () => {
         <Stack.Screen
           name="selector"
           options={{
-            title: 'Audit Type',
+            title: 'Select Flow',
             headerLeft: BackButton,
             headerBackVisible: false,
           }}
@@ -57,7 +57,7 @@ const AppLayout: React.FC = () => {
         <Stack.Screen
           name="flow/[flowId]"
           options={{
-            title: 'Inspection',
+            title: 'Audit',
             headerLeft: BackButton,
             headerBackVisible: false,
           }}

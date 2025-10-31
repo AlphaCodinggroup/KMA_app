@@ -1,5 +1,5 @@
 import { useState, memo } from 'react'
-import { View, Text, Pressable } from 'react-native'
+import { View, Text, TouchableOpacity } from 'react-native'
 import type { QuestionStep } from '@shared/validation/steps.schema'
 import { styles } from './styles/questionCard.styles'
 
@@ -49,7 +49,7 @@ function QuestionCardBase({
           {selectOptions!.map((opt, idx) => {
             const isSelected = selected === opt.label
             return (
-              <Pressable
+              <TouchableOpacity
                 key={`${opt.label}-${idx}`}
                 onPress={() => {
                   setSelected(opt.label)
@@ -60,7 +60,7 @@ function QuestionCardBase({
                 style={[styles.optionItem, isSelected && styles.optionItemSelected]}
               >
                 <Text style={styles.optionText}>{opt.label}</Text>
-              </Pressable>
+              </TouchableOpacity>
             )
           })}
         </View>
@@ -68,7 +68,7 @@ function QuestionCardBase({
         hasQuestionOptions && (
           <View style={styles.optionsBox}>
             {questionOptions!.map(opt => (
-              <Pressable
+              <TouchableOpacity
                 key={opt}
                 onPress={() => setSelected(opt)}
                 accessibilityRole="radio"
@@ -76,7 +76,7 @@ function QuestionCardBase({
                 style={[styles.optionItem, selected === opt && styles.optionItemSelected]}
               >
                 <Text style={styles.optionText}>{opt}</Text>
-              </Pressable>
+              </TouchableOpacity>
             ))}
           </View>
         )
@@ -86,34 +86,34 @@ function QuestionCardBase({
       {!isSelectMode && (
         <>
           <View style={styles.actions}>
-            <Pressable
+            <TouchableOpacity
               onPress={() => onNo(selected ? { option: selected } : undefined)}
-              style={({ pressed }) => [styles.button, styles.btnNo, pressed && styles.btnPressed]}
+              style={[styles.button, styles.btnNo]}
               accessibilityRole="button"
               accessibilityLabel="No"
             >
               <Text style={styles.btnText}>NO</Text>
-            </Pressable>
+            </TouchableOpacity>
 
-            <Pressable
+            <TouchableOpacity
               onPress={() => onYes(selected ? { option: selected } : undefined)}
-              style={({ pressed }) => [styles.button, styles.btnYes, pressed && styles.btnPressed]}
+              style={[styles.button, styles.btnNo]}
               accessibilityRole="button"
               accessibilityLabel="Yes"
             >
-              <Text style={[styles.btnText, styles.btnYesText]}>YES</Text>
-            </Pressable>
+              <Text style={[styles.btnText]}>YES</Text>
+            </TouchableOpacity>
           </View>
 
           <View>
-            <Pressable
+            <TouchableOpacity
               onPress={() => onSkip(step)}
-              style={({ pressed }) => [styles.button, styles.btnNo, pressed && styles.btnPressed]}
+              style={[styles.button, styles.btnNo]}
               accessibilityRole="button"
               accessibilityLabel="Next"
             >
               <Text style={styles.btnText}>SKIP</Text>
-            </Pressable>
+            </TouchableOpacity>
           </View>
         </>
       )}

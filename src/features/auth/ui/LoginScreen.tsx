@@ -25,7 +25,7 @@ type LoginForm = z.infer<typeof LoginSchema>
 
 const LoginScreen: React.FC = () => {
   const router = useRouter()
-  const [submitting, setSubmitting] = useState(false)
+  const [submitting, setSubmitting] = useState<boolean>(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const pwdRef = useRef(null)
 
@@ -99,7 +99,7 @@ const LoginScreen: React.FC = () => {
           style={styles.primaryButton}
         />
 
-        {submitError ? <Text style={styles.errorText}>{submitError}</Text> : null}
+        {submitError && <Text style={styles.errorText}>{submitError}</Text>}
       </View>
 
       <Text style={styles.footerText}>v1.0.0</Text>

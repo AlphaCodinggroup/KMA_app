@@ -34,8 +34,6 @@ export const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   btnNo: { backgroundColor: AppColors.Border },
-  btnYes: { backgroundColor: AppColors.Primary, borderColor: AppColors.Primary },
-  btnPressed: { opacity: 0.5 },
   btnText: {
     fontWeight: 'bold',
     color: AppColors.Primary,

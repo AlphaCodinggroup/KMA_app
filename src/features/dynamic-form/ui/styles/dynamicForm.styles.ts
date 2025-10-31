@@ -37,5 +37,5 @@ export const styles = StyleSheet.create({
   },
   secondaryBtn: { backgroundColor: AppColors.Background, borderColor: AppColors.Border },
   btnText: { color: AppColors.Primary, fontWeight: 'bold' },
-  btnPressed: { opacity: 0.5 },
+  btnDisabled: { opacity: 0.5 },
 })

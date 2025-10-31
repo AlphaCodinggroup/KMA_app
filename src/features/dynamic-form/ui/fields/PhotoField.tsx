@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { View, Text, Image, Pressable, ScrollView, Alert } from 'react-native'
+import { View, Text, Image, ScrollView, Alert, TouchableOpacity } from 'react-native'
 import { AppColors } from '@shared/ui/colors'
 import { styles } from './photoFields.styles'
 
@@ -57,30 +57,31 @@ const PhotoFieldBase: React.FC<Props> = ({
                     <Text style={{ color: AppColors.MutedText }}>Selected image</Text>
                   </View>
                 )}
-                <Pressable
-                  onPress={() => !disabled && onRemoveAt(idx)}
-                  style={({ pressed }) => [styles.smallBtn, pressed && styles.btnPressed]}
+                <TouchableOpacity
+                  onPress={() => onRemoveAt(idx)}
+                  style={styles.smallBtn}
                   accessibilityRole="button"
                   accessibilityLabel={`Remove photo ${idx + 1}`}
                   disabled={disabled}
+                  hitSlop={8}
                 >
                   <Text style={styles.smallBtnText}>{removeButtonText}</Text>
-                </Pressable>
+                </TouchableOpacity>
               </View>
             )
           })}
         </ScrollView>
       )}
 
-      <Pressable
+      <TouchableOpacity
         onPress={handleAdd}
-        style={({ pressed }) => [styles.button, styles.secondaryBtn, pressed && styles.btnPressed]}
+        style={[styles.button, styles.secondaryBtn]}
         accessibilityRole="button"
         accessibilityLabel={hasPhotos ? 'Add another photo' : 'Upload photo'}
         disabled={disabled}
       >
         <Text style={styles.btnText}>{hasPhotos ? addButtonText : 'Upload photo'}</Text>
-      </Pressable>
+      </TouchableOpacity>
     </View>
   )
 }

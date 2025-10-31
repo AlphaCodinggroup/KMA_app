@@ -29,7 +29,7 @@ const FacilityScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <SubHeadline text="Select the facility to audits" stylesText={styles.text} />
+      <SubHeadline text="Select a facility to audit" stylesText={styles.text} />
       <FacilityList
         items={items}
         onPressItem={handlePressItem}

@@ -1,22 +1,23 @@
-import React, { memo } from 'react'
+import React, { memo, useMemo } from 'react'
 import {
   View,
   Text,
-  Pressable,
   ActivityIndicator,
   type StyleProp,
   type ViewStyle,
   type TextStyle,
+  TouchableOpacity,
 } from 'react-native'
 import { AppColors } from '../colors'
 import { styles } from './styles/listItemCard.styles'
 import Icon from '../icons/Icon'
+import { RFValue } from 'react-native-responsive-fontsize'
 
 export interface ListItemCardProps {
-  title: string | React.ReactNode
-  subtitle?: string | React.ReactNode
-  description?: string | React.ReactNode
-  steps?: string | React.ReactNode
+  title: string
+  subtitle?: string
+  description?: string
+  steps?: string
   version?: string
   left?: React.ReactNode
   right?: React.ReactNode
@@ -55,67 +56,42 @@ const ListItemCard: React.FC<ListItemCardProps> = ({
   testID,
   accessibilityLabel,
 }) => {
-  const isPressable = typeof onPress === 'function' && !disabled && !loading
-
   // Accesibilidad básica combinando título/subtítulo si no se provee label.
-  const a11yLabel =
-    accessibilityLabel ??
-    [
-      typeof title === 'string' ? title : undefined,
-      typeof subtitle === 'string' ? subtitle : undefined,
-    ]
-      .filter(Boolean)
-      .join('. ')
+  const a11yLabel = useMemo<string>(
+    () =>
+      accessibilityLabel ??
+      [
+        typeof title === 'string' ? title : undefined,
+        typeof subtitle === 'string' ? subtitle : undefined,
+      ]
+        .filter(Boolean)
+        .join('. '),
+    [accessibilityLabel, title, subtitle],
+  )
 
   return (
     <View style={[styles.card, selected && styles.cardSelected, style]}>
-      <Pressable
+      <TouchableOpacity
         testID={testID}
-        accessibilityRole={isPressable ? 'button' : 'text'}
+        accessibilityRole={'button'}
         accessibilityState={{ disabled, selected }}
         accessibilityLabel={a11yLabel}
-        onPress={isPressable ? onPress : undefined}
-        android_ripple={isPressable ? { color: AppColors.Ripple } : undefined}
-        style={({ pressed }) => [
-          styles.row,
-          pressed && isPressable ? styles.pressed : null,
-          contentStyle,
-        ]}
+        onPress={onPress}
+        style={[styles.row, contentStyle]}
       >
         {left ? <View style={styles.left}>{left}</View> : null}
 
         <View style={styles.center}>
-          {typeof title === 'string' ? (
-            <Text style={[styles.title, titleStyle]}>{title}</Text>
-          ) : (
-            title
+          <Text style={[styles.title, titleStyle]}>{title}</Text>
+
+          {subtitle && <Text style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text>}
+          {description && <Text style={[styles.description, descriptionStyle]}>{description}</Text>}
+
+          {steps && (
+            <Text style={styles.meta}>
+              {steps ? `${steps} steps` : '—'} · {version}
+            </Text>
           )}
-
-          {subtitle ? (
-            typeof subtitle === 'string' ? (
-              <Text style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text>
-            ) : (
-              subtitle
-            )
-          ) : null}
-
-          {description ? (
-            typeof description === 'string' ? (
-              <Text style={[styles.description, descriptionStyle]}>{description}</Text>
-            ) : (
-              description
-            )
-          ) : null}
-
-          {steps ? (
-            typeof description === 'string' ? (
-              <Text style={styles.meta}>
-                {steps ? `${steps} steps` : '—'} · {version}
-              </Text>
-            ) : (
-              steps
-            )
-          ) : null}
         </View>
 
         <View style={styles.right}>
@@ -123,11 +99,11 @@ const ListItemCard: React.FC<ListItemCardProps> = ({
             <ActivityIndicator />
           ) : right ? (
             right
-          ) : chevron && isPressable ? (
-            <Icon name="chevronRight" size={22} color={AppColors.IconMuted} />
+          ) : chevron ? (
+            <Icon name="chevronRight" size={RFValue(16)} color={AppColors.IconMuted} />
           ) : null}
         </View>
-      </Pressable>
+      </TouchableOpacity>
     </View>
   )
 }

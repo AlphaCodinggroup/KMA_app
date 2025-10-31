@@ -464,7 +464,7 @@ export async function finalizeSubmission(params: {
   online?: boolean
   projectId?: string
   facilityId?: string
-}): Promise<void> {
+}): Promise<boolean> {
   // 0. conectividad real
   const isOnline =
     typeof params.online === 'boolean' ? params.online : !!(await NetInfo.fetch()).isConnected
@@ -479,81 +479,87 @@ export async function finalizeSubmission(params: {
 
   if (!isOnline) {
     await queueOfflineSubmission(draft)
-    return
+    return false
   }
+  try {
+    // 1. fotos locales -> lista upload
+    const photosToUpload = collectLocalPhotos(params.answers)
+    // armamos body para /uploads
+    const presignFiles: PresignRequestFile[] = photosToUpload.map(p => ({
+      name: p.uploadName,
+      step_id: p.stepId,
+    }))
 
-  // 1. fotos locales -> lista upload
-  const photosToUpload = collectLocalPhotos(params.answers)
-  // armamos body para /uploads
-  const presignFiles: PresignRequestFile[] = photosToUpload.map(p => ({
-    name: p.uploadName,
-    step_id: p.stepId,
-  }))
-
-  // 2. pedir presigned URLs
-  const presignRes = await request<PresignResponse>({
-    method: 'POST',
-    url: '/uploads',
-    data: { files: presignFiles },
-  })
-
-  const auditId = presignRes.audit_id
-  const uploadEntries = presignRes.urls // [{file_name, upload_url, file_url}, ...]
-
-  const byFileName: Record<string, { upload_url: string; file_url: string }> = {}
-  for (const u of uploadEntries) {
-    byFileName[u.file_name] = {
-      upload_url: u.upload_url,
-      file_url: u.file_url,
-    }
-  }
-
-  // 3. subir cada foto a S3 via PUT presignado
-  for (const p of photosToUpload) {
-    const match = byFileName[p.uploadName]
-    if (!match) {
-      console.warn('[finalizeSubmission] Missing presigned URL for', p.uploadName)
-      continue
-    }
-
-    const fileBytes = await readFileAsUint8(p.localUri)
-
-    await putPresignedBinary({
-      url: match.upload_url,
-      data: fileBytes,
-      contentType: p.mimeType,
+    // 2. pedir presigned URLs
+    const presignRes = await request<PresignResponse>({
+      method: 'POST',
+      url: '/uploads',
+      data: { files: presignFiles },
     })
+
+    const auditId = presignRes.audit_id
+    const uploadEntries = presignRes.urls // [{file_name, upload_url, file_url}, ...]
+
+    const byFileName: Record<string, { upload_url: string; file_url: string }> = {}
+    for (const u of uploadEntries) {
+      byFileName[u.file_name] = {
+        upload_url: u.upload_url,
+        file_url: u.file_url,
+      }
+    }
+
+    // 3. subir cada foto a S3 via PUT presignado
+    for (const p of photosToUpload) {
+      const match = byFileName[p.uploadName]
+      if (!match) {
+        console.warn('[finalizeSubmission] Missing presigned URL for', p.uploadName)
+        continue
+      }
+
+      const fileBytes = await readFileAsUint8(p.localUri)
+
+      await putPresignedBinary({
+        url: match.upload_url,
+        data: fileBytes,
+        contentType: p.mimeType,
+      })
+    }
+
+    // 4. construir mapa nombreArchivo -> ruta s3://...
+    const uploadMap: Record<string, string> = {}
+    for (const u of uploadEntries) {
+      uploadMap[u.file_name] = u.file_url
+    }
+
+    // 5. armar answers normalizados para /audits
+    const answersForApi: AuditAnswerForApi[] = buildAnswersForApi({
+      answers: params.answers,
+      uploadMap,
+    })
+
+    // 6. POST /audits (crea la auditoría final)
+    const body = {
+      id: auditId,
+      flow_id: params.flowId,
+      project_id: params.projectId ?? 'UNIMPLEMENTED_PROJECT_ID',
+      facility_id: params.facilityId ?? 'UNIMPLEMENTED_FACILITY_ID',
+      answers: answersForApi,
+    }
+
+    const resp = await request<{ status?: number }>({
+      method: 'POST',
+      url: '/audits',
+      data: body,
+    })
+
+    // TODO futuro:
+    // - limpiar draft local
+    // - marcar en outbox como enviado si era retry
+    console.log('[finalizeSubmission] audit sent OK:', auditId)
+    const ok = resp.status === 201
+    return ok
+  } catch (err) {
+    console.warn('[finalizeSubmission] error:', err)
+    return false
   }
-
-  // 4. construir mapa nombreArchivo -> ruta s3://...
-  const uploadMap: Record<string, string> = {}
-  for (const u of uploadEntries) {
-    uploadMap[u.file_name] = u.file_url
-  }
-
-  // 5. armar answers normalizados para /audits
-  const answersForApi: AuditAnswerForApi[] = buildAnswersForApi({
-    answers: params.answers,
-    uploadMap,
-  })
-
-  // 6. POST /audits (crea la auditoría final)
-  const body = {
-    id: auditId,
-    flow_id: params.flowId,
-    project_id: params.projectId ?? 'UNIMPLEMENTED_PROJECT_ID',
-    facility_id: params.facilityId ?? 'UNIMPLEMENTED_FACILITY_ID',
-    answers: answersForApi,
-  }
-
-  await request({
-    method: 'POST',
-    url: '/audits',
-    data: body,
-  })
-
-  // TODO futuro:
-  // - limpiar draft local
-  // - marcar en outbox como enviado si era retry
-  console.log('[finalizeSubmission] audit sent OK:', auditId)
 }
