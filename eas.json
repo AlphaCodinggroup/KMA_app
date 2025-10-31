@@ -1,0 +1,56 @@
+{
+  "cli": { "version": ">= 14.0.0", "appVersionSource": "remote" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": { "simulator": false },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://369uf95fgb.execute-api.us-east-2.amazonaws.com/v1/api",
+        "EXPO_PUBLIC_COGNITO_BASE_URL": "https://cognito-idp.us-east-2.amazonaws.com",
+        "EXPO_PUBLIC_COGNITO_REGION": "us-east-2",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "6cuid0jfdeghhj8atquufevk0u",
+        "EXPO_PUBLIC_RETRY_MAX_ATTEMPTS": "3",
+        "EXPO_PUBLIC_RETRY_BASE_DELAY_MS": "600",
+        "EXPO_PUBLIC_SYNC_BATCH_SIZE": "10",
+        "EAS_PROJECT_ID": "1b6bf518-a922-462a-814e-460280053abf"
+      },
+      "autoIncrement": true
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": { "enterpriseProvisioning": "adhoc", "simulator": false },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://369uf95fgb.execute-api.us-east-2.amazonaws.com/v1/api",
+        "EXPO_PUBLIC_COGNITO_BASE_URL": "https://cognito-idp.us-east-2.amazonaws.com",
+        "EXPO_PUBLIC_COGNITO_REGION": "us-east-2",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "6cuid0jfdeghhj8atquufevk0u",
+        "EXPO_PUBLIC_RETRY_MAX_ATTEMPTS": "3",
+        "EXPO_PUBLIC_RETRY_BASE_DELAY_MS": "600",
+        "EXPO_PUBLIC_SYNC_BATCH_SIZE": "10",
+        "EAS_PROJECT_ID": "1b6bf518-a922-462a-814e-460280053abf"
+      },
+      "autoIncrement": true
+    },
+    "production": {
+      "distribution": "store",
+      "ios": { "image": "latest", "simulator": false },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://369uf95fgb.execute-api.us-east-2.amazonaws.com/v1/api",
+        "EXPO_PUBLIC_COGNITO_BASE_URL": "https://cognito-idp.us-east-2.amazonaws.com",
+        "EXPO_PUBLIC_COGNITO_REGION": "us-east-2",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "6cuid0jfdeghhj8atquufevk0u",
+        "EXPO_PUBLIC_RETRY_MAX_ATTEMPTS": "3",
+        "EXPO_PUBLIC_RETRY_BASE_DELAY_MS": "600",
+        "EXPO_PUBLIC_SYNC_BATCH_SIZE": "10",
+        "EAS_PROJECT_ID": "1b6bf518-a922-462a-814e-460280053abf"
+      },
+      "autoIncrement": true
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {}
+    }
+  }
+}
