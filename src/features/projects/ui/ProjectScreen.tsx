@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react'
-import { Text, View } from 'react-native'
+import { View } from 'react-native'
 import { useRouter } from 'expo-router'
 import ProjectsList, { type ProjectListItem } from '@features/projects/ui/ProjectList'
 import { useProjects } from '@features/projects'
@@ -20,9 +20,10 @@ const ProjectsScreen: React.FC = () => {
     },
     [router],
   )
-  if (loading && items.length === 0) return <Loader loading={loading} />
 
-  if (!loading && items.length === 0) return <Loader text="No projects to display." />
+  if (loading) return <Loader loading={loading} />
+
+  if (items.length === 0) return <Loader text="No projects to display." />
 
   return (
     <View style={styles.container}>

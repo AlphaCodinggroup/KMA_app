@@ -245,8 +245,10 @@ const FlowRunnerScreen: React.FC = () => {
         facilityId,
       })
 
-      if (router.canGoBack()) return router.canGoBack()
-      return router.replace('/(app)/selector')
+      return router.replace({
+        pathname: '/(app)/selector',
+        params: { facilityId, projectId },
+      })
     } catch (err) {
       console.warn('[FlowRunnerScreen.onFinish] finalizeSubmission error', err)
       Alert.alert('Error', 'We were unable to complete the shipment.')

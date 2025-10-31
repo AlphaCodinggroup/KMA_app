@@ -1,15 +1,14 @@
 import React, { memo } from 'react'
 import {
   ActivityIndicator,
-  Pressable,
   Text,
   View,
   type GestureResponderEvent,
   type StyleProp,
   type ViewStyle,
   type TextStyle,
+  TouchableOpacity,
 } from 'react-native'
-import { AppColors } from '../colors'
 import {
   type ButtonSize,
   type ButtonVariant,
@@ -58,26 +57,23 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = ({
   testID,
   accessibilityLabel,
 }) => {
-  const isPressable = !!onPress && !disabled && !loading
-
   return (
     <View style={[fullWidth && styles.fullWidth, style]}>
-      <Pressable
+      <TouchableOpacity
         testID={testID}
         accessibilityRole="button"
         accessibilityState={{ disabled: disabled || loading }}
         accessibilityLabel={accessibilityLabel ?? label}
-        onPress={isPressable ? onPress : undefined}
-        android_ripple={isPressable ? { color: AppColors.Ripple } : undefined}
-        style={({ pressed }) => [
+        onPress={onPress}
+        disabled={disabled || loading}
+        style={[
           styles.base,
+          (disabled || loading) && styles.disabled,
           getVariantContainerStyle(variant),
           {
             height: RFValue(HEIGHTS[size]),
             paddingHorizontal: RFValue(H_PADDING[size]),
-            opacity: pressed && isPressable ? 0.94 : 1,
           },
-          (disabled || loading) && styles.disabled,
           contentStyle,
         ]}
       >
@@ -115,7 +111,7 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = ({
         ) : (
           <View style={styles.iconSpacer} />
         )}
-      </Pressable>
+      </TouchableOpacity>
     </View>
   )
 }

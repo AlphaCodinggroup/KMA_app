@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from 'react'
-import { View, Text, TextInput, Pressable } from 'react-native'
+import { View, Text, TextInput, TouchableOpacity } from 'react-native'
 import { Controller, useForm } from 'react-hook-form'
 import type { FormField, FormStep } from '@shared/validation/steps.schema'
 import { styles } from './styles/dynamicForm.styles'
@@ -149,14 +149,14 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
 
   const renderButtonField = (field: Field) => (
     <View key={field.id} style={styles.inputBlock}>
-      <Pressable
+      <TouchableOpacity
         onPress={() => {}}
-        style={({ pressed }) => [styles.button, styles.secondaryBtn, pressed && styles.btnPressed]}
+        style={[styles.button, styles.secondaryBtn]}
         accessibilityRole="button"
         accessibilityLabel={field.label}
       >
         <Text style={styles.btnText}>{field.label}</Text>
-      </Pressable>
+      </TouchableOpacity>
     </View>
   )
 
@@ -180,20 +180,15 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
       {!!step.title && <Text style={styles.title}>{step.title}</Text>}
       <View style={styles.formFields}>{step.fields.map(renderField)}</View>
 
-      <Pressable
+      <TouchableOpacity
         onPress={handleSubmit(values => onSubmit(values))}
-        style={({ pressed }) => [
-          styles.button,
-          styles.primaryBtn,
-          pressed && styles.btnPressed,
-          isSubmitDisabled && { opacity: 0.5 },
-        ]}
+        style={[styles.button, styles.primaryBtn, isSubmitDisabled && styles.btnDisabled]}
         disabled={isSubmitDisabled}
         accessibilityRole="button"
         accessibilityLabel="Next"
       >
         <Text style={[styles.btnText, styles.primaryBtnText]}>NEXT</Text>
-      </Pressable>
+      </TouchableOpacity>
     </View>
   )
 }

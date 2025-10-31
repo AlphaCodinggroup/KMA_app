@@ -1,5 +1,5 @@
 import React, { memo } from 'react'
-import { View, Text, Pressable, ScrollView } from 'react-native'
+import { View, Text, ScrollView, TouchableOpacity } from 'react-native'
 import { styles } from './styles/letterFilter.styles'
 
 type LetterFilterProps = {
@@ -44,20 +44,16 @@ const Chip: React.FC<{
   accessibilityLabel?: string
 }> = ({ label, active, onPress, accessibilityLabel }) => {
   return (
-    <Pressable
+    <TouchableOpacity
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
-      style={({ pressed }) => [
-        styles.chip,
-        active ? styles.chipActive : styles.chipInactive,
-        pressed && styles.chipPressed,
-      ]}
+      style={[styles.chip, active ? styles.chipActive : styles.chipInactive]}
     >
       <Text style={[styles.chipText, active ? styles.chipTextActive : styles.chipTextInactive]}>
         {label}
       </Text>
-    </Pressable>
+    </TouchableOpacity>
   )
 }
 

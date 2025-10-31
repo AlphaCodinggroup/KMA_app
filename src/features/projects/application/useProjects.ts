@@ -23,7 +23,7 @@ export function useProjects(opts: UseProjectsOptions = {}) {
   const [items, setItems] = useState<Project[]>([])
   const [cursor, setCursor] = useState<string | undefined>(undefined)
 
-  const [loading, setLoading] = useState<boolean>(false)
+  const [loading, setLoading] = useState<boolean>(true)
   const [loadingMore, setLoadingMore] = useState<boolean>(false)
   const [refreshing, setRefreshing] = useState<boolean>(false)
   const [error, setError] = useState<Error | null>(null)

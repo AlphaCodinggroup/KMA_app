@@ -22,7 +22,6 @@ export const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderColor: AppColors.Border,
   },
-  btnPressed: { opacity: 0.5 },
   smallBtnText: {
     color: AppColors.Primary,
     fontWeight: 'bold',

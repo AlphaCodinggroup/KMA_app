@@ -23,7 +23,6 @@ export const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: AppColors.SurfaceAlt,
   },
-  pressed: { opacity: 0.5 },
   left: {
     width: RFValue(36),
     height: RFValue(36),
