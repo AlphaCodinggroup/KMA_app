@@ -102,6 +102,40 @@ http.interceptors.request.use(async config => {
   return config
 })
 
+// -------------------- Helpers de retry --------------------
+function getSafeRetryParams() {
+  const maxAttempts = Number(Env.retry.maxAttempts ?? 3)
+  const baseDelayMs = Number(Env.retry.baseDelayMs ?? 500)
+  return {
+    maxAttempts: Number.isFinite(maxAttempts) && maxAttempts >= 0 ? maxAttempts : 3,
+    baseDelayMs: Number.isFinite(baseDelayMs) && baseDelayMs > 0 ? baseDelayMs : 500,
+  }
+}
+
+function isTimeout(err: AxiosError) {
+  return err.code === 'ECONNABORTED' || err.message?.toLowerCase().includes('timeout')
+}
+
+function isNetworkError(err: AxiosError) {
+  // Sin response suele indicar fallo de red/host
+  return !err.response
+}
+
+function isRetryableStatus(status?: number) {
+  if (typeof status !== 'number') return false
+  if (status === 429) return true
+  if (status >= 500 && status !== 501) return true
+  return false
+}
+
+function isUploadsPresignRequest(cfg?: AxiosRequestConfig) {
+  if (!cfg?.url) return false
+  const url = String(cfg.url).toLowerCase()
+  const method = String(cfg.method ?? 'get').toLowerCase()
+  // Nunca reintentar presign de /uploads
+  return url.endsWith('/uploads') && method === 'post'
+}
+
 // --- Interceptor de respuesta:
 // 401 -> intentamos refresh con cola y reintentamos 1 vez
 // 429 / 5xx -> retry con backoff exponencial
@@ -139,16 +173,21 @@ http.interceptors.response.use(
     }
 
     // ------------------------- Retry/backoff 429 y 5xx ----------------------
-    const shouldRetry =
-      status === 429 || (typeof status === 'number' ? status >= 500 : !!error.code)
+    // Kill-switch por ruta: /uploads (POST) no se reintenta jamás
+    if (config && !isUploadsPresignRequest(config)) {
+      const retryable = isRetryableStatus(status) || isTimeout(error) || isNetworkError(error)
 
-    if (config && shouldRetry) {
-      const attempt = (config[RETRIED] ?? 0) as number
-      if (attempt < Env.retry.maxAttempts) {
-        config[RETRIED] = attempt + 1
-        const delay = expoBackoffDelay(attempt, Env.retry.baseDelayMs)
-        await sleep(delay)
-        return http.request(config)
+      if (retryable) {
+        const { maxAttempts, baseDelayMs } = getSafeRetryParams()
+        const attempt = Number(config[RETRIED] ?? 0)
+
+        if (attempt < maxAttempts) {
+          config[RETRIED] = attempt + 1
+          const jitter = Math.floor(Math.random() * 100)
+          const delay = expoBackoffDelay(attempt, baseDelayMs) + jitter
+          await sleep(delay)
+          return http.request(config)
+        }
       }
     }
 
@@ -190,6 +229,7 @@ export async function putPresignedBinary({
   timeoutMs = 20_000,
   maxAttempts = Env.retry.maxAttempts,
 }: PutPresignedBinaryArgs): Promise<void> {
+  const baseDelayMs = Env.retry.baseDelayMs
   let attempt = 0
 
   // bucle de retry controlado
@@ -197,9 +237,7 @@ export async function putPresignedBinary({
   for (;;) {
     try {
       await axios.put(url, data, {
-        headers: {
-          'Content-Type': contentType,
-        },
+        headers: { 'Content-Type': contentType },
         timeout: timeoutMs,
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
@@ -207,23 +245,22 @@ export async function putPresignedBinary({
       // S3 responde 200 OK vacío si salió bien.
       return
     } catch (err: any) {
-      const status = err?.response?.status as number | undefined
+      const status: number | undefined = err?.response?.status
 
       // Condiciones de retry:
       // - 403 => URL expirada / firma inválida / reuso de URL -> NO reintentar con la misma URL.
       // - 400 => probablemente Content-Type incorrecto o archivo corrupto -> NO sirve retry ciego.
       // - 429 o 5xx => transitorio, sí reintentar.
       const retryable =
-        status === 429 || (typeof status === 'number' && status >= 500 && status !== 501)
+        status === 429 || (typeof status === 'number' && status >= 500 && status !== 501) || !status
 
       if (!retryable || attempt >= maxAttempts) {
         throw err
       }
 
-      const delay = expoBackoffDelay(attempt, Env.retry.baseDelayMs)
+      const delay = expoBackoffDelay(attempt, baseDelayMs) + Math.floor(Math.random() * 100)
       attempt += 1
       await sleep(delay)
-      // loop continua y vuelve a intentar
     }
   }
 }

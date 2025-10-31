@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { View, ActivityIndicator, Alert } from 'react-native'
-import { useRouter } from 'expo-router'
+import { View, Alert } from 'react-native'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { Flow, FlowSummary } from '@entities/flow/model'
 import { loadAllFlowsWithSteps, coldSyncAllFlows } from '@features/selector/application/usecases'
 import { styles } from './styles/selector.styles'
@@ -8,9 +8,14 @@ import FlowList, { type FlowListItem } from './FlowList'
 import SubHeadline from '@shared/ui/subheadline/subHeadline'
 import LetterFilter from './LetterFilter'
 import { getKeyLetter, type LetterKey } from '../lib/getKeyLetter'
+import Loader from '@shared/ui/loader/Loader'
 
 const SelectorScreen: React.FC = () => {
   const router = useRouter()
+  const { projectId, facilityId } = useLocalSearchParams<{
+    projectId: string
+    facilityId: string
+  }>()
   const [flows, setFlows] = useState<Flow[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [selectedLetter, setSelectedLetter] = useState<LetterKey>('ALL')
@@ -67,10 +72,12 @@ const SelectorScreen: React.FC = () => {
           title: flow.flowType,
           steps: stepsParam,
           description: flow.description || '',
+          projectId: projectId || '',
+          facilityId: facilityId || '',
         },
       })
     },
-    [flows, router],
+    [facilityId, flows, projectId, router],
   )
 
   // Letras únicas disponibles (derivadas del backend)
@@ -86,13 +93,7 @@ const SelectorScreen: React.FC = () => {
     return summaries.filter(it => getKeyLetter(it) === selectedLetter)
   }, [summaries, selectedLetter])
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-      </View>
-    )
-  }
+  if (loading) return <Loader loading={loading} />
 
   return (
     <View style={styles.container}>
