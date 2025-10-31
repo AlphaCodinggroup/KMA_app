@@ -1,39 +1,54 @@
-import type { FlowSummary } from '@entities/flow/model'
-import { MOCK_FLOWS, allFlows, flowDetail } from '@shared/mocks/flows'
+import type { FlowSummary, Flow } from '@entities/flow/model'
+import { http } from '@core/http/http'
+import { Env } from '@shared/config/env'
+import { FlowsResponseDtoSchema } from '@entities/flow/api/flow.dto'
+import { mapFlowsResponseDto } from '@entities/flow/lib/mappers'
 
-export type FlowDetail = {
-  flowId: string
-  title: string
-  version: string
-  steps: Array<any>
-} | null
+/** Devuelve la base URL de la API con fallback seguro. */
+const getApiBaseUrl = (): string =>
+  Env.apiBaseUrl ?? (process.env.EXPO_PUBLIC_API_BASE_URL as string) ?? ''
 
-/** Catálogo desde mocks de UI (sin HTTP ni SQLite). */
-export async function loadCatalog(): Promise<FlowSummary[]> {
-  return (MOCK_FLOWS.flows ?? []).map(f => ({
-    id: f.id,
-    title: f.title,
-    version: f.version,
-    description: f.description ?? '',
-    stepsCount: f.stepsCount ?? 0,
-  }))
-}
-
-/** Detalle desde mocks. */
-export async function loadFlowDetail(flowId: string): Promise<FlowDetail> {
-  const found = allFlows.flows.find(f => f.flowId === flowId)
-  if (found) return found
-  if (flowDetail.flowId === flowId) return flowDetail
-  return null
+/**
+ * Carga todos los flows completos.
+ */
+export async function loadAllFlowsWithSteps(): Promise<Flow[]> {
+  const baseURL = getApiBaseUrl()
+  const res = await http.request({
+    method: 'GET',
+    url: `${baseURL}/flows`,
+  })
+  const parsed = FlowsResponseDtoSchema.parse(res.data)
+  const flows = mapFlowsResponseDto(parsed)
+  return flows
 }
 
 /**
- * Sincronización “en frío” (mock).
- * En la implementación real, acá llamaríamos a:
- *  - GET /flows/all -> persistir en SQLite (flows, steps)
- *  - invalidar/actualizar cache local
+ * Carga el catálogo resumido para las tarjetas del Selector.
+ * Deriva del resultado completo para no duplicar I/O ni lógica de mapeo.
+ */
+export async function loadCatalog(): Promise<FlowSummary[]> {
+  const flows = await loadAllFlowsWithSteps()
+
+  const summaries: FlowSummary[] = flows.map(f => ({
+    id: f.flowId, // En dominio es flowId; el resumen usa id
+    title: f.title,
+    version: String(f.version),
+    description: f.description,
+    stepsCount: f.steps.length,
+    flowType: f.flowType,
+    isActive: f.isActive,
+  }))
+
+  return summaries
+}
+
+/**
+ * Sincronización en frío (placeholder).
+ * En una siguiente iteración podemos:
+ *  - leer /flows/all (si el backend lo expone),
+ *  - persistir catálogo + steps en SQLite,
+ *  - y preparar cache offline para SelectorScreen.
  */
 export async function coldSyncAllFlows(): Promise<void> {
-  // Simula latencia mínima y “cacheo” (no-op con mocks)
-  await new Promise(r => setTimeout(r, 120))
+  return
 }

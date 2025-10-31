@@ -18,6 +18,8 @@ export interface EntityListProps<T> {
   ListEmptyComponent?: React.ComponentType | null
   testID?: string
   keyboardShouldPersistTaps?: 'never' | 'always' | 'handled'
+  refreshing?: boolean
+  onRefresh?: () => void
 }
 
 function EntityListInner<T>({
@@ -30,6 +32,8 @@ function EntityListInner<T>({
   ListEmptyComponent,
   testID,
   keyboardShouldPersistTaps = 'handled',
+  refreshing,
+  onRefresh,
 }: EntityListProps<T>) {
   const Separator =
     ItemSeparatorComponent ??
@@ -47,8 +51,9 @@ function EntityListInner<T>({
       ListEmptyComponent={ListEmptyComponent ?? DefaultEmpty}
       contentContainerStyle={[styles.container, contentContainerStyle]}
       keyboardShouldPersistTaps={keyboardShouldPersistTaps}
-      // Para listas “tarjeteadas” no queremos scroll indicators por defecto
       showsVerticalScrollIndicator={false}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
     />
   )
 }

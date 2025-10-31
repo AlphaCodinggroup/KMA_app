@@ -4,7 +4,7 @@ import Icon, { type IconName } from '@shared/ui/icons/Icon'
 import ListItemCard from '@shared/ui/list/ListItemCard'
 import { RFValue } from 'react-native-responsive-fontsize'
 
-export interface BuildingCardProps {
+export interface FacilityCardProps {
   title: string
   onPress: () => void
   testID?: string
@@ -13,7 +13,7 @@ export interface BuildingCardProps {
   leftIconName?: IconName
 }
 
-const BuildingCard: React.FC<BuildingCardProps> = ({
+const FacilityCard: React.FC<FacilityCardProps> = ({
   title,
   onPress,
   testID,
@@ -29,4 +29,4 @@ const BuildingCard: React.FC<BuildingCardProps> = ({
   return <ListItemCard {...baseProps} {...(testID ? { testID } : {})} />
 }
 
-export default memo(BuildingCard)
+export default memo(FacilityCard)

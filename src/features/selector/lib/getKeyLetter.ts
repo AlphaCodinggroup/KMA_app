@@ -1,9 +1,18 @@
+/**
+ * Clave de filtro por letra obtenida desde `flowType`.
+ * Si `flowType` no está presente, cae al título.
+ */
 import type { FlowSummary } from '@entities/flow/model'
 
-export const ALL = 'ALL' as const
-export type LetterKey = typeof ALL | string
+export type LetterKey = 'ALL' | string
 
-export function getKeyLetter(item: FlowSummary): string {
-  const raw = (item?.id?.[0] || item?.title?.[0] || '').toUpperCase()
-  return /[A-Z]/.test(raw) ? raw : '#'
+/**
+ * Obtiene la primer letra A–Z en mayúscula a partir de flowType (o título).
+ * Si no hay letra válida, devuelve string vacío para que el caller lo filtre.
+ */
+export function getKeyLetter(it: Pick<FlowSummary, 'flowType' | 'title'>): string {
+  const source = (it.flowType ?? it.title ?? '').trim()
+  if (!source) return ''
+  const first = source[0]!.toUpperCase()
+  return /[A-Z]/.test(first) ? first : ''
 }

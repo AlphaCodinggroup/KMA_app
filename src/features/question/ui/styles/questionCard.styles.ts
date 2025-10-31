@@ -23,7 +23,7 @@ export const styles = StyleSheet.create({
     borderBottomColor: AppColors.Border,
   },
   optionItemSelected: { backgroundColor: AppColors.SurfaceAlt },
-  optionText: { color: AppColors.Primary },
+  optionText: { color: AppColors.Primary, fontSize: setResponsiveSize({ size: 10 }) },
   actions: { flexDirection: 'row', gap: RFValue(12), marginTop: RFValue(8) },
   button: {
     flex: 1,

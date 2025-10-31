@@ -35,7 +35,11 @@ export const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   secondaryBtn: { backgroundColor: AppColors.Background, borderColor: AppColors.Border },
-  btnText: { color: AppColors.Primary, fontWeight: 'bold' },
+  btnText: {
+    color: AppColors.Primary,
+    fontWeight: 'bold',
+    fontSize: setResponsiveSize({ size: 10 }),
+  },
   scrollview: { marginVertical: RFValue(8) },
   containerImage: {
     marginRight: RFValue(12),

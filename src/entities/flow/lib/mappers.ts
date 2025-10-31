@@ -1,18 +1,14 @@
-import {
-  FlowsResponseDtoSchema,
-  FlowDtoSchema,
-  StepDtoSchema,
-  type FlowsResponseDto,
-  type FlowDto,
-  type StepDto,
-  type QuestionStepDto,
-  type FormStepDto,
-  type SelectStepDto,
-  type EndStepDto,
-  type SelectOptionDto,
-  type FormFieldDto,
-} from '../api/flow.dto'
-
+import type {
+  FlowsResponseDTO,
+  FlowItemDTO,
+  StepDTO,
+  QuestionStepDTO,
+  FormStepDTO,
+  SelectStepDTO,
+  EndStepDTO,
+  StepFieldDTO,
+  SelectOptionDTO,
+} from '@entities/flow/api/flow.dto'
 import type {
   Flow,
   Step,
@@ -20,116 +16,105 @@ import type {
   FormStep,
   SelectStep,
   EndStep,
-  FormField,
-  SelectOption as DomainSelectOption,
-} from '../model'
+  Field,
+  SelectOption,
+} from '@entities/flow/model'
 
 /**
- * Valida y parsea con Zod la respuesta raíz de /flows.
- * Usalo cuando hagas el fetch para garantizar estructura antes de mapear.
+ * Mapeadores DTO → Dominio (camelCase)
+ * -----------------------------------
+ * Conservan TODO el contenido (incluyendo metadatos) para que SelectorScreen reciba
+ * la info completa aunque no toda se muestre en UI.
  */
-export function parseFlowsResponseDto(json: unknown): FlowsResponseDto {
-  return FlowsResponseDtoSchema.parse(json)
-}
 
-/**
- * Valida y parsea un FlowDto suelto.
- */
-export function parseFlowDto(json: unknown): FlowDto {
-  return FlowDtoSchema.parse(json)
-}
-
-/**
- * Valida y parsea un StepDto suelto.
- */
-export function parseStepDto(json: unknown): StepDto {
-  return StepDtoSchema.parse(json)
-}
-
-/* --------------------------------- Utils --------------------------------- */
-
-function mapFormFieldDto(dto: FormFieldDto): FormField {
+// --------------------
+// Helpers de fields/opciones
+// --------------------
+function mapField(dto: StepFieldDTO): Field {
   return {
     id: dto.id,
-    type: dto.type, // 'text' | 'number' | 'photo' | 'button'
+    type: dto.type,
     label: dto.label,
   }
 }
 
-function mapSelectOptionDto(dto: SelectOptionDto): DomainSelectOption {
+function mapSelectOption(dto: SelectOptionDTO): SelectOption {
   return {
     label: dto.label,
     next: dto.next,
   }
 }
 
-/* ------------------------------- Steps mapper ------------------------------ */
-
-function mapQuestionStepDto(dto: QuestionStepDto): QuestionStep {
+// --------------------
+// Steps
+// --------------------
+function mapQuestion(dto: QuestionStepDTO): QuestionStep {
   return {
     id: dto.id,
     type: 'Question',
     text: dto.text,
-    ...(dto.yes_next !== undefined ? { yesNext: dto.yes_next } : {}),
-    ...(dto.no_next !== undefined ? { noNext: dto.no_next } : {}),
-    ...(dto.barrier_id !== undefined ? { barrierId: dto.barrier_id } : {}),
+    yesNext: dto.yes_next,
+    noNext: dto.no_next,
+    barrierId: dto.barrier_id,
   }
 }
 
-function mapFormStepDto(dto: FormStepDto): FormStep {
+function mapForm(dto: FormStepDTO): FormStep {
   return {
     id: dto.id,
     type: 'Form',
     title: dto.title,
-    ...(dto.next !== undefined ? { next: dto.next } : {}),
-    ...(dto.barrier_id !== undefined ? { barrierId: dto.barrier_id } : {}),
-    fields: dto.fields.map(mapFormFieldDto),
+    next: dto.next,
+    barrierId: dto.barrier_id,
+    fields: dto.fields.map(mapField),
   }
 }
 
-function mapSelectStepDto(dto: SelectStepDto): SelectStep {
+function mapSelect(dto: SelectStepDTO): SelectStep {
   return {
     id: dto.id,
     type: 'Select',
-    ...(dto.title !== undefined ? { title: dto.title } : {}),
-    ...(dto.text !== undefined ? { text: dto.text } : {}),
-    options: dto.options.map(mapSelectOptionDto),
+    text: dto.text,
+    title: dto.title,
+    options: dto.options.map(mapSelectOption),
   }
 }
 
-function mapEndStepDto(dto: EndStepDto): EndStep {
+function mapEnd(dto: EndStepDTO): EndStep {
   return {
     id: dto.id,
     type: 'End',
   }
 }
 
-export function mapStepDto(dto: StepDto): Step {
+function mapStep(dto: StepDTO): Step {
   switch (dto.type) {
     case 'Question':
-      return mapQuestionStepDto(dto)
+      return mapQuestion(dto)
     case 'Form':
-      return mapFormStepDto(dto)
+      return mapForm(dto)
     case 'Select':
-      return mapSelectStepDto(dto)
+      return mapSelect(dto)
     case 'End':
-      return mapEndStepDto(dto)
+      return mapEnd(dto)
     default: {
+      // Exhaustividad en tiempo de compilación; si aparece un tipo nuevo, forzará cambio aquí
       const _exhaustive: never = dto as never
-      throw new Error(`mapStepDto: Tipo de Step no soportado: ${_exhaustive}`)
+      return _exhaustive
     }
   }
 }
 
-/* -------------------------------- Flow mapper ------------------------------ */
-
-export function mapFlowDto(dto: FlowDto): Flow {
+// --------------------
+// Flow
+// --------------------
+export function mapFlowItemDto(dto: FlowItemDTO): Flow {
   return {
-    id: dto.id,
+    flowId: dto.id,
     title: dto.title,
-    ...(dto.description !== undefined ? { description: dto.description } : {}),
-    steps: dto.steps.map(mapStepDto),
-    ...(dto.flow_type !== undefined ? { flowType: dto.flow_type } : {}),
+    description: dto.description,
+    steps: dto.steps.map(mapStep),
+    flowType: dto.flow_type,
     version: dto.version,
     isActive: dto.is_active,
     createdAt: dto.created_at,
@@ -137,11 +122,17 @@ export function mapFlowDto(dto: FlowDto): Flow {
   }
 }
 
-/**
- * Mapea la respuesta de /flows a una lista de Flows de dominio + metadata bruta si la necesitas.
- * De momento solo devolvemos el array de Flows porque es lo que consume la app.
- * Si luego querés paginado real, podemos exponer { items, total, limit, offset }.
- */
-export function mapFlowsResponseDto(dto: FlowsResponseDto): Flow[] {
-  return dto.flows.map(mapFlowDto)
+export function mapFlowsResponseDto(dto: FlowsResponseDTO): Flow[] {
+  return dto.flows.map(mapFlowItemDto)
+}
+
+// Exports internos útiles en tests
+export const __test_only__ = {
+  mapStep,
+  mapQuestion,
+  mapForm,
+  mapSelect,
+  mapEnd,
+  mapField,
+  mapSelectOption,
 }
