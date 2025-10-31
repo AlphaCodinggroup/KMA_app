@@ -97,11 +97,11 @@ function QuestionCardBase({
 
             <Pressable
               onPress={() => onYes(selected ? { option: selected } : undefined)}
-              style={({ pressed }) => [styles.button, styles.btnYes, pressed && styles.btnPressed]}
+              style={({ pressed }) => [styles.button, styles.btnNo, pressed && styles.btnPressed]}
               accessibilityRole="button"
               accessibilityLabel="Yes"
             >
-              <Text style={[styles.btnText, styles.btnYesText]}>YES</Text>
+              <Text style={[styles.btnText]}>YES</Text>
             </Pressable>
           </View>
 

@@ -1,4 +1,4 @@
-import React, { memo } from 'react'
+import React, { memo, useMemo } from 'react'
 import { View, Text, TextInput, Pressable } from 'react-native'
 import { Controller, useForm } from 'react-hook-form'
 import type { FormField, FormStep } from '@shared/validation/steps.schema'
@@ -37,10 +37,33 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
     return acc
   }, [step.fields])
 
-  const { control, handleSubmit } = useForm<Record<string, unknown>>({
+  const { control, handleSubmit, watch } = useForm<Record<string, unknown>>({
     defaultValues,
     mode: 'onBlur',
   })
+
+  // --- Habilitación del submit: al menos una foto cargada en cualquier campo 'photo'
+  const photoFieldIds = useMemo(
+    () => step.fields.filter(f => f.type === 'photo').map(f => f.id),
+    [step.fields],
+  )
+
+  const watchedPhotoValues = watch(photoFieldIds) as unknown[] | undefined
+
+  const canSubmit = useMemo(() => {
+    if (photoFieldIds.length === 0) return true
+    if (!watchedPhotoValues || watchedPhotoValues.length === 0) return false
+
+    const countPhotos = (v: unknown) => {
+      if (Array.isArray(v)) return v.length
+      if (typeof v === 'string') return v ? 1 : 0
+      return 0
+    }
+
+    return watchedPhotoValues.some(v => countPhotos(v) > 0)
+  }, [photoFieldIds.length, watchedPhotoValues])
+
+  const isSubmitDisabled = !canSubmit
 
   const renderTextField = (field: Field) => (
     <Controller
@@ -159,7 +182,13 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
 
       <Pressable
         onPress={handleSubmit(values => onSubmit(values))}
-        style={({ pressed }) => [styles.button, styles.primaryBtn, pressed && styles.btnPressed]}
+        style={({ pressed }) => [
+          styles.button,
+          styles.primaryBtn,
+          pressed && styles.btnPressed,
+          isSubmitDisabled && { opacity: 0.5 },
+        ]}
+        disabled={isSubmitDisabled}
         accessibilityRole="button"
         accessibilityLabel="Next"
       >
