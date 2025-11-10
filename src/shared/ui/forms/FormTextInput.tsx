@@ -4,6 +4,7 @@ import { type Control, Controller, type FieldPath, type FieldValues } from 'reac
 import { AppColors } from '@shared/ui/colors'
 import { styles } from './formTextInput.styles'
 import Icon from '../icons/Icon'
+import { RFValue } from 'react-native-responsive-fontsize'
 
 type Props<T extends FieldValues> = TextInputProps & {
   control: Control<T>
@@ -75,7 +76,7 @@ export const FormTextInput = forwardRef<TextInput, Props<any>>(function FormText
                   accessibilityRole="button"
                   accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                 >
-                  <Icon name={showPassword ? 'eyeOff' : 'eye'} />
+                  <Icon size={RFValue(14)} name={showPassword ? 'eyeOff' : 'eye'} />
                 </TouchableOpacity>
               )}
             </View>
