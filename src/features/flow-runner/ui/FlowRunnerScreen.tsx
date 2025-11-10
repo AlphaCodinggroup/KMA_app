@@ -270,7 +270,9 @@ const FlowRunnerScreen: React.FC = () => {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} scrollEnabled={!zoomed}>
-        {current && <StepIllustration stepId={current.id} onZoomChange={setZoomed} />}
+        {current && current.image && (
+          <StepIllustration image={current.image} onZoomChange={setZoomed} />
+        )}
 
         {current && current.type === 'Question' && (
           <QuestionCard

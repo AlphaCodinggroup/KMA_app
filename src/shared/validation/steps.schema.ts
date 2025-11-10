@@ -23,6 +23,7 @@ export const FormStepSchema = z.object({
   // barrierId no se usaba en UI; si en el futuro hace falta, descomentar:
   // barrierId: z.string().optional(),
   fields: z.array(FormFieldSchema).min(1),
+  image: z.string().optional(),
 })
 export type FormStep = z.infer<typeof FormStepSchema>
 
@@ -34,6 +35,7 @@ export const QuestionStepSchema = z.object({
   text: z.string(),
   yesNext: z.string().optional(),
   noNext: z.string().optional(),
+  image: z.string().optional(),
   // barrierId: z.string().optional(), // disponible en dominio pero omitido en FlowDetail actual
 })
 export type QuestionStep = z.infer<typeof QuestionStepSchema>
@@ -52,6 +54,7 @@ export const SelectStepSchema = z.object({
   title: z.string().optional(),
   text: z.string().optional(),
   options: z.array(SelectOptionSchema).min(1),
+  image: z.string().optional(),
 })
 export type SelectStep = z.infer<typeof SelectStepSchema>
 
@@ -60,6 +63,7 @@ export type SelectStep = z.infer<typeof SelectStepSchema>
 export const EndStepSchema = z.object({
   id: z.string(),
   type: z.literal('End'),
+  image: z.string().optional(),
 })
 export type EndStep = z.infer<typeof EndStepSchema>
 

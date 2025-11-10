@@ -31,6 +31,7 @@ export interface QuestionStep {
   yesNext?: string
   noNext?: string
   barrierId?: string
+  image?: string
 }
 
 export interface FormStep {
@@ -40,6 +41,7 @@ export interface FormStep {
   next?: string
   barrierId?: string
   fields: Field[]
+  image?: string
 }
 
 // "Select" puede venir con `text` o con `title` según el flujo
@@ -49,11 +51,13 @@ export interface SelectStep {
   text?: string
   title?: string
   options: SelectOption[]
+  image?: string
 }
 
 export interface EndStep {
   id: string // suele ser "END"
   type: 'End'
+  image?: string
 }
 
 export type Step = QuestionStep | FormStep | SelectStep | EndStep

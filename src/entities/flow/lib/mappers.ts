@@ -56,6 +56,7 @@ function mapQuestion(dto: QuestionStepDTO): QuestionStep {
     yesNext: dto.yes_next,
     noNext: dto.no_next,
     barrierId: dto.barrier_id,
+    image: dto.image,
   }
 }
 
@@ -67,6 +68,7 @@ function mapForm(dto: FormStepDTO): FormStep {
     next: dto.next,
     barrierId: dto.barrier_id,
     fields: dto.fields.map(mapField),
+    image: dto.image,
   }
 }
 
@@ -77,6 +79,7 @@ function mapSelect(dto: SelectStepDTO): SelectStep {
     text: dto.text,
     title: dto.title,
     options: dto.options.map(mapSelectOption),
+    image: dto.image,
   }
 }
 
@@ -84,6 +87,7 @@ function mapEnd(dto: EndStepDTO): EndStep {
   return {
     id: dto.id,
     type: 'End',
+    image: dto.image,
   }
 }
 
