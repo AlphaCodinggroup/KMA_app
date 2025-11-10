@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react'
-import { View, Text, ScrollView, Alert } from 'react-native'
+import { View, Text, ScrollView, Alert, Platform } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import NetInfo from '@react-native-community/netinfo'
@@ -269,8 +269,16 @@ const FlowRunnerScreen: React.FC = () => {
         <Text style={styles.subtitle}>{detail.description}</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} scrollEnabled={!zoomed}>
-        {current && <StepIllustration stepId={current.id} onZoomChange={setZoomed} />}
+      <ScrollView
+        contentContainerStyle={styles.content}
+        scrollEnabled={!zoomed}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        automaticallyAdjustKeyboardInsets
+      >
+        {current && current.image && (
+          <StepIllustration image={current.image} onZoomChange={setZoomed} />
+        )}
 
         {current && current.type === 'Question' && (
           <QuestionCard

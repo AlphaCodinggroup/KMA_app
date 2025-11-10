@@ -1,9 +1,18 @@
-import React, { memo, useMemo } from 'react'
-import { View, Text, TextInput, TouchableOpacity } from 'react-native'
+import React, { memo, useMemo, useState } from 'react'
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Platform,
+  Keyboard,
+  KeyboardAvoidingView,
+} from 'react-native'
 import { Controller, useForm } from 'react-hook-form'
 import type { FormField, FormStep } from '@shared/validation/steps.schema'
 import { styles } from './styles/dynamicForm.styles'
 import PhotoField from './fields/PhotoField'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 type Field = FormField
 
@@ -18,6 +27,7 @@ type Props = {
  * - Compatibilidad: si `photo` viniera como string desde datos antiguos, se normaliza a string[] solo en UI.
  */
 function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
+  const insets = useSafeAreaInsets()
   const defaultValues = React.useMemo(() => {
     const acc: Record<string, unknown> = {}
     for (const f of step.fields) {
@@ -65,6 +75,19 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
 
   const isSubmitDisabled = !canSubmit
 
+  const [kbHeight, setKbHeight] = useState<number>(0)
+  React.useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
+    const showSub = Keyboard.addListener(showEvt, e => setKbHeight(e.endCoordinates?.height ?? 0))
+    const hideSub = Keyboard.addListener(hideEvt, () => setKbHeight(0))
+    return () => {
+      showSub.remove()
+      hideSub.remove()
+    }
+  }, [])
+  const bottomSpacer = Math.max(0, kbHeight - insets.bottom)
+
   const renderTextField = (field: Field) => (
     <Controller
       key={field.id}
@@ -79,6 +102,7 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
             onBlur={rhf.onBlur}
             placeholder={field.label}
             style={styles.textInput}
+            returnKeyType="done"
           />
         </View>
       )}
@@ -100,6 +124,7 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
             placeholder={field.label}
             keyboardType="numeric"
             style={styles.textInput}
+            returnKeyType="done"
           />
         </View>
       )}
@@ -176,20 +201,28 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
   }
 
   return (
-    <View style={styles.container}>
-      {!!step.title && <Text style={styles.title}>{step.title}</Text>}
-      <View style={styles.formFields}>{step.fields.map(renderField)}</View>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+    >
+      <View style={styles.container}>
+        {!!step.title && <Text style={styles.title}>{step.title}</Text>}
+        <View style={styles.formFields}>{step.fields.map(renderField)}</View>
 
-      <TouchableOpacity
-        onPress={handleSubmit(values => onSubmit(values))}
-        style={[styles.button, styles.primaryBtn, isSubmitDisabled && styles.btnDisabled]}
-        disabled={isSubmitDisabled}
-        accessibilityRole="button"
-        accessibilityLabel="Next"
-      >
-        <Text style={[styles.btnText, styles.primaryBtnText]}>NEXT</Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity
+          onPress={handleSubmit(values => onSubmit(values))}
+          style={[styles.button, styles.primaryBtn, isSubmitDisabled && styles.btnDisabled]}
+          disabled={isSubmitDisabled}
+          accessibilityRole="button"
+          accessibilityLabel="Next"
+        >
+          <Text style={[styles.btnText, styles.primaryBtnText]}>NEXT</Text>
+        </TouchableOpacity>
+
+        {/* Spacer dinámico: permite scrollear por encima del teclado sin tocar el ScrollView padre */}
+        <View style={{ height: bottomSpacer }} />
+      </View>
+    </KeyboardAvoidingView>
   )
 }
 

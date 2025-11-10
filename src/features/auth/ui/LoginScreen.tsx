@@ -70,7 +70,7 @@ const LoginScreen: React.FC = () => {
           control={control}
           name="username"
           label="User"
-          placeholder="your-username"
+          placeholder="Your username"
           keyboardType="default"
           autoCapitalize="none"
           autoCorrect={false}

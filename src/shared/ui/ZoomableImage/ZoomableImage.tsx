@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useCallback } from 'react'
-import { Image, ImageSourcePropType, LayoutChangeEvent, StyleSheet, View } from 'react-native'
+import React, { useMemo, useState, useCallback, useEffect } from 'react'
+import { Image, ImageSourcePropType, LayoutChangeEvent, View, Dimensions } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
   useSharedValue,
@@ -34,15 +34,42 @@ const ZoomableImage: React.FC<Props> = ({
   onZoomChange,
   style,
 }) => {
-  // Valores "JS" solo para calcular aspectRatio; no se usan en worklets
+  // Intentamos obtener tamaño "natural" (assets locales)
   const asset = useMemo(() => getAssetSize(source), [source])
+
+  // Para imágenes remotas, intentamos resolver w/h asincrónicamente (mejor AR)
+  const [remoteSize, setRemoteSize] = useState<{ w: number; h: number } | null>(null)
+  useEffect(() => {
+    const uri: string | undefined = (source as any)?.uri
+    if (!uri) return setRemoteSize(null)
+
+    let mounted = true
+    Image.getSize(
+      uri,
+      (w, h) => {
+        if (mounted) setRemoteSize({ w, h })
+      },
+      () => {
+        if (mounted) setRemoteSize(null)
+      },
+    )
+    return () => {
+      mounted = false
+    }
+  }, [source])
+
+  // Aspect ratio preferido: style.aspectRatio > tamaño remoto > asset > fallback 16/9
   const aspectRatio = useMemo(() => {
     if (style?.aspectRatio) return Number(style.aspectRatio)
+    if (remoteSize) return remoteSize.w / remoteSize.h
     if (asset) return asset.w / asset.h
     return 16 / 9
-  }, [asset, style])
+  }, [asset, remoteSize, style])
 
-  // SharedValues para que los worklets tengan acceso
+  // Tamaño efectivo que se dibuja (tras aplicar límite 25% pantalla)
+  const [displaySize, setDisplaySize] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
+
+  // SharedValues para worklets (usamos el tamaño efectivo mostrado)
   const boxWsv = useSharedValue(0)
   const boxHsv = useSharedValue(0)
   const contentWsv = useSharedValue(0)
@@ -63,12 +90,25 @@ const ZoomableImage: React.FC<Props> = ({
   )
 
   const onLayout = (e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout
-    // Actualizamos SharedValues (accesibles en worklets)
-    boxWsv.value = width
-    boxHsv.value = height
-    contentWsv.value = width
-    contentHsv.value = width / aspectRatio // alto “base” cuando scale=1 (contain horizontal)
+    const { width: containerW } = e.nativeEvent.layout
+    // Ajuste: la imagen debe ocupar como mucho el 25% de la pantalla
+    const screenH = Dimensions.get('window').height
+    const maxDisplayH = screenH * 0.25
+
+    // Altura "natural" si ocupáramos el ancho completo
+    const baseH = containerW / aspectRatio
+
+    // Si baseH excede 25% pantalla, recortamos altura y ajustamos ancho
+    const displayH = Math.min(baseH, maxDisplayH)
+    const displayW = baseH <= maxDisplayH ? containerW : displayH * aspectRatio
+
+    setDisplaySize({ w: displayW, h: displayH })
+
+    // Estas dimensiones gobiernan pinch/pan/clamp (tamaño real renderizado)
+    boxWsv.value = displayW
+    boxHsv.value = displayH
+    contentWsv.value = displayW
+    contentHsv.value = displayH
   }
 
   // PINCH
@@ -92,7 +132,6 @@ const ZoomableImage: React.FC<Props> = ({
             translateY.value = withTiming(0)
             runOnJS(notifyZoom)(false)
           } else {
-            // clamp offsets con datos del box y contenido (todo en worklet)
             const overflowW = Math.max(0, contentWsv.value * scale.value - boxWsv.value)
             const overflowH = Math.max(0, contentHsv.value * scale.value - boxHsv.value)
             const maxX = overflowW / 2
@@ -197,7 +236,7 @@ const ZoomableImage: React.FC<Props> = ({
 
   return (
     <View
-      style={[styles.container, style]}
+      style={[styles.container, { alignItems: 'center' }, style]}
       onLayout={onLayout}
       accessible
       accessibilityLabel="Imagen zoomable"
@@ -205,7 +244,7 @@ const ZoomableImage: React.FC<Props> = ({
       <GestureDetector gesture={composed}>
         <AnimatedImage
           source={source}
-          style={[styles.image, { aspectRatio }, animatedStyle]}
+          style={[styles.image, { width: displaySize.w, height: displaySize.h }, animatedStyle]}
           resizeMode="contain"
         />
       </GestureDetector>
