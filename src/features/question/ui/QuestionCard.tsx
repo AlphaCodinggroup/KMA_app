@@ -33,6 +33,7 @@ function QuestionCardBase({
   onSelectOption,
 }: Props) {
   const [selected, setSelected] = useState<string | null>(null)
+  const [decision, setDecision] = useState<'YES' | 'NO' | null>(null)
 
   const isSelectMode = Array.isArray(selectOptions) && selectOptions.length > 0
   const hasQuestionOptions = Array.isArray(questionOptions) && questionOptions.length > 0
@@ -87,28 +88,36 @@ function QuestionCardBase({
         <>
           <View style={styles.actions}>
             <TouchableOpacity
-              onPress={() => onNo(selected ? { option: selected } : undefined)}
-              style={[styles.button, styles.btnNo]}
+              onPress={() => {
+                setDecision('NO')
+                onNo(selected ? { option: selected } : undefined)
+              }}
+              style={[styles.button, styles.btnNo, decision === 'NO' && styles.selectedBtnStyle]}
               accessibilityRole="button"
               accessibilityLabel="No"
+              accessibilityState={{ selected: decision === 'NO' }}
             >
               <Text style={styles.btnText}>NO</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => onYes(selected ? { option: selected } : undefined)}
-              style={[styles.button, styles.btnNo]}
+              onPress={() => {
+                setDecision('YES')
+                onYes(selected ? { option: selected } : undefined)
+              }}
+              style={[styles.button, styles.btnNo, decision === 'YES' && styles.selectedBtnStyle]}
               accessibilityRole="button"
               accessibilityLabel="Yes"
+              accessibilityState={{ selected: decision === 'YES' }}
             >
-              <Text style={[styles.btnText]}>YES</Text>
+              <Text style={styles.btnText}>YES</Text>
             </TouchableOpacity>
           </View>
 
           <View>
             <TouchableOpacity
               onPress={() => onSkip(step)}
-              style={[styles.button, styles.btnNo]}
+              style={[styles.button, styles.btnNo, decision === null && styles.selectedBtnStyle]}
               accessibilityRole="button"
               accessibilityLabel="Next"
             >
