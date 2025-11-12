@@ -1,6 +1,6 @@
 {
   "name": "kma_app",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start --clear",
@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "build:ios": "eas build --platform ios --profile production --non-interactive",
+    "send-testflight": "eas submit -p ios --latest --non-interactive --profile production"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
