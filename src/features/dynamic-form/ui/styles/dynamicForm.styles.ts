@@ -16,7 +16,7 @@ export const styles = StyleSheet.create({
   textInput: {
     backgroundColor: AppColors.Background,
     borderColor: AppColors.Border,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: RFValue(1),
     borderRadius: RFValue(10),
     paddingHorizontal: RFValue(12),
     paddingVertical: RFValue(10),
@@ -27,7 +27,7 @@ export const styles = StyleSheet.create({
     borderRadius: RFValue(12),
     paddingVertical: RFValue(14),
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: RFValue(1),
   },
   primaryBtn: { backgroundColor: AppColors.Primary, borderColor: AppColors.Primary },
   primaryBtnText: {

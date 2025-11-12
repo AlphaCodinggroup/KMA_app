@@ -100,7 +100,6 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
             value={(rhf.value as string) ?? ''}
             onChangeText={rhf.onChange}
             onBlur={rhf.onBlur}
-            placeholder={field.label}
             style={styles.textInput}
             returnKeyType="done"
           />
@@ -121,7 +120,6 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
             value={(rhf.value as string) ?? ''}
             onChangeText={rhf.onChange}
             onBlur={rhf.onBlur}
-            placeholder={field.label}
             keyboardType="numeric"
             style={styles.textInput}
             returnKeyType="done"
