@@ -33,6 +33,17 @@ function isValidStepsPayload(v: unknown): v is Step[] {
   )
 }
 
+type SelectStep = Extract<Step, { type: 'Select' }>
+
+const toVirtualQuestion = (s: SelectStep): QuestionStep => ({
+  id: s.id,
+  type: 'Question',
+  text: s.title ?? s.text ?? '',
+  image: s.image,
+})
+
+const END_ID = 'END'
+
 const FlowRunnerScreen: React.FC = () => {
   const router = useRouter()
   const {
@@ -52,11 +63,12 @@ const FlowRunnerScreen: React.FC = () => {
   }>()
 
   const [detail, setDetail] = useState<FlowDetail | null>(null)
-  const [currentId, setCurrentId] = useState<string | null>(null)
+  const [visibleIds, setVisibleIds] = useState<string[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [online, setOnline] = useState<boolean>(true)
   const [zoomed, setZoomed] = useState<boolean>(false)
   const [submitting, setSubmitting] = useState<boolean>(false)
+  const scrollRef = useRef<ScrollView>(null)
 
   // answersRef va acumulando todas las respuestas/valores/fotos del flujo
   const answersRef = useRef<Record<string, SubmissionAnswer>>({})
@@ -89,18 +101,16 @@ const FlowRunnerScreen: React.FC = () => {
 
       const steps = parsed as Step[]
       // Construimos el FlowDetail local (no dependemos de GET en esta pantalla)
-      const data: FlowDetail = {
-        flowId,
-        title,
-        steps,
-        description,
-      }
-
-      setDetail(data)
+      const data: FlowDetail = { flowId, title, steps, description }
 
       // Paso inicial = primera Question encontrada si existe; si no, primer step o END
-      const firstQ = data.steps.find(s => s.type === 'Question')
-      setCurrentId(firstQ?.id ?? data.steps[0]?.id ?? null)
+      setDetail(data)
+      const firstId =
+        data.steps.find(s => s.type === 'Question')?.id ??
+        data.steps[0]?.id ??
+        (data.steps.find(s => s.id === END_ID) ? END_ID : null)
+
+      setVisibleIds(firstId ? [firstId] : [])
     } catch (err) {
       console.warn('[FlowRunnerScreen.boot] error reading steps from params', err)
       Alert.alert('Error', 'The flow could not be loaded from the provided steps.')
@@ -118,45 +128,65 @@ const FlowRunnerScreen: React.FC = () => {
 
   const stepsById = useMemo(() => (detail ? mapById(detail.steps) : {}), [detail])
 
-  const goToNext = useCallback(
-    (next?: string) => {
-      let target: string | null = null
-
-      if (!next) {
-        target = stepsById.END ? 'END' : null
-      } else if (next === 'END') {
-        target = 'END'
-      } else {
-        target = stepsById[next] ? next : stepsById.END ? 'END' : null
-      }
-
-      setCurrentId(target)
+  // Resolver próximo id válido según el grafo
+  const resolveNextId = useCallback(
+    (next?: string | null): string | null => {
+      if (!next) return stepsById[END_ID] ? END_ID : null
+      if (next === END_ID) return END_ID
+      return stepsById[next] ? next : stepsById[END_ID] ? END_ID : null
     },
     [stepsById],
   )
 
+  const scrollToEnd = useCallback(() => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated: true })
+    })
+  }, [])
+
+  // Cuando se re-edita un paso previo, cortamos los siguientes
+  const sliceAfter = useCallback((stepId: string) => {
+    setVisibleIds(prev => {
+      const idx = prev.indexOf(stepId)
+      if (idx === -1) return prev
+      return prev.slice(0, idx + 1)
+    })
+  }, [])
+
+  // Agregar el siguiente paso al listado
+  const appendNext = useCallback(
+    (nextId: string | null) => {
+      if (!nextId) return
+      setVisibleIds(prev => {
+        if (prev[prev.length - 1] === nextId) return prev
+        return [...prev, nextId]
+      })
+      scrollToEnd()
+    },
+    [scrollToEnd],
+  )
+
+  // Persistencia best-effort
+  const persistAll = useCallback(async () => {
+    if (!detail) return
+    await persistDraft({
+      flowId: detail.flowId,
+      title: detail.title,
+      answers: answersRef.current,
+    })
+  }, [detail])
+
+  // Handlers
   const onSkip = useCallback(
     async (step: QuestionStep) => {
-      // Guardamos answer: null en el JSON
-      answersRef.current[step.id] = {
-        type: 'Question',
-        answer: null,
-        option: null,
-      }
+      answersRef.current[step.id] = { type: 'Question', answer: null, option: null }
+      await persistAll()
 
-      if (detail) {
-        await persistDraft({
-          flowId: detail.flowId,
-          title: detail.title,
-          answers: answersRef.current,
-        })
-      }
-
-      // Elegimos el próximo paso posible: yesNext > noNext > END/auto
-      const next = step.yesNext ?? step.noNext
-      goToNext(next)
+      const next = resolveNextId(step.yesNext ?? step.noNext)
+      sliceAfter(step.id)
+      appendNext(next)
     },
-    [detail, goToNext],
+    [appendNext, persistAll, resolveNextId, sliceAfter],
   )
 
   const onAnswer = useCallback(
@@ -166,69 +196,41 @@ const FlowRunnerScreen: React.FC = () => {
         answer: yes ? 'YES' : 'NO',
         ...(extra?.option ? { option: extra.option } : {}),
       }
+      await persistAll()
 
-      if (detail) {
-        await persistDraft({
-          flowId: detail.flowId,
-          title: detail.title,
-          answers: answersRef.current,
-        })
-      }
-
-      goToNext(yes ? step.yesNext : step.noNext)
+      const next = resolveNextId(yes ? step.yesNext : step.noNext)
+      sliceAfter(step.id)
+      appendNext(next)
     },
-    [detail, goToNext],
+    [appendNext, persistAll, resolveNextId, sliceAfter],
   )
 
   const onSubmitForm = useCallback(
     async (step: FormStep, values: Record<string, unknown>) => {
       answersRef.current[step.id] = { type: 'Form', values }
+      await persistAll()
 
-      if (detail) {
-        await persistDraft({
-          flowId: detail.flowId,
-          title: detail.title,
-          answers: answersRef.current,
-        })
-      }
-
-      goToNext(step.next)
+      const next = resolveNextId(step.next)
+      sliceAfter(step.id)
+      appendNext(next)
     },
-    [detail, goToNext],
+    [appendNext, persistAll, resolveNextId, sliceAfter],
   )
 
   // Handler para pasos de tipo "Select" reutilizando QuestionCard
   const onSelectOption = useCallback(
     async (stepId: string, payload: { label: string; next: string }) => {
-      // Persistimos como "Question" con answer null + option seleccionada
-      answersRef.current[stepId] = {
-        type: 'Question',
-        answer: null,
-        option: payload.label,
-      }
+      answersRef.current[stepId] = { type: 'Question', answer: null, option: payload.label }
+      await persistAll()
 
-      if (detail) {
-        await persistDraft({
-          flowId: detail.flowId,
-          title: detail.title,
-          answers: answersRef.current,
-        })
-      }
-
-      goToNext(payload.next)
+      const next = resolveNextId(payload.next)
+      sliceAfter(stepId)
+      appendNext(next)
     },
-    [detail, goToNext],
+    [appendNext, persistAll, resolveNextId, sliceAfter],
   )
 
-  /**
-   * onFinish:
-   * - Si está offline => se encola para sync posterior (finalizeSubmission se encarga).
-   * - Si está online => sube fotos a S3 (PUT presignadas), luego POST /audits al backend.
-   *
-   * Navegación:
-   * - Si hay historial volvemos atrás.
-   * - Si no, mandamos al selector.
-   */
+  // Finalización
   const onFinish = useCallback(async () => {
     if (!detail) return
     if (submitting) return
@@ -257,10 +259,8 @@ const FlowRunnerScreen: React.FC = () => {
     }
   }, [detail, facilityId, online, projectId, router, submitting])
 
-  // Loading state inicial / fallback si no hay steps
-  if (loading || !detail || !currentId) return <Loader loading={loading} />
-
-  const current = stepsById[currentId]
+  // Loading / fallback
+  if (loading || !detail) return <Loader loading={loading} />
 
   return (
     <View style={styles.screen}>
@@ -270,51 +270,69 @@ const FlowRunnerScreen: React.FC = () => {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.content}
         scrollEnabled={!zoomed}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         automaticallyAdjustKeyboardInsets
       >
-        {current && current.image && (
-          <StepIllustration image={current.image} onZoomChange={setZoomed} />
-        )}
+        {visibleIds.map(id => {
+          const step = stepsById[id]
 
-        {current && current.type === 'Question' && (
-          <QuestionCard
-            step={current}
-            onYes={opt => onAnswer(current, true, opt)}
-            onNo={opt => onAnswer(current, false, opt)}
-            onSkip={onSkip}
-          />
-        )}
+          if (!step && id === END_ID) {
+            return (
+              <View key={id} style={styles.containerComponents}>
+                <EndView onFinish={onFinish} loading={submitting} />
+              </View>
+            )
+          }
 
-        {current && current.type === 'Form' && (
-          <DynamicForm
-            step={current}
-            onSubmit={values => onSubmitForm(current, values)}
-            capturePhoto={pickOrCapturePhoto}
-          />
-        )}
+          if (!step) return null
 
-        {current && current.type === 'Select' && (
-          <QuestionCard
-            step={{
-              id: current.id,
-              type: 'Question',
-              text: current.title ?? current.text ?? '',
-            }}
-            onYes={() => {}}
-            onNo={() => {}}
-            onSkip={onSkip}
-            {...(current.title ? { selectTitle: current.title } : {})}
-            {...(current.text ? { selectText: current.text } : {})}
-            selectOptions={current.options}
-            onSelectOption={opt => onSelectOption(current.id, opt)}
-          />
-        )}
+          return (
+            <View key={id} style={styles.containerComponents}>
+              {step.image && <StepIllustration image={step.image} onZoomChange={setZoomed} />}
 
-        {current && current.type === 'End' && <EndView onFinish={onFinish} loading={submitting} />}
+              {step.type === 'Question' && (
+                <QuestionCard
+                  step={step}
+                  onYes={opt => onAnswer(step as QuestionStep, true, opt)}
+                  onNo={opt => onAnswer(step as QuestionStep, false, opt)}
+                  onSkip={() => onSkip(step as QuestionStep)}
+                />
+              )}
+
+              {step.type === 'Form' && (
+                <DynamicForm
+                  step={step as FormStep}
+                  onSubmit={values => onSubmitForm(step as FormStep, values)}
+                  capturePhoto={pickOrCapturePhoto}
+                />
+              )}
+
+              {step.type === 'Select' &&
+                (() => {
+                  const s = step as SelectStep
+                  const virtual = toVirtualQuestion(s)
+                  return (
+                    <QuestionCard
+                      step={virtual}
+                      onYes={() => {}}
+                      onNo={() => {}}
+                      onSkip={() => onSkip(virtual)}
+                      {...(s.title ? { selectTitle: s.title } : {})}
+                      {...(s.text ? { selectText: s.text } : {})}
+                      selectOptions={s.options}
+                      onSelectOption={opt => onSelectOption(s.id, opt)}
+                    />
+                  )
+                })()}
+
+              {step.type === 'End' && <EndView onFinish={onFinish} loading={submitting} />}
+            </View>
+          )
+        })}
       </ScrollView>
     </View>
   )

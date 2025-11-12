@@ -22,7 +22,7 @@ export const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: AppColors.Border,
   },
-  optionItemSelected: { backgroundColor: AppColors.SurfaceAlt },
+  optionItemSelected: { backgroundColor: AppColors.Border },
   optionText: { color: AppColors.Primary, fontSize: setResponsiveSize({ size: 10 }) },
   actions: { flexDirection: 'row', gap: RFValue(12), marginTop: RFValue(8) },
   button: {
@@ -40,4 +40,5 @@ export const styles = StyleSheet.create({
     fontSize: setResponsiveSize({ size: 12 }),
   },
   btnYesText: { color: AppColors.Background },
+  selectedBtnStyle: { borderWidth: 2, borderColor: AppColors.BorderBlue },
 })
