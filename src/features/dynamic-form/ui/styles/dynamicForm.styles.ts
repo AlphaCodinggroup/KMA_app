@@ -38,4 +38,10 @@ export const styles = StyleSheet.create({
   secondaryBtn: { backgroundColor: AppColors.Background, borderColor: AppColors.Border },
   btnText: { color: AppColors.Primary, fontWeight: 'bold' },
   btnDisabled: { opacity: 0.5 },
+  errorText: {
+    color: AppColors.Error,
+    marginTop: RFValue(8),
+    textAlign: 'center',
+    fontSize: setResponsiveSize({ size: 12 }),
+  },
 })
