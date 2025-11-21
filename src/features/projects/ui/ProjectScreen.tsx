@@ -1,18 +1,19 @@
 import React, { useCallback } from 'react'
 import { View } from 'react-native'
 import { useRouter } from 'expo-router'
-import ProjectsList, { type ProjectListItem } from '@features/projects/ui/ProjectList'
+import ProjectsList from '@features/projects/ui/ProjectList'
 import { useProjects } from '@features/projects'
 import { styles } from './styles/projects.styles'
 import SubHeadline from '@shared/ui/subheadline/subHeadline'
 import Loader from '@shared/ui/loader/Loader'
+import type { Project } from '@entities/project/model'
 
 const ProjectsScreen: React.FC = () => {
   const router = useRouter()
   const { items, loading, refresh, refreshing } = useProjects()
 
   const handleNavigate = useCallback(
-    (item: ProjectListItem) => {
+    (item: Project) => {
       router.push({
         pathname: '/(app)/facilities',
         params: { projectId: item.id },
@@ -28,7 +29,7 @@ const ProjectsScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <View style={styles.headerBlock}>
-        <SubHeadline text="Select a project assigned to me" />
+        <SubHeadline text="Select a project" />
       </View>
 
       <ProjectsList

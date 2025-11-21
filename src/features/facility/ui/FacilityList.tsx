@@ -26,7 +26,7 @@ const FacilityList: React.FC<FacilityListProps> = ({
   const renderItem = useCallback(
     (item: Facility) => {
       const baseProps = {
-        title: item.name,
+        title: item.name ?? '',
         onPress: () => onPressItem(item),
       }
       return <FacilityCard {...baseProps} {...(testID ? { testID } : {})} />

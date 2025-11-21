@@ -29,14 +29,14 @@ export function mapProjectItemDto(dto: ProjectItemDTO): Project {
   return createProject({
     id: dto.project_id,
     code: dto.code ?? null,
-    name: dto.name,
+    name: dto.name ?? '',
     description: dto.description ?? null,
-    status: mapStatus(dto.status),
+    status: mapStatus(dto.status ?? 'ARCHIVED'),
     userIds: dto.user_ids ?? [],
     facilityIds: dto.facility_ids ?? [],
-    createdAt: dto.created_at,
-    updatedAt: dto.updated_at,
-    createdBy: dto.created_by,
+    createdAt: dto.created_at ?? '',
+    updatedAt: dto.updated_at ?? '',
+    createdBy: dto.created_by ?? '',
   })
 }
 
@@ -45,8 +45,8 @@ export function mapProjectsListResponseDto(dto: ProjectsListResponseDTO): Projec
   const items = dto.data.projects.map(mapProjectItemDto)
   return {
     items,
-    nextCursor: dto.data.cursor,
-    limit: dto.data.limit,
+    nextCursor: dto.data.cursor ?? '',
+    limit: dto.data.limit ?? 0,
   }
 }
 

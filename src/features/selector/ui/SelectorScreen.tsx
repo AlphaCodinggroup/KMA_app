@@ -97,7 +97,7 @@ const SelectorScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <SubHeadline text="Select a flow for your audit" stylesText={styles.text} />
+      <SubHeadline text="Select a flow" stylesText={styles.text} />
       <LetterFilter
         letters={availableLetters}
         selected={selectedLetter}

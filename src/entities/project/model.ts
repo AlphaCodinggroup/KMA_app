@@ -14,11 +14,11 @@ export type ProjectStatus = 'active' | 'archived'
 export interface Project {
   id: ProjectId
   code?: string | null
-  name: string
+  name?: string | null
   description?: string | null
-  status: ProjectStatus
-  userIds: UserId[]
-  facilityIds: FacilityId[]
+  status?: ProjectStatus
+  userIds?: UserId[]
+  facilityIds?: FacilityId[]
   createdAt?: string
   updatedAt?: string
   createdBy?: UserId
