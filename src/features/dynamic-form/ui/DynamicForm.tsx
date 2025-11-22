@@ -1,10 +1,9 @@
-import React, { memo, useMemo, useState } from 'react'
+import React, { memo, useCallback, useMemo } from 'react'
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  Platform,
   Keyboard,
   KeyboardAvoidingView,
 } from 'react-native'
@@ -74,19 +73,7 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
   }, [photoFieldIds.length, watchedPhotoValues])
 
   const isSubmitDisabled = !canSubmit
-
-  const [kbHeight, setKbHeight] = useState<number>(0)
-  React.useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
-    const showSub = Keyboard.addListener(showEvt, e => setKbHeight(e.endCoordinates?.height ?? 0))
-    const hideSub = Keyboard.addListener(hideEvt, () => setKbHeight(0))
-    return () => {
-      showSub.remove()
-      hideSub.remove()
-    }
-  }, [])
-  const bottomSpacer = Math.max(0, kbHeight - insets.bottom)
+  const submitError = !canSubmit ? 'You must upload at least one photo to continue.' : ''
 
   const renderTextField = (field: Field) => (
     <Controller
@@ -154,17 +141,20 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
           const next = list.slice(0, index).concat(list.slice(index + 1))
           rhf.onChange(next)
         }
-
+        const shouldShowError = !!submitError && list.length === 0
         return (
-          <PhotoField
-            label={field.label}
-            value={list}
-            onAdd={onAdd}
-            onRemoveAt={onRemoveAt}
-            addButtonText="Add another photo"
-            removeButtonText="Remove"
-            testID={`photo-field-${field.id}`}
-          />
+          <View style={styles.inputBlock}>
+            <PhotoField
+              label={field.label}
+              value={list}
+              onAdd={onAdd}
+              onRemoveAt={onRemoveAt}
+              addButtonText="Add another photo"
+              removeButtonText="Remove"
+              testID={`photo-field-${field.id}`}
+            />
+            {shouldShowError && <Text style={styles.errorText}>{submitError}</Text>}
+          </View>
         )
       }}
     />
@@ -198,17 +188,24 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
     }
   }
 
+  const handleNextPress = useCallback(
+    () =>
+      handleSubmit(values => {
+        Keyboard.dismiss()
+        onSubmit(values)
+      })(),
+    [handleSubmit, onSubmit],
+  )
+
+  const keyboardVerticalOffset = insets.top + 8
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
-    >
+    <KeyboardAvoidingView behavior={'padding'} keyboardVerticalOffset={keyboardVerticalOffset}>
       <View style={styles.container}>
-        {!!step.title && <Text style={styles.title}>{step.title}</Text>}
         <View style={styles.formFields}>{step.fields.map(renderField)}</View>
 
         <TouchableOpacity
-          onPress={handleSubmit(values => onSubmit(values))}
+          onPress={handleNextPress}
           style={[styles.button, styles.primaryBtn, isSubmitDisabled && styles.btnDisabled]}
           disabled={isSubmitDisabled}
           accessibilityRole="button"
@@ -216,9 +213,6 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
         >
           <Text style={[styles.btnText, styles.primaryBtnText]}>NEXT</Text>
         </TouchableOpacity>
-
-        {/* Spacer dinámico: permite scrollear por encima del teclado sin tocar el ScrollView padre */}
-        <View style={{ height: bottomSpacer }} />
       </View>
     </KeyboardAvoidingView>
   )

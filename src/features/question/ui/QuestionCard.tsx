@@ -121,7 +121,7 @@ function QuestionCardBase({
               accessibilityRole="button"
               accessibilityLabel="Next"
             >
-              <Text style={styles.btnText}>SKIP</Text>
+              <Text style={styles.btnText}>UNSURE - PENDING REVIEW</Text>
             </TouchableOpacity>
           </View>
         </>

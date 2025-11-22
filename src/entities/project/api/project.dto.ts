@@ -15,11 +15,11 @@ export type ProjectStatusDTO = z.infer<typeof ProjectStatusDtoSchema>
 export const ProjectItemDtoSchema = z.object({
   project_id: z.string(),
   code: z.string().optional(),
-  name: z.string(),
+  name: z.string().optional(),
   description: z.string().optional(),
-  status: ProjectStatusDtoSchema,
-  user_ids: z.array(z.string()).default([]), // siempre presentes (vacíos si no hay)
-  facility_ids: z.array(z.string()).default([]), // idem
+  status: ProjectStatusDtoSchema.optional(),
+  user_ids: z.array(z.string()).default([]).optional(), // siempre presentes (vacíos si no hay)
+  facility_ids: z.array(z.string()).default([]).optional(), // idem
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
   created_by: z.string().optional(),

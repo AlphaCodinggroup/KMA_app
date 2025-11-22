@@ -4,5 +4,5 @@ import { RFValue } from 'react-native-responsive-fontsize'
 
 export const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: AppColors.Background },
-  headerBlock: { paddingHorizontal: RFValue(16), paddingTop: RFValue(12) },
+  headerBlock: { paddingHorizontal: RFValue(16), paddingVertical: RFValue(12) },
 })

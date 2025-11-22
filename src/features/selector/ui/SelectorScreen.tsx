@@ -6,9 +6,9 @@ import { loadAllFlowsWithSteps, coldSyncAllFlows } from '@features/selector/appl
 import { styles } from './styles/selector.styles'
 import FlowList, { type FlowListItem } from './FlowList'
 import SubHeadline from '@shared/ui/subheadline/subHeadline'
-import LetterFilter from './LetterFilter'
-import { getKeyLetter, type LetterKey } from '../lib/getKeyLetter'
 import Loader from '@shared/ui/loader/Loader'
+import { filterItemsByLetter, getAvailableLetters, type LetterKey } from '@shared/lib/alphaFilter'
+import LetterFilter from '@shared/ui/filters/LetterFilter'
 
 const SelectorScreen: React.FC = () => {
   const router = useRouter()
@@ -42,11 +42,7 @@ const SelectorScreen: React.FC = () => {
       flows.map(f => ({
         id: f.flowId,
         title: f.title,
-        version: String(f.version),
-        description: f.description,
-        stepsCount: f.steps.length,
         flowType: f.flowType,
-        isActive: f.isActive,
       })),
     [flows],
   )
@@ -57,10 +53,7 @@ const SelectorScreen: React.FC = () => {
       const flow = (item as Flow).flowId
         ? (item as Flow)
         : flows.find(f => f.flowId === (item as FlowSummary).id)
-      if (!flow) {
-        Alert.alert('Flow no disponible', 'No se pudo localizar el flujo seleccionado en memoria.')
-        return
-      }
+      if (!flow) return
 
       // Enviar steps (camelCase) como string JSON en params
       const stepsParam = JSON.stringify(flow.steps)
@@ -70,8 +63,8 @@ const SelectorScreen: React.FC = () => {
         params: {
           flowId: flow.flowId,
           title: flow.flowType,
+          version: String(flow.version),
           steps: stepsParam,
-          description: flow.description || '',
           projectId: projectId || '',
           facilityId: facilityId || '',
         },
@@ -81,23 +74,22 @@ const SelectorScreen: React.FC = () => {
   )
 
   // Letras únicas disponibles (derivadas del backend)
-  const availableLetters = useMemo<string[]>(() => {
-    const set = new Set<string>()
-    for (const it of summaries) set.add(getKeyLetter(it))
-    return Array.from(set).filter(Boolean).sort()
-  }, [summaries])
+  const availableLetters = useMemo<string[]>(
+    () => getAvailableLetters(summaries, it => it.flowType),
+    [summaries],
+  )
 
   // Lista filtrada
-  const filteredItems = useMemo<FlowSummary[]>(() => {
-    if (selectedLetter === 'ALL') return summaries
-    return summaries.filter(it => getKeyLetter(it) === selectedLetter)
-  }, [summaries, selectedLetter])
+  const filteredItems = useMemo<FlowSummary[]>(
+    () => filterItemsByLetter(summaries, selectedLetter, it => it.flowType),
+    [summaries, selectedLetter],
+  )
 
   if (loading) return <Loader loading={loading} />
 
   return (
     <View style={styles.container}>
-      <SubHeadline text="Select a flow for your audit" stylesText={styles.text} />
+      <SubHeadline text="Select a flow" stylesText={styles.text} />
       <LetterFilter
         letters={availableLetters}
         selected={selectedLetter}
