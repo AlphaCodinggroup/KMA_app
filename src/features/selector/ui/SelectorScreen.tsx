@@ -6,9 +6,9 @@ import { loadAllFlowsWithSteps, coldSyncAllFlows } from '@features/selector/appl
 import { styles } from './styles/selector.styles'
 import FlowList, { type FlowListItem } from './FlowList'
 import SubHeadline from '@shared/ui/subheadline/subHeadline'
-import LetterFilter from './LetterFilter'
-import { getKeyLetter, type LetterKey } from '../lib/getKeyLetter'
 import Loader from '@shared/ui/loader/Loader'
+import { filterItemsByLetter, getAvailableLetters, type LetterKey } from '@shared/lib/alphaFilter'
+import LetterFilter from '@shared/ui/filters/LetterFilter'
 
 const SelectorScreen: React.FC = () => {
   const router = useRouter()
@@ -81,17 +81,16 @@ const SelectorScreen: React.FC = () => {
   )
 
   // Letras únicas disponibles (derivadas del backend)
-  const availableLetters = useMemo<string[]>(() => {
-    const set = new Set<string>()
-    for (const it of summaries) set.add(getKeyLetter(it))
-    return Array.from(set).filter(Boolean).sort()
-  }, [summaries])
+  const availableLetters = useMemo<string[]>(
+    () => getAvailableLetters(summaries, it => it.flowType),
+    [summaries],
+  )
 
   // Lista filtrada
-  const filteredItems = useMemo<FlowSummary[]>(() => {
-    if (selectedLetter === 'ALL') return summaries
-    return summaries.filter(it => getKeyLetter(it) === selectedLetter)
-  }, [summaries, selectedLetter])
+  const filteredItems = useMemo<FlowSummary[]>(
+    () => filterItemsByLetter(summaries, selectedLetter, it => it.flowType),
+    [summaries, selectedLetter],
+  )
 
   if (loading) return <Loader loading={loading} />
 
