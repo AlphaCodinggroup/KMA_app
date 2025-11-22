@@ -18,11 +18,6 @@ export const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: AppColors.Primary,
   },
-  subtitle: {
-    fontSize: setResponsiveSize({ size: 12 }),
-    color: AppColors.MutedText,
-    marginTop: RFValue(2),
-  },
   content: { padding: RFValue(12) },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   containerComponents: { marginBottom: RFValue(16) },

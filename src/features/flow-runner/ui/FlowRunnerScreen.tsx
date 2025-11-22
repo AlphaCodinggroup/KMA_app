@@ -3,6 +3,7 @@ import { View, Text, ScrollView, Alert, Platform } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import NetInfo from '@react-native-community/netinfo'
+
 import type { FlowDetail, Step, QuestionStep, FormStep } from '@shared/validation/steps.schema'
 import type { SubmissionAnswer } from '@entities/submission/model'
 import { QuestionCard } from '@features/question'
@@ -13,54 +14,34 @@ import { finalizeSubmission, persistDraft } from '../application/usecases'
 import EndView from './EndView'
 import StepIllustration from './StepIllustration'
 import Loader from '@shared/ui/loader/Loader'
+import {
+  END_ID,
+  mapById,
+  parseStepsParam,
+  resolveInitialStepId,
+  toVirtualQuestion,
+} from '../lib/helpers'
 
-// --------------------
-// Helpers
-// --------------------
-function mapById(steps: Step[]): Record<string, Step> {
-  return steps.reduce<Record<string, Step>>((acc, s) => {
-    acc[s.id] = s
-    return acc
-  }, {})
+export type FlowRunnerRouteParams = {
+  flowId: string
+  title: string
+  steps?: string | string[]
+  projectId: string
+  facilityId: string
 }
 
-function isValidStepsPayload(v: unknown): v is Step[] {
-  return (
-    Array.isArray(v) &&
-    v.every(
-      s => s && typeof s === 'object' && typeof s.id === 'string' && typeof s.type === 'string',
-    )
-  )
-}
-
-type SelectStep = Extract<Step, { type: 'Select' }>
-
-const toVirtualQuestion = (s: SelectStep): QuestionStep => ({
-  id: s.id,
-  type: 'Question',
-  text: s.title ?? s.text ?? '',
-  image: s.image,
-})
-
-const END_ID = 'END'
+export type SelectStep = Extract<Step, { type: 'Select' }>
 
 const FlowRunnerScreen: React.FC = () => {
   const router = useRouter()
+
   const {
     flowId,
     title,
     steps: rawSteps,
-    description,
     projectId,
     facilityId,
-  } = useLocalSearchParams<{
-    flowId: string
-    title: string
-    steps?: string | string[]
-    description: string
-    projectId: string
-    facilityId: string
-  }>()
+  } = useLocalSearchParams<FlowRunnerRouteParams>()
 
   const [detail, setDetail] = useState<FlowDetail | null>(null)
   const [visibleIds, setVisibleIds] = useState<string[]>([])
@@ -68,48 +49,42 @@ const FlowRunnerScreen: React.FC = () => {
   const [online, setOnline] = useState<boolean>(true)
   const [zoomed, setZoomed] = useState<boolean>(false)
   const [submitting, setSubmitting] = useState<boolean>(false)
+
   const scrollRef = useRef<ScrollView>(null)
 
   // answersRef va acumulando todas las respuestas/valores/fotos del flujo
   const answersRef = useRef<Record<string, SubmissionAnswer>>({})
 
-  // Estado de red (para feedback/decisiones de envío)
+  // --------------------
+  // Estado de red
+  // --------------------
   useFocusEffect(
     useCallback(() => {
-      const sub = NetInfo.addEventListener(s => setOnline(!!s.isConnected))
-      return () => sub && sub()
+      const subscription = NetInfo.addEventListener(state => {
+        setOnline(!!state.isConnected)
+      })
+
+      return () => {
+        subscription && subscription()
+      }
     }, []),
   )
 
-  // Boot a partir de params.steps (JSON string)
-  const boot = useCallback(async () => {
+  const boot = useCallback(() => {
     setLoading(true)
+
     try {
-      const stepsStr = Array.isArray(rawSteps) ? rawSteps[0] : rawSteps
-      if (!stepsStr) throw new Error('Missing steps payload in navigation params')
+      const steps = parseStepsParam(rawSteps)
 
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(stepsStr)
-      } catch (e) {
-        throw new Error(`Invalid steps JSON in navigation params, ${e}`)
+      const data: FlowDetail = {
+        flowId,
+        title,
+        steps,
       }
 
-      if (!isValidStepsPayload(parsed)) {
-        throw new Error('Steps payload does not match expected shape')
-      }
-
-      const steps = parsed as Step[]
-      // Construimos el FlowDetail local (no dependemos de GET en esta pantalla)
-      const data: FlowDetail = { flowId, title, steps, description }
-
-      // Paso inicial = primera Question encontrada si existe; si no, primer step o END
       setDetail(data)
-      const firstId =
-        data.steps.find(s => s.type === 'Question')?.id ??
-        data.steps[0]?.id ??
-        (data.steps.find(s => s.id === END_ID) ? END_ID : null)
 
+      const firstId = resolveInitialStepId(steps)
       setVisibleIds(firstId ? [firstId] : [])
     } catch (err) {
       console.warn('[FlowRunnerScreen.boot] error reading steps from params', err)
@@ -118,7 +93,7 @@ const FlowRunnerScreen: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }, [description, flowId, rawSteps, router, title])
+  }, [flowId, rawSteps, router, title])
 
   useFocusEffect(
     useCallback(() => {
@@ -126,9 +101,11 @@ const FlowRunnerScreen: React.FC = () => {
     }, [boot]),
   )
 
-  const stepsById = useMemo(() => (detail ? mapById(detail.steps) : {}), [detail])
+  const stepsById = useMemo<Record<string, Step>>(
+    () => (detail ? mapById(detail.steps) : {}),
+    [detail],
+  )
 
-  // Resolver próximo id válido según el grafo
   const resolveNextId = useCallback(
     (next?: string | null): string | null => {
       if (!next) return stepsById[END_ID] ? END_ID : null
@@ -144,7 +121,6 @@ const FlowRunnerScreen: React.FC = () => {
     })
   }, [])
 
-  // Cuando se re-edita un paso previo, cortamos los siguientes
   const sliceAfter = useCallback((stepId: string) => {
     setVisibleIds(prev => {
       const idx = prev.indexOf(stepId)
@@ -153,22 +129,26 @@ const FlowRunnerScreen: React.FC = () => {
     })
   }, [])
 
-  // Agregar el siguiente paso al listado
   const appendNext = useCallback(
     (nextId: string | null) => {
       if (!nextId) return
+
       setVisibleIds(prev => {
-        if (prev[prev.length - 1] === nextId) return prev
-        return [...prev, nextId]
+        if (prev[prev.length - 1] === nextId) {
+          return prev
+        }
+        const next = [...prev, nextId]
+        return next
       })
+
       scrollToEnd()
     },
     [scrollToEnd],
   )
 
-  // Persistencia best-effort
   const persistAll = useCallback(async () => {
     if (!detail) return
+
     await persistDraft({
       flowId: detail.flowId,
       title: detail.title,
@@ -176,17 +156,35 @@ const FlowRunnerScreen: React.FC = () => {
     })
   }, [detail])
 
-  // Handlers
-  const onSkip = useCallback(
-    async (step: QuestionStep) => {
-      answersRef.current[step.id] = { type: 'Question', answer: null, option: null }
+  /**
+   * Helper general para:
+   *  1) persistir
+   *  2) cortar steps posteriores si se re-edita
+   *  3) resolver y agregar el siguiente step
+   */
+  const advanceFrom = useCallback(
+    async (currentStepId: string, rawNext?: string | null) => {
       await persistAll()
+      sliceAfter(currentStepId)
 
-      const next = resolveNextId(step.yesNext ?? step.noNext)
-      sliceAfter(step.id)
+      const next = resolveNextId(rawNext)
       appendNext(next)
     },
     [appendNext, persistAll, resolveNextId, sliceAfter],
+  )
+
+  const onSkip = useCallback(
+    async (step: QuestionStep) => {
+      answersRef.current[step.id] = {
+        type: 'Question',
+        answer: null,
+        option: null,
+      }
+
+      const rawNext = step.yesNext ?? step.noNext ?? null
+      await advanceFrom(step.id, rawNext)
+    },
+    [advanceFrom],
   )
 
   const onAnswer = useCallback(
@@ -196,44 +194,40 @@ const FlowRunnerScreen: React.FC = () => {
         answer: yes ? 'YES' : 'NO',
         ...(extra?.option ? { option: extra.option } : {}),
       }
-      await persistAll()
 
-      const next = resolveNextId(yes ? step.yesNext : step.noNext)
-      sliceAfter(step.id)
-      appendNext(next)
+      const rawNext = yes ? step.yesNext : step.noNext
+      await advanceFrom(step.id, rawNext ?? null)
     },
-    [appendNext, persistAll, resolveNextId, sliceAfter],
+    [advanceFrom],
   )
 
   const onSubmitForm = useCallback(
     async (step: FormStep, values: Record<string, unknown>) => {
-      answersRef.current[step.id] = { type: 'Form', values }
-      await persistAll()
+      answersRef.current[step.id] = {
+        type: 'Form',
+        values,
+      }
 
-      const next = resolveNextId(step.next)
-      sliceAfter(step.id)
-      appendNext(next)
+      await advanceFrom(step.id, step.next ?? null)
     },
-    [appendNext, persistAll, resolveNextId, sliceAfter],
+    [advanceFrom],
   )
 
-  // Handler para pasos de tipo "Select" reutilizando QuestionCard
   const onSelectOption = useCallback(
     async (stepId: string, payload: { label: string; next: string }) => {
-      answersRef.current[stepId] = { type: 'Question', answer: null, option: payload.label }
-      await persistAll()
+      answersRef.current[stepId] = {
+        type: 'Question',
+        answer: null,
+        option: payload.label,
+      }
 
-      const next = resolveNextId(payload.next)
-      sliceAfter(stepId)
-      appendNext(next)
+      await advanceFrom(stepId, payload.next ?? null)
     },
-    [appendNext, persistAll, resolveNextId, sliceAfter],
+    [advanceFrom],
   )
 
-  // Finalización
   const onFinish = useCallback(async () => {
-    if (!detail) return
-    if (submitting) return
+    if (!detail || submitting) return
 
     try {
       setSubmitting(true)
@@ -247,7 +241,7 @@ const FlowRunnerScreen: React.FC = () => {
         facilityId,
       })
 
-      return router.replace({
+      router.replace({
         pathname: '/(app)/selector',
         params: { facilityId, projectId },
       })
@@ -259,14 +253,32 @@ const FlowRunnerScreen: React.FC = () => {
     }
   }, [detail, facilityId, online, projectId, router, submitting])
 
-  // Loading / fallback
+  const renderSelectStep = useCallback(
+    (step: SelectStep) => {
+      const virtualQuestion = toVirtualQuestion(step)
+
+      return (
+        <QuestionCard
+          step={virtualQuestion}
+          onYes={() => {}}
+          onNo={() => {}}
+          onSkip={() => onSkip(virtualQuestion)}
+          {...(step.title ? { selectTitle: step.title } : {})}
+          {...(step.text ? { selectText: step.text } : {})}
+          selectOptions={step.options}
+          onSelectOption={opt => onSelectOption(step.id, opt)}
+        />
+      )
+    },
+    [onSelectOption, onSkip],
+  )
+
   if (loading || !detail) return <Loader loading={loading} />
 
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
         <Text style={styles.title}>{detail.title}</Text>
-        <Text style={styles.subtitle}>{detail.description}</Text>
       </View>
 
       <ScrollView
@@ -279,7 +291,6 @@ const FlowRunnerScreen: React.FC = () => {
       >
         {visibleIds.map(id => {
           const step = stepsById[id]
-
           if (!step && id === END_ID) {
             return (
               <View key={id} style={styles.containerComponents}>
@@ -296,7 +307,7 @@ const FlowRunnerScreen: React.FC = () => {
 
               {step.type === 'Question' && (
                 <QuestionCard
-                  step={step}
+                  step={step as QuestionStep}
                   onYes={opt => onAnswer(step as QuestionStep, true, opt)}
                   onNo={opt => onAnswer(step as QuestionStep, false, opt)}
                   onSkip={() => onSkip(step as QuestionStep)}
@@ -311,23 +322,7 @@ const FlowRunnerScreen: React.FC = () => {
                 />
               )}
 
-              {step.type === 'Select' &&
-                (() => {
-                  const s = step as SelectStep
-                  const virtual = toVirtualQuestion(s)
-                  return (
-                    <QuestionCard
-                      step={virtual}
-                      onYes={() => {}}
-                      onNo={() => {}}
-                      onSkip={() => onSkip(virtual)}
-                      {...(s.title ? { selectTitle: s.title } : {})}
-                      {...(s.text ? { selectText: s.text } : {})}
-                      selectOptions={s.options}
-                      onSelectOption={opt => onSelectOption(s.id, opt)}
-                    />
-                  )
-                })()}
+              {step.type === 'Select' && renderSelectStep(step as SelectStep)}
 
               {step.type === 'End' && <EndView onFinish={onFinish} loading={submitting} />}
             </View>

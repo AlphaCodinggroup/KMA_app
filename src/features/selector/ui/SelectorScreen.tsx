@@ -42,11 +42,7 @@ const SelectorScreen: React.FC = () => {
       flows.map(f => ({
         id: f.flowId,
         title: f.title,
-        version: String(f.version),
-        description: f.description,
-        stepsCount: f.steps.length,
         flowType: f.flowType,
-        isActive: f.isActive,
       })),
     [flows],
   )
@@ -71,7 +67,6 @@ const SelectorScreen: React.FC = () => {
           flowId: flow.flowId,
           title: flow.flowType,
           steps: stepsParam,
-          description: flow.description || '',
           projectId: projectId || '',
           facilityId: facilityId || '',
         },

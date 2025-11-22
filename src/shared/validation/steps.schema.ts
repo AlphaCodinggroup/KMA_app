@@ -84,7 +84,6 @@ export type Step = z.infer<typeof StepSchema>
 export const FlowDetailSchema = z.object({
   flowId: z.string(),
   title: z.string(),
-  description: z.string(),
   steps: z.array(StepSchema).min(1),
 })
 export type FlowDetail = z.infer<typeof FlowDetailSchema>
