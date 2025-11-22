@@ -53,10 +53,7 @@ const SelectorScreen: React.FC = () => {
       const flow = (item as Flow).flowId
         ? (item as Flow)
         : flows.find(f => f.flowId === (item as FlowSummary).id)
-      if (!flow) {
-        Alert.alert('Flow no disponible', 'No se pudo localizar el flujo seleccionado en memoria.')
-        return
-      }
+      if (!flow) return
 
       // Enviar steps (camelCase) como string JSON en params
       const stepsParam = JSON.stringify(flow.steps)
@@ -66,6 +63,7 @@ const SelectorScreen: React.FC = () => {
         params: {
           flowId: flow.flowId,
           title: flow.flowType,
+          version: String(flow.version),
           steps: stepsParam,
           projectId: projectId || '',
           facilityId: facilityId || '',

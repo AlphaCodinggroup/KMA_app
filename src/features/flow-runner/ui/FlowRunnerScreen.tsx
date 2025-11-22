@@ -25,6 +25,7 @@ import {
 export type FlowRunnerRouteParams = {
   flowId: string
   title: string
+  version: string
   steps?: string | string[]
   projectId: string
   facilityId: string
@@ -39,6 +40,7 @@ const FlowRunnerScreen: React.FC = () => {
     flowId,
     title,
     steps: rawSteps,
+    version,
     projectId,
     facilityId,
   } = useLocalSearchParams<FlowRunnerRouteParams>()
@@ -239,6 +241,7 @@ const FlowRunnerScreen: React.FC = () => {
         online,
         projectId,
         facilityId,
+        version,
       })
 
       router.replace({
@@ -246,12 +249,12 @@ const FlowRunnerScreen: React.FC = () => {
         params: { facilityId, projectId },
       })
     } catch (err) {
-      console.warn('[FlowRunnerScreen.onFinish] finalizeSubmission error', err)
+      console.log('[FlowRunnerScreen.onFinish] finalizeSubmission error', err)
       Alert.alert('Error', 'We were unable to complete the shipment.')
     } finally {
       setSubmitting(false)
     }
-  }, [detail, facilityId, online, projectId, router, submitting])
+  }, [detail, facilityId, online, projectId, router, submitting, version])
 
   const renderSelectStep = useCallback(
     (step: SelectStep) => {

@@ -464,6 +464,7 @@ export async function finalizeSubmission(params: {
   online?: boolean
   projectId?: string
   facilityId?: string
+  version?: string
 }): Promise<boolean> {
   // 0. conectividad real
   const isOnline =
@@ -536,14 +537,15 @@ export async function finalizeSubmission(params: {
       answers: params.answers,
       uploadMap,
     })
-
+    console.log(params.version)
     // 6. POST /audits (crea la auditoría final)
     const body = {
       id: auditId,
       flow_id: params.flowId,
-      project_id: params.projectId ?? 'UNIMPLEMENTED_PROJECT_ID',
-      facility_id: params.facilityId ?? 'UNIMPLEMENTED_FACILITY_ID',
+      project_id: params.projectId ?? '',
+      facility_id: params.facilityId ?? '',
       answers: answersForApi,
+      flow_version: Number(params.version ?? 1),
     }
 
     const resp = await request<{ status?: number }>({

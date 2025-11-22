@@ -5,11 +5,6 @@ import { RFValue } from 'react-native-responsive-fontsize'
 
 export const styles = StyleSheet.create({
   container: { gap: RFValue(16), padding: RFValue(10) },
-  title: {
-    fontSize: setResponsiveSize({ size: 14 }),
-    fontWeight: 'bold',
-    color: AppColors.Primary,
-  },
   formFields: { gap: RFValue(12) },
   inputBlock: { gap: RFValue(6) },
   label: { color: AppColors.MutedText, fontSize: setResponsiveSize({ size: 12 }) },

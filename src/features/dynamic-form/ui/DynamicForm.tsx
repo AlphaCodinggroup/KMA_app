@@ -202,7 +202,6 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
   return (
     <KeyboardAvoidingView behavior={'padding'} keyboardVerticalOffset={keyboardVerticalOffset}>
       <View style={styles.container}>
-        {!!step.title && <Text style={styles.title}>{step.title}</Text>}
         <View style={styles.formFields}>{step.fields.map(renderField)}</View>
 
         <TouchableOpacity
