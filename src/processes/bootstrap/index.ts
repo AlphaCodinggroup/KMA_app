@@ -1,75 +1,221 @@
-import { AppState } from 'react-native'
+import { AppState, type AppStateStatus } from 'react-native'
 import NetInfo from '@react-native-community/netinfo'
+import * as FileSystem from 'expo-file-system'
+
 import { initDatabase } from '@shared/storage/db'
 import { registerBackgroundSync, unregisterBackgroundSync } from '@shared/workers/background'
 import { initSession, subscribe } from '@shared/session/session'
+
 import { SyncService, type OutboxRepo, type OutboxItem } from '@processes/sync/SyncService'
+import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
+import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
+import type { SubmissionSnapshot } from '@entities/submission/ports'
+import { finalizeSubmission } from '@features/flow-runner/application/usecases'
 
 let _bootPromise: Promise<void> | null = null
 let _cleanup: (() => void) | null = null
 
-// Repo mínimo mientras no hay backend real
-const NoopOutboxRepo: OutboxRepo = {
-  async nextBatch(_limit: number): Promise<OutboxItem[]> {
-    return []
-  },
-  async markSuccess(_id: string) {
-    /* noop */
-  },
-  async markFailure(_id: string, _reason?: string) {
-    /* noop */
-  },
+const AUDIT_SUBMISSION_ENDPOINT = 'AUDIT_SUBMISSION'
+
+type AuditSubmissionOutboxPayload = {
+  submissionId: string
 }
 
-// Dispatcher mínimo
-async function dispatchItem(_item: OutboxItem) {
-  // TODO: implementar envío real (HTTP + idempotencia)
-  return 'success' as const
+/**
+ * Dispatcher del SyncService.
+ *
+ * - AUDIT_SUBMISSION: toma la submission local, ejecuta el mismo flujo online
+ *   que `finalizeSubmission` y, si sale bien, borra datos/fotos locales.
+ * - Otros tipos: por ahora NO-OP (success inmediato).
+ */
+function createOutboxDispatcher() {
+  return async (item: OutboxItem): Promise<'success' | 'retry' | 'drop'> => {
+    if (item.type === AUDIT_SUBMISSION_ENDPOINT) return handleAuditSubmissionItem(item)
+
+    if (__DEV__) {
+      console.log('[SyncService] dispatch (noop):', item)
+    }
+    // Cualquier otro tipo que aún no manejemos explícitamente se considera éxito
+    return 'success'
+  }
 }
 
-const sync = new SyncService({ outbox: NoopOutboxRepo, dispatch: dispatchItem })
+/**
+ * Maneja un item de outbox de tipo AUDIT_SUBMISSION:
+ *
+ *  Lee submissionId del payload.
+ *  Recupera la submission desde SQLite.
+ *  Llama a finalizeSubmission(...) forzando `online: true`.
+ *  Si salió bien:
+ *    - borra fotos locales (file://)
+ *    - borra la submission local
+ *
+ * Devuelve:
+ * - 'success' → SyncService hará markSuccess(id) y eliminará el item de outbox.
+ * - 'retry'   → SyncService aplicará backoff y reintento.
+ * - 'drop'    → SyncService eliminará el item sin reintento.
+ */
+async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 'retry' | 'drop'> {
+  const payload = (item.payload ?? null) as Partial<AuditSubmissionOutboxPayload> | null
+  const submissionId = payload?.submissionId
+
+  if (!submissionId) {
+    if (__DEV__) {
+      console.warn('[SyncService] AUDIT_SUBMISSION sin submissionId, drop', item)
+    }
+    return 'drop'
+  }
+
+  const snapshot = await sqliteSubmissionRepo.getById(submissionId)
+  if (!snapshot) {
+    if (__DEV__) {
+      console.warn(
+        '[SyncService] Submission no encontrada, drop outbox item',
+        submissionId,
+        item.id,
+      )
+    }
+    return 'drop'
+  }
+
+  try {
+    const ok = await finalizeSubmission({
+      flowId: snapshot.flowId,
+      title: snapshot.title,
+      answers: snapshot.answers,
+      projectId: snapshot.projectId ?? '',
+      facilityId: snapshot.facilityId ?? '',
+      version: snapshot.version ?? '',
+      // Forzamos online=true para que NO vuelva a encolar en outbox
+      online: true,
+    })
+
+    if (!ok) {
+      // Puede ser error de red, 5xx, auth, etc.
+      // Dejamos que SyncService reintente con backoff.
+      return 'retry'
+    }
+
+    // Envío OK → limpiamos datos y archivos locales
+    await cleanupSubmissionFiles(snapshot)
+    await sqliteSubmissionRepo.delete(submissionId)
+
+    if (__DEV__) {
+      console.log('[SyncService] AUDIT_SUBMISSION synced & cleaned', submissionId)
+    }
+
+    return 'success'
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[SyncService] AUDIT_SUBMISSION error, retry', err)
+    }
+    return 'retry'
+  }
+}
+
+/**
+ * Borra todas las fotos locales (file://...) asociadas a una submission.
+ * Se basa en las respuestas guardadas en `snapshot.answers`.
+ */
+async function cleanupSubmissionFiles(snapshot: SubmissionSnapshot): Promise<void> {
+  const answers = snapshot.answers ?? {}
+  const fileUris = new Set<string>()
+
+  Object.values(answers).forEach(ans => {
+    if (!ans || ans.type !== 'Form') return
+
+    const values = ans.values ?? {}
+    const photos = extractPhotoArrayFromValues(values)
+
+    photos.forEach(p => {
+      const uri: string =
+        (typeof p === 'string' ? p : (p as any)?.uri || (p as any)?.localUri || (p as any)?.url) ??
+        ''
+
+      if (typeof uri === 'string' && uri.startsWith('file://')) {
+        fileUris.add(uri)
+      }
+    })
+  })
+
+  for (const uri of fileUris) {
+    try {
+      await FileSystem.deleteAsync(uri, { idempotent: true })
+    } catch (err) {
+      if (__DEV__) {
+        console.warn('[SyncService] Error al borrar archivo local', uri, err)
+      }
+    }
+  }
+}
+
+/**
+ * Extrae un array de posibles fotos desde values.{photo|photos}.
+ */
+function extractPhotoArrayFromValues(values: Record<string, unknown>): unknown[] {
+  const v = values ?? {}
+  if (Array.isArray(v.photos)) return v.photos
+  if (Array.isArray(v.photo)) return v.photo
+  return []
+}
+
+// -----------------------------------------------------------------------------
+// Bootstrap general de la app
+// -----------------------------------------------------------------------------
 
 export async function bootstrapApp(): Promise<void> {
   if (_bootPromise) return _bootPromise
 
   _bootPromise = (async () => {
-    // Infra base primero
+    // DB y sesión primero
     await initDatabase()
-
-    // Rehidratación de sesión
     await initSession()
 
-    // Triggers de ciclo de vida → encolar sync
-    const appStateSub = AppState.addEventListener('change', state => {
-      if (state === 'active') sync.queue()
+    // SyncService con outbox real (SQLite) + dispatcher con AUDIT_SUBMISSION
+    const outbox: OutboxRepo = sqliteOutboxRepo
+    const sync = new SyncService({
+      outbox,
+      dispatch: createOutboxDispatcher(),
+      // batchSize / retryBaseDelayMs / retryMaxAttempts vienen por env o defaults
     })
 
-    const netUnsub = NetInfo.addEventListener(state => {
-      if (state.isConnected) sync.queue()
+    // AppState: cuando la app vuelve a foreground, disparamos sync
+    const handleAppStateChange = (state: AppStateStatus) => {
+      if (state === 'active') {
+        sync.queue()
+      }
+    }
+    const appStateSub = AppState.addEventListener('change', handleAppStateChange)
+
+    // NetInfo: cuando vuelve la conexión, disparamos sync
+    const unsubscribeNetInfo = NetInfo.addEventListener(state => {
+      if (state.isConnected) {
+        sync.queue()
+      }
     })
 
-    // Eventos de sesión: encolar sync en login/refresh. En logout, limpiar procesos si hace falta
-    const unsubSession = subscribe(e => {
+    // Eventos de sesión: en login/refresh intentamos sincronizar lo pendiente
+    const unsubscribeSession = subscribe(e => {
       if (e.type === 'login' || e.type === 'refresh') {
         sync.queue()
       }
       if (e.type === 'logout') {
-        // En caso de implementar workers dependientes de sesión, cancelarlos aquí
+        // Si más adelante hay workers ligados a sesión, se limpian acá.
       }
     })
 
-    // Background fetch
+    // Background task (best effort iOS)
     await registerBackgroundSync(() => sync.runOnce())
 
     // Cleanup centralizado
     _cleanup = () => {
       appStateSub.remove()
-      netUnsub && netUnsub()
-      unsubSession()
+      unsubscribeNetInfo()
+      unsubscribeSession()
       unregisterBackgroundSync().catch(() => void 0)
     }
 
-    // Disparo inicial
+    // Disparo inicial al boot
     sync.queue()
   })()
 

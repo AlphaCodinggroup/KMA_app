@@ -1,16 +1,74 @@
 import NetInfo from '@react-native-community/netinfo'
 import * as FileSystem from 'expo-file-system'
 import { Buffer } from 'buffer'
+
 import type { FlowDetail } from '@shared/validation/steps.schema'
-import type { SubmissionAnswer, SubmissionDraft } from '@entities/submission/model'
 import type { Flow, Step } from '@entities/flow/model'
-import { putPresignedBinary, request } from '@core/http/http'
+import type { SubmissionAnswer, SubmissionDraft } from '@entities/submission/model'
+import type { SubmissionRepo } from '@entities/submission/ports'
 import { createHttpFlowRepo } from '@features/selector/data/flow.repo.http'
+import { putPresignedBinary, request } from '@core/http/http'
+import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
+import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
 
 // -----------------------------------------------------------------------------
-// Repositorio HTTP de Flows
+// Repos / singletons
 // -----------------------------------------------------------------------------
+
 const flowRepo = createHttpFlowRepo()
+const submissionRepo: SubmissionRepo = sqliteSubmissionRepo
+
+// -----------------------------------------------------------------------------
+// Tipos y constantes internas
+// -----------------------------------------------------------------------------
+
+type PhotoToUpload = {
+  stepId: string
+  localUri: string
+  uploadName: string
+  mimeType: string
+}
+
+type AuditAnswerForApi =
+  | {
+      step_id: string
+      type: 'Question' | 'Select'
+      answer: string | null
+    }
+  | {
+      step_id: string
+      type: 'Form'
+      values: Record<string, unknown>
+    }
+
+type PresignRequestFile = {
+  name: string
+  step_id: string
+}
+
+type PresignResponse = {
+  audit_id: string
+  urls: Array<{
+    file_name: string
+    upload_url: string
+    file_url: string
+  }>
+}
+
+type AuditSubmissionOutboxPayload = {
+  submissionId: string
+}
+
+/**
+ * Campos que el backend considera numéricos opcionales:
+ * - Si los mandamos, tienen que ser number
+ * - Si están vacíos o no son parseables -> no mandarlos
+ */
+const NUMERIC_OPTIONAL_FIELDS = new Set<string>(['quantity', 'measurements'])
+
+// -----------------------------------------------------------------------------
+// API pública
+// -----------------------------------------------------------------------------
 
 /** Best-effort: asegurar que el flow esté actualizado/local antes de ejecutar. */
 export async function ensureFlowSynced(flowId: string): Promise<void> {
@@ -19,14 +77,186 @@ export async function ensureFlowSynced(flowId: string): Promise<void> {
   return Promise.resolve()
 }
 
+/**
+ * Carga remota del flow desde el repo HTTP y lo mapea a FlowDetail (VM de pantalla).
+ */
+export async function loadFlowDetail(flowId: string): Promise<FlowDetail> {
+  const flow = await flowRepo.getById(flowId)
+  if (!flow) {
+    throw new Error(`Flow ${flowId} no encontrado`)
+  }
+  return mapToFlowDetail(flow)
+}
+
+/**
+ * Persistencia de borrador local en SQLite (draft de auditoría).
+ */
+export async function persistDraft(params: {
+  flowId: string
+  title: string
+  answers: Record<string, SubmissionAnswer>
+  projectId?: string
+  facilityId?: string
+  version?: string
+}): Promise<void> {
+  const draft: SubmissionDraft = {
+    flowId: params.flowId,
+    title: params.title,
+    createdAt: Date.now(),
+    answers: params.answers,
+  }
+
+  try {
+    await submissionRepo.saveDraft({
+      draft,
+      projectId: params.projectId ?? '',
+      facilityId: params.facilityId ?? '',
+      version: params.version ?? '',
+    })
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[persistDraft] Failed to save draft', err)
+    }
+  }
+}
+
+/**
+ * finalizeSubmission
+ *
+ * Flujo online:
+ * 1. Detecta fotos locales (file://)
+ * 2. POST /uploads -> presigned URLs + audit_id
+ * 3. PUT binario a cada upload_url (S3, sin Authorization)
+ * 4. POST /audits con { id, flow_id, project_id, facility_id, answers:[...] }
+ *
+ * Offline:
+ * - Guarda el draft en SQLite y lo encola en outbox como "AUDIT_SUBMISSION".
+ */
+export async function finalizeSubmission(params: {
+  flowId: string
+  title: string
+  answers: Record<string, SubmissionAnswer>
+  online?: boolean
+  projectId?: string
+  facilityId?: string
+  version?: string
+}): Promise<boolean> {
+  const isOnline = await resolveOnlineStatus(params.online)
+
+  const draft: SubmissionDraft = {
+    flowId: params.flowId,
+    title: params.title,
+    createdAt: Date.now(),
+    answers: params.answers,
+  }
+
+  // OFFLINE → encolar en outbox y salir
+  if (!isOnline) {
+    await queueOfflineSubmission(draft, {
+      projectId: params.projectId ?? '',
+      facilityId: params.facilityId ?? '',
+      version: params.version ?? '',
+    })
+    return false
+  }
+
+  // ONLINE
+  try {
+    // Fotos locales -> lista para presign
+    const photosToUpload = collectLocalPhotos(params.answers)
+    const presignFiles: PresignRequestFile[] = photosToUpload.map(p => ({
+      name: p.uploadName,
+      step_id: p.stepId,
+    }))
+
+    // Pedir presigned URLs
+    const presignRes = await request<PresignResponse>({
+      method: 'POST',
+      url: '/uploads',
+      data: { files: presignFiles },
+    })
+
+    const auditId = presignRes.audit_id
+    const uploadEntries = presignRes.urls
+
+    const byFileName: Record<string, { upload_url: string; file_url: string }> = {}
+    for (const u of uploadEntries) {
+      byFileName[u.file_name] = {
+        upload_url: u.upload_url,
+        file_url: u.file_url,
+      }
+    }
+
+    // Subir cada foto a S3 via PUT presignado
+    for (const p of photosToUpload) {
+      const match = byFileName[p.uploadName]
+      if (!match) continue
+
+      const fileBytes = await readFileAsUint8(p.localUri)
+      await putPresignedBinary({
+        url: match.upload_url,
+        data: fileBytes,
+        contentType: p.mimeType,
+      })
+    }
+
+    // Construir mapa nombreArchivo -> ruta s3://...
+    const uploadMap: Record<string, string> = {}
+    for (const u of uploadEntries) {
+      uploadMap[u.file_name] = u.file_url
+    }
+
+    // Armar answers normalizados para /audits
+    const answersForApi: AuditAnswerForApi[] = buildAnswersForApi({
+      answers: params.answers,
+      uploadMap,
+    })
+
+    // POST /audits (crea la auditoría final)
+    const body = {
+      id: auditId,
+      flow_id: params.flowId,
+      project_id: params.projectId ?? '',
+      facility_id: params.facilityId ?? '',
+      answers: answersForApi,
+      flow_version: Number(params.version ?? 1),
+    }
+
+    const resp = await request<{ status?: number }>({
+      method: 'POST',
+      url: '/audits',
+      data: body,
+    })
+
+    const ok = resp.status === 201
+    return ok
+  } catch (err) {
+    console.warn('[finalizeSubmission] error:', err)
+    return false
+  }
+}
+
 // -----------------------------------------------------------------------------
+// Helpers privados
+// -----------------------------------------------------------------------------
+
+/**
+ * Resuelve el estado online efectivo:
+ * - Si se pasa explícitamente `online`, respeta ese valor.
+ * - Si no, consulta NetInfo.
+ */
+async function resolveOnlineStatus(explicitOnline?: boolean): Promise<boolean> {
+  if (typeof explicitOnline === 'boolean') return explicitOnline
+  const state = await NetInfo.fetch()
+  return !!state.isConnected
+}
+
 // Mappers dominio -> VM de pantalla
-// -----------------------------------------------------------------------------
+
 function mapToFlowDetail(flow: Flow): FlowDetail {
   return {
     flowId: flow.flowId,
     title: flow.title,
-    description: flow.description || '',
     steps: flow.steps.map(mapStepToDetail),
   }
 }
@@ -77,46 +307,13 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
   }
 }
 
-// -----------------------------------------------------------------------------
-// Carga remota del flow
-// -----------------------------------------------------------------------------
-export async function loadFlowDetail(flowId: string): Promise<FlowDetail> {
-  const flow = await flowRepo.getById(flowId)
-  if (!flow) {
-    throw new Error(`Flow ${flowId} no encontrado`)
-  }
-  return mapToFlowDetail(flow)
-}
-
-// -----------------------------------------------------------------------------
-// Persistencia de borrador local (por ahora console.log / TODO: SQLite)
-// -----------------------------------------------------------------------------
-export async function persistDraft(params: {
-  flowId: string
-  title: string
-  answers: Record<string, SubmissionAnswer>
-}): Promise<void> {
-  const payload = {
-    flowId: params.flowId,
-    title: params.title,
-    createdAt: new Date().toISOString(),
-    answers: params.answers,
-  }
-  console.log('[FLOW SUBMISSION DRAFT]', JSON.stringify(payload, null, 2))
-}
-
-// -----------------------------------------------------------------------------
-// Helpers para fotos y payload final
-// -----------------------------------------------------------------------------
-
 /**
  * Algunos formularios guardan las fotos en `values.photo`
- * Otros podrían guardarlas en `values.photos`
+ * Otros podrían guardarlas en `values.photos`.
  *
- * Normalizamos eso: devolvemos SIEMPRE un array de fotos (puede ser string file:// o s3://
- * o un objeto { uri, name?, type? }).
+ * Normalizamos eso: devolvemos SIEMPRE un array de fotos.
  */
-function extractPhotoArray(values: Record<string, unknown>): any[] {
+function extractPhotoArray(values: Record<string, unknown>): unknown[] {
   const v = values ?? {}
   if (Array.isArray(v.photos)) return v.photos
   if (Array.isArray(v.photo)) return v.photo
@@ -124,25 +321,12 @@ function extractPhotoArray(values: Record<string, unknown>): any[] {
 }
 
 /**
- * Recorre las respuestas y junta las fotos locales (file://...) que haya que subir.
+ * Recorre todas las respuestas y junta las fotos locales (file://...) que haya que subir.
  *
- * Genera para cada foto un nombre único estable que vamos a pedirle al backend
- * en /uploads:
- *   `${stepId}_${idx}_${timestamp}.${ext}`
+ * Genera pares (uploadName, localUri) para alimentar `/uploads`.
  */
-function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): Array<{
-  stepId: string
-  localUri: string
-  uploadName: string
-  mimeType: string
-}> {
-  const out: Array<{
-    stepId: string
-    localUri: string
-    uploadName: string
-    mimeType: string
-  }> = []
-
+function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): PhotoToUpload[] {
+  const out: PhotoToUpload[] = []
   const nowTs = Date.now()
 
   Object.entries(answers).forEach(([stepId, ans]) => {
@@ -153,7 +337,8 @@ function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): Array<{
 
     photos.forEach((p, idx: number) => {
       // p puede ser string ("file:///...jpg") o un objeto { uri, name, type }
-      const localUri: string = (typeof p === 'string' ? p : p?.uri || p?.localUri || '') ?? ''
+      const localUri: string =
+        (typeof p === 'string' ? p : (p as any)?.uri || (p as any)?.localUri || '') ?? ''
       if (!localUri || !localUri.startsWith('file')) {
         // si NO es file:// asumimos que ya es remoto (ej "s3://...") -> no subir
         return
@@ -161,18 +346,20 @@ function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): Array<{
 
       // Inferir nombre base
       const rawName: string | undefined =
-        (typeof p === 'string' ? undefined : p.name || p.fileName || p.filename) ??
+        (typeof p === 'string'
+          ? undefined
+          : (p as any).name || (p as any).fileName || (p as any).filename) ??
         localUri.split('/').pop() ??
         `photo_${idx}.jpg`
 
-      const ext = rawName?.includes('.') ? rawName?.split('.').pop() : 'jpg'
+      const ext = rawName?.includes('.') ? rawName.split('.').pop() : 'jpg'
 
       // Nombre final único para esta subida
       const uploadName = `${stepId}_${idx}_${nowTs}.${ext}`
 
       // Inferir mime
       const mimeType: string =
-        (typeof p === 'string' ? undefined : p.type) || guessMimeFromExt(ext || 'jpg')
+        (typeof p === 'string' ? undefined : (p as any).type) || guessMimeFromExt(ext || 'jpg')
 
       out.push({
         stepId,
@@ -187,7 +374,7 @@ function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): Array<{
 }
 
 /**
- * Inferencia MIME básica
+ * Inferencia MIME básica.
  */
 function guessMimeFromExt(ext: string): string {
   const lower = ext.toLowerCase()
@@ -202,66 +389,24 @@ function guessMimeFromExt(ext: string): string {
  * para poder hacer PUT a S3 con la URL presignada.
  */
 async function readFileAsUint8(uri: string): Promise<Uint8Array> {
-  // PRIMER INTENTO: usar expo-file-system si está disponible y sano
-  if (FileSystem && typeof FileSystem.readAsStringAsync === 'function') {
-    const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    })
-
-    // Convertimos base64 -> bytes
-    const binaryString = globalThis.atob
-      ? globalThis.atob(base64)
-      : Buffer.from(base64, 'base64').toString('binary')
-
-    const len = binaryString.length
-    const bytes = new Uint8Array(len)
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i)
-    }
-    return bytes
-  }
-
-  // SEGUNDO INTENTO (fallback): usar fetch(file://...) y arrayBuffer()
-  // React Native soporta fetch sobre URIs locales tipo file:///... en iOS/Android.
-  const resp = await fetch(uri)
-  const buf = await resp.arrayBuffer()
-  return new Uint8Array(buf)
+  const base64 = await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  })
+  const buf = Buffer.from(base64, 'base64')
+  return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength)
 }
 
-// -----------------------------------------------------------------------------
-// Mapeo answers internos -> formato final de /audits
-// -----------------------------------------------------------------------------
-
-type AuditAnswerForApi =
-  | {
-      step_id: string
-      type: 'Question' | 'Select'
-      answer: string | null
-    }
-  | {
-      step_id: string
-      type: 'Form'
-      values: Record<string, unknown>
-    }
-
 /**
- * buildAnswersForApi
- *
- * - Convierte tus respuestas internas en lo que /audits espera.
- * - Normaliza:
- *    * 'Question' con option => 'Select'
- *    * 'Form' con { photo / photos } => { photos: ['s3://...'] }
+ * Convierte tus respuestas internas en lo que /audits espera.
+ * Normaliza:
+ *  - 'Question' con option => 'Select'
+ *  - 'Form' con { photo / photos } => { photos: ['s3://...'] }
  */
 function buildAnswersForApi(params: {
   answers: Record<string, SubmissionAnswer>
   uploadMap: Record<string, string> // fileName -> s3://...
 }): AuditAnswerForApi[] {
   const { answers, uploadMap } = params
-
-  // Campos que el backend considera numéricos opcionales:
-  // - Si los mandamos, tienen que ser number (no string)
-  // - Si están vacíos o no son parseables -> no mandarlos
-  const NUMERIC_OPTIONAL_FIELDS = new Set(['quantity', 'measurements'])
 
   return Object.entries(answers).map(([stepId, ans]) => {
     if (!ans) {
@@ -272,9 +417,7 @@ function buildAnswersForApi(params: {
       }
     }
 
-    // --------------------------
     // PREGUNTAS (YES/NO o SELECT)
-    // --------------------------
     if (ans.type === 'Question') {
       // Caso SELECT:
       // runtime guarda { type:'Question', answer:null, option:'...' }
@@ -287,10 +430,7 @@ function buildAnswersForApi(params: {
       }
 
       // Caso YES / NO / skip
-      const normalized =
-        ans.answer != null
-          ? String(ans.answer).toLowerCase() // "YES" -> "yes"
-          : null
+      const normalized = ans.answer != null ? String(ans.answer).toLowerCase() : null
 
       return {
         step_id: stepId,
@@ -299,18 +439,14 @@ function buildAnswersForApi(params: {
       }
     }
 
-    // --------------------------
-    // FORMS
-    // --------------------------
+    // FORMULARIOS
     if (ans.type === 'Form') {
-      // Copiamos los valores del form para mutarlos sin tocar answersRef
-      const outValues: Record<string, unknown> = { ...ans.values }
+      const values = ans.values ?? {}
 
-      // 1. Fotos
-      //    - Tu formulario guarda las fotos bajo "photo" (array de file://)
-      //      y a veces podría venir "photos".
-      //    - Nosotros las convertimos a "photos": ["s3://..."] finales
-      //      usando uploadMap.
+      // Copiamos valores para no mutar el original
+      const outValues: Record<string, unknown> = { ...values }
+
+      // Fotos → "photos": ['s3://...']
       const rawArray = extractPhotoArray(outValues)
 
       const mappedUrls = rawArray
@@ -318,85 +454,50 @@ function buildAnswersForApi(params: {
           // Caso ya remoto
           if (typeof p === 'string' && p.startsWith('s3://')) return p
 
-          // Caso local file://... -> buscamos la key de uploadMap que
-          // matchea el patrón `${stepId}_${idx}_<timestamp>.<ext>`
+          // Caso local: buscamos key en uploadMap que matchee `${stepId}_${idx}_...`
           const prefix = `${stepId}_${idx}_`
           const matchKey = Object.keys(uploadMap).find(k => k.startsWith(prefix))
           return matchKey ? uploadMap[matchKey] : null
         })
-        .filter(Boolean)
+        .filter((u): u is string => !!u)
 
       if (mappedUrls.length > 0) {
         outValues.photos = mappedUrls
       }
 
-      // Quitamos la key "photo" cruda, porque tenía file:// locales
+      // Quitamos el campo crudo "photo" si existía
       delete outValues.photo
 
-      // 2. Limpieza genérica de valores escalares:
-      //    - ""  -> null
-      //    - "12" / "3.5" -> número
-      //    - "texto libre" -> queda igual
-      for (const [k, v] of Object.entries(outValues)) {
-        if (k === 'photos') continue // no tocar fotos
+      // Campos numéricos opcionales
+      for (const key of NUMERIC_OPTIONAL_FIELDS) {
+        if (!Object.prototype.hasOwnProperty.call(outValues, key)) continue
 
-        if (typeof v === 'string') {
-          const trimmed = v.trim()
+        const value = outValues[key]
 
-          // string vacío -> null
+        if (value === null || typeof value === 'undefined') {
+          delete outValues[key]
+          continue
+        }
+
+        if (typeof value === 'number') continue
+
+        if (typeof value === 'string') {
+          const trimmed = value.trim()
           if (trimmed === '') {
-            outValues[k] = null
+            delete outValues[key]
             continue
           }
-
-          // ¿es un número válido tipo "12" o "3.5"?
-          if (/^\d+(\.\d+)?$/.test(trimmed)) {
-            const numVal = Number(trimmed)
-            if (!Number.isNaN(numVal)) {
-              outValues[k] = numVal
-            }
+          const numVal = Number(trimmed)
+          if (Number.isNaN(numVal)) {
+            delete outValues[key]
+            continue
           }
-          // si no matchea número, queda tal cual string
+          outValues[key] = numVal
+          continue
         }
-      }
 
-      // 3. Reglas estrictas de campos numéricos opcionales:
-      //    quantity / measurements:
-      //    - si existen y NO son number => las borramos
-      //    - si existen y son null => las borramos
-      for (const numericKey of NUMERIC_OPTIONAL_FIELDS) {
-        if (Object.prototype.hasOwnProperty.call(outValues, numericKey)) {
-          const val = outValues[numericKey]
-
-          if (val === null || typeof val === 'undefined') {
-            delete outValues[numericKey]
-            continue
-          }
-
-          if (typeof val === 'number') {
-            // OK, lo dejamos así
-            continue
-          }
-
-          if (typeof val === 'string') {
-            // Intento final de parseo
-            const trimmed = val.trim()
-            if (trimmed === '') {
-              delete outValues[numericKey]
-              continue
-            }
-            const numVal = Number(trimmed)
-            if (!Number.isNaN(numVal)) {
-              outValues[numericKey] = numVal
-            } else {
-              delete outValues[numericKey]
-            }
-            continue
-          }
-
-          // cualquier otra cosa que no sea number -> no se manda
-          delete outValues[numericKey]
-        }
+        // Cualquier otro tipo lo descartamos
+        delete outValues[key]
       }
 
       return {
@@ -415,153 +516,50 @@ function buildAnswersForApi(params: {
   })
 }
 
-// -----------------------------------------------------------------------------
-// Offline queue stub
-// -----------------------------------------------------------------------------
-async function queueOfflineSubmission(draft: SubmissionDraft) {
-  // En real:
-  // - Guardar en SQLite (tabla outbox) con estado "pending".
-  // - El sync en background va a tomar esto, pedir presigned URLs y subir.
-  console.log('[OUTBOX] Enqueued submission (offline):', JSON.stringify(draft, null, 2))
-}
-
-// -----------------------------------------------------------------------------
-// Tipos para presign
-// -----------------------------------------------------------------------------
-type PresignRequestFile = {
-  name: string
-  step_id: string
-}
-
-type PresignResponse = {
-  audit_id: string
-  urls: Array<{
-    file_name: string
-    upload_url: string
-    file_url: string
-  }>
-}
-
-// -----------------------------------------------------------------------------
-// FINAL: finalizar auditoría
-// -----------------------------------------------------------------------------
 /**
- * finalizeSubmission
- *
- * Flujo online:
- * 1. Detecta fotos locales (file://)
- * 2. POST /uploads -> presigned URLs + audit_id
- * 3. PUT binario a cada upload_url (S3, sin Authorization)
- * 4. POST /audits con { id, flow_id, project_id, facility_id, answers:[...] }
- *
- * Offline:
- * - Encola draft en outbox para sync posterior.
+ * Cola offline real:
+ *  - Guarda el draft en `submissions`.
+ *  - Encola item en `outbox` con type "AUDIT_SUBMISSION".
+ *  - Adjunta filePaths con los file:// de las fotos para futura limpieza.
  */
-export async function finalizeSubmission(params: {
-  flowId: string
-  title: string
-  answers: Record<string, SubmissionAnswer>
-  online?: boolean
-  projectId?: string
-  facilityId?: string
-  version?: string
-}): Promise<boolean> {
-  // 0. conectividad real
-  const isOnline =
-    typeof params.online === 'boolean' ? params.online : !!(await NetInfo.fetch()).isConnected
-
-  // Draft común
-  const draft: SubmissionDraft = {
-    flowId: params.flowId,
-    title: params.title,
-    createdAt: Date.now(),
-    answers: params.answers,
-  }
-
-  if (!isOnline) {
-    await queueOfflineSubmission(draft)
-    return false
-  }
+async function queueOfflineSubmission(
+  draft: SubmissionDraft,
+  context: { projectId?: string; facilityId?: string; version?: string },
+): Promise<void> {
   try {
-    // 1. fotos locales -> lista upload
-    const photosToUpload = collectLocalPhotos(params.answers)
-    // armamos body para /uploads
-    const presignFiles: PresignRequestFile[] = photosToUpload.map(p => ({
-      name: p.uploadName,
-      step_id: p.stepId,
-    }))
-
-    // 2. pedir presigned URLs
-    const presignRes = await request<PresignResponse>({
-      method: 'POST',
-      url: '/uploads',
-      data: { files: presignFiles },
+    // Persistimos el draft en submissions
+    const { id } = await submissionRepo.saveDraft({
+      draft,
+      projectId: context.projectId ?? '',
+      facilityId: context.facilityId ?? '',
+      version: context.version ?? '',
     })
 
-    const auditId = presignRes.audit_id
-    const uploadEntries = presignRes.urls // [{file_name, upload_url, file_url}, ...]
+    // Detectamos fotos locales para adjuntarlas como filePaths
+    const photosToUpload = collectLocalPhotos(draft.answers)
+    const filePaths =
+      photosToUpload.length > 0
+        ? photosToUpload
+            .map(p => p.localUri)
+            .filter(uri => typeof uri === 'string' && uri.startsWith('file://'))
+        : undefined
 
-    const byFileName: Record<string, { upload_url: string; file_url: string }> = {}
-    for (const u of uploadEntries) {
-      byFileName[u.file_name] = {
-        upload_url: u.upload_url,
-        file_url: u.file_url,
-      }
-    }
+    // Encolamos en outbox
+    const payload: AuditSubmissionOutboxPayload = { submissionId: id }
 
-    // 3. subir cada foto a S3 via PUT presignado
-    for (const p of photosToUpload) {
-      const match = byFileName[p.uploadName]
-      if (!match) {
-        console.warn('[finalizeSubmission] Missing presigned URL for', p.uploadName)
-        continue
-      }
-
-      const fileBytes = await readFileAsUint8(p.localUri)
-
-      await putPresignedBinary({
-        url: match.upload_url,
-        data: fileBytes,
-        contentType: p.mimeType,
-      })
-    }
-
-    // 4. construir mapa nombreArchivo -> ruta s3://...
-    const uploadMap: Record<string, string> = {}
-    for (const u of uploadEntries) {
-      uploadMap[u.file_name] = u.file_url
-    }
-
-    // 5. armar answers normalizados para /audits
-    const answersForApi: AuditAnswerForApi[] = buildAnswersForApi({
-      answers: params.answers,
-      uploadMap,
-    })
-    console.log(params.version)
-    // 6. POST /audits (crea la auditoría final)
-    const body = {
-      id: auditId,
-      flow_id: params.flowId,
-      project_id: params.projectId ?? '',
-      facility_id: params.facilityId ?? '',
-      answers: answersForApi,
-      flow_version: Number(params.version ?? 1),
-    }
-
-    const resp = await request<{ status?: number }>({
-      method: 'POST',
-      url: '/audits',
-      data: body,
+    await sqliteOutboxRepo.enqueue({
+      endpoint: 'AUDIT_SUBMISSION',
+      method: 'USECASE',
+      payload,
+      filePaths: filePaths ?? [],
     })
 
-    // TODO futuro:
-    // - limpiar draft local
-    // - marcar en outbox como enviado si era retry
-    console.log('[finalizeSubmission] audit sent OK:', auditId)
-    const ok = resp.status === 201
-    return ok
+    if (__DEV__) {
+      console.log('[OUTBOX] Enqueued AUDIT_SUBMISSION', { submissionId: id })
+    }
   } catch (err) {
-    console.warn('[finalizeSubmission] error:', err)
-    return false
+    if (__DEV__) {
+      console.warn('[queueOfflineSubmission] Failed to enqueue submission', err)
+    }
   }
 }
