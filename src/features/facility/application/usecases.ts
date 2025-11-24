@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FacilitiesPage, Facility, ProjectId } from '@entities/facility/model'
 import type { FacilityRepo, ListFacilitiesParams } from '@entities/facility/ports'
-import { createHttpFacilityRepo } from '@features/facility/data/facility.repo.http'
+import { createOfflineFirstFacilityRepo } from '@features/facility/data/facility.repo.offline'
 
 /**
  * Inyección simple por defecto (HTTP).
  */
 let facilityRepoSingleton: FacilityRepo | null = null
 function getRepo(): FacilityRepo {
-  if (!facilityRepoSingleton) facilityRepoSingleton = createHttpFacilityRepo()
+  if (!facilityRepoSingleton) facilityRepoSingleton = createOfflineFirstFacilityRepo()
   return facilityRepoSingleton
 }
 

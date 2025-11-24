@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, ProjectStatus } from '@entities/project/model'
 import type { ListProjectsParams } from '@entities/project/ports'
-import { createHttpProjectRepo } from '@features/projects/data/project.repo.http'
+import { createOfflineFirstProjectRepo } from '@features/projects/data/project.repo.offline'
 
 /**
  * Opciones de listado (dominio)
@@ -19,7 +19,7 @@ export type UseProjectsOptions = {
  * - Soporta cancelación (AbortController) para evitar race conditions.
  */
 export function useProjects(opts: UseProjectsOptions = {}) {
-  const repoRef = useRef(createHttpProjectRepo())
+  const repoRef = useRef(createOfflineFirstProjectRepo())
   const [items, setItems] = useState<Project[]>([])
   const [cursor, setCursor] = useState<string | undefined>(undefined)
 
@@ -114,7 +114,7 @@ export function useProjects(opts: UseProjectsOptions = {}) {
  * Hook para obtener un proyecto por ID.
  */
 export function useProjectById(projectId: string | null | undefined) {
-  const repoRef = useRef(createHttpProjectRepo())
+  const repoRef = useRef(createOfflineFirstProjectRepo())
 
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
