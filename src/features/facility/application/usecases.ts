@@ -4,15 +4,16 @@ import type { FacilityRepo, ListFacilitiesParams } from '@entities/facility/port
 import { createOfflineFirstFacilityRepo } from '@features/facility/data/facility.repo.offline'
 
 /**
- * Inyección simple por defecto (HTTP).
+ * Repo offline-first por defecto (HTTP + SQLite).
  */
 let facilityRepoSingleton: FacilityRepo | null = null
-function getRepo(): FacilityRepo {
+
+function getFacilityRepo(): FacilityRepo {
   if (!facilityRepoSingleton) facilityRepoSingleton = createOfflineFirstFacilityRepo()
   return facilityRepoSingleton
 }
 
-/** Permite inyectar un repo custom*/
+/** Permite inyectar un repo custom (tests, historias, etc). */
 export function setFacilityRepo(repo: FacilityRepo | null) {
   facilityRepoSingleton = repo
 }
@@ -21,7 +22,7 @@ export function setFacilityRepo(repo: FacilityRepo | null) {
 export async function listFacilitiesByProjectUseCase(
   projectId: ProjectId,
   params?: ListFacilitiesParams,
-  repo: FacilityRepo = getRepo(),
+  repo: FacilityRepo = getFacilityRepo(),
 ): Promise<FacilitiesPage> {
   if (!projectId) throw new Error('projectId requerido')
   return repo.listByProject(projectId, params)
@@ -35,7 +36,7 @@ export function useFacilitiesByProject(
   params?: ListFacilitiesParams,
   repo?: FacilityRepo,
 ) {
-  const effectiveRepo = repo ?? getRepo()
+  const effectiveRepo = repo ?? getFacilityRepo()
 
   const [items, setItems] = useState<Facility[]>([])
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined)

@@ -1,9 +1,8 @@
-import NetInfo from '@react-native-community/netinfo'
-
 import type { Facility, FacilityId, ProjectId, FacilitiesPage } from '@entities/facility/model'
 import type { FacilityRepo, ListFacilitiesParams } from '@entities/facility/ports'
 import { createHttpFacilityRepo } from './facility.repo.http'
 import { sqliteFacilityRepo } from '@core/repos/sqliteFacilityRepo'
+import { isOnlineOnce } from '@shared/lib/network'
 
 /**
  * Repo offline-first para Facilities.
@@ -31,7 +30,7 @@ class OfflineFirstFacilityRepo implements FacilityRepo {
    *
    * Offline o error:
    *  - Devuelve una FacilitiesPage "fake" armada desde SQLite
-   *    (sin paginación real: nextCursor = undefined).
+   *    (sin paginación real: nextCursor = '').
    */
   async listByProject(
     projectId: ProjectId,
@@ -117,10 +116,7 @@ class OfflineFirstFacilityRepo implements FacilityRepo {
     throw new Error('Facility not available offline')
   }
 
-  // ----------------------
   // Helpers internos
-  // ----------------------
-
   /**
    * Arma una FacilitiesPage a partir de lo cacheado en SQLite.
    * No hay paginación real: devolvemos todos los items que matcheen filtros.
@@ -140,15 +136,6 @@ class OfflineFirstFacilityRepo implements FacilityRepo {
       nextCursor: '',
     }
   }
-}
-
-// ----------------------
-// Helper de conectividad
-// ----------------------
-
-async function isOnlineOnce(): Promise<boolean> {
-  const state = await NetInfo.fetch()
-  return !!state.isConnected
 }
 
 // Factory para wiring desde features/hooks

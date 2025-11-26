@@ -11,6 +11,7 @@ import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
 import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
 import type { SubmissionSnapshot } from '@entities/submission/ports'
 import { finalizeSubmission } from '@features/flow-runner/application/usecases'
+import { syncAllCatalogs } from '@processes/catalog-sync'
 
 let _bootPromise: Promise<void> | null = null
 let _cleanup: (() => void) | null = null
@@ -179,32 +180,53 @@ export async function bootstrapApp(): Promise<void> {
       // batchSize / retryBaseDelayMs / retryMaxAttempts vienen por env o defaults
     })
 
-    // AppState: cuando la app vuelve a foreground, disparamos sync
+    /**
+     * Helper centralizado para disparar:
+     *  - sync de outbox (auditorías pendientes)
+     *  - sync de catálogos (flows, projects, facilities)
+     *
+     * No bloquea la UI: syncAllCatalogs corre en best-effort (fire & forget).
+     */
+    const queueFullSync = () => {
+      // Outbox (usa su propia cola y backoff interno)
+      sync.queue()
+
+      // Catálogos: best-effort, no queremos romper nada si falla
+      syncAllCatalogs().catch(err => {
+        if (__DEV__) {
+          console.warn('[bootstrap] syncAllCatalogs failed', err)
+        }
+      })
+    }
+
+    // AppState: cuando la app vuelve a foreground, disparamos sync completo
     const handleAppStateChange = (state: AppStateStatus) => {
       if (state === 'active') {
-        sync.queue()
+        queueFullSync()
       }
     }
     const appStateSub = AppState.addEventListener('change', handleAppStateChange)
 
-    // NetInfo: cuando vuelve la conexión, disparamos sync
+    // NetInfo: cuando vuelve la conexión, disparamos sync completo
     const unsubscribeNetInfo = NetInfo.addEventListener(state => {
       if (state.isConnected) {
-        sync.queue()
+        queueFullSync()
       }
     })
 
     // Eventos de sesión: en login/refresh intentamos sincronizar lo pendiente
     const unsubscribeSession = subscribe(e => {
       if (e.type === 'login' || e.type === 'refresh') {
-        sync.queue()
+        queueFullSync()
       }
       if (e.type === 'logout') {
         // Si más adelante hay workers ligados a sesión, se limpian acá.
       }
     })
 
-    // Background task (best effort iOS)
+    // Background task (best effort iOS) → por ahora sólo outbox.
+    // Si en algún momento quisieras incluir catálogos acá, podés llamar
+    // a syncAllCatalogs() dentro del callback, con la misma filosofía best-effort.
     await registerBackgroundSync(() => sync.runOnce())
 
     // Cleanup centralizado
@@ -215,8 +237,8 @@ export async function bootstrapApp(): Promise<void> {
       unregisterBackgroundSync().catch(() => void 0)
     }
 
-    // Disparo inicial al boot
-    sync.queue()
+    // Disparo inicial al boot (outbox + catálogos)
+    queueFullSync()
   })()
 
   return _bootPromise

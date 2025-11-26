@@ -1,53 +1,51 @@
 import type { FlowSummary, Flow } from '@entities/flow/model'
-import { http } from '@core/http/http'
-import { Env } from '@shared/config/env'
-import { FlowsResponseDtoSchema } from '@entities/flow/api/flow.dto'
-import { mapFlowsResponseDto } from '@entities/flow/lib/mappers'
-
-/** Devuelve la base URL de la API con fallback seguro. */
-const getApiBaseUrl = (): string =>
-  Env.apiBaseUrl ?? (process.env.EXPO_PUBLIC_API_BASE_URL as string) ?? ''
+import type { FlowRepo } from '@entities/flow/ports'
+import { createOfflineFirstFlowRepo } from '../data/flow.repo.offline'
 
 /**
- * Carga todos los flows completos.
+ * Singleton muy simple para no instanciar el repo en cada llamada.
+ */
+let flowRepoInstance: FlowRepo | null = null
+
+const getFlowRepo = (): FlowRepo => {
+  if (!flowRepoInstance) {
+    flowRepoInstance = createOfflineFirstFlowRepo()
+  }
+  return flowRepoInstance
+}
+
+/**
+ * Carga todos los flows completos (incluye steps).
+ * Ahora delega en el FlowRepo offline-first:
+ *  - Online: va a la API y sincroniza SQLite (catálogo + steps).
+ *  - Offline / error de red: intenta reconstruir desde la cache local.
  */
 export async function loadAllFlowsWithSteps(): Promise<Flow[]> {
-  const baseURL = getApiBaseUrl()
-  const res = await http.request({
-    method: 'GET',
-    url: `${baseURL}/flows`,
-  })
-  const parsed = FlowsResponseDtoSchema.parse(res.data)
-  const flows = mapFlowsResponseDto(parsed)
-  return flows
+  const repo = getFlowRepo()
+  return repo.getAll()
 }
 
 /**
  * Carga el catálogo resumido para las tarjetas del Selector.
- * Deriva del resultado completo para no duplicar I/O ni lógica de mapeo.
+ * Usa directamente getSummaries() del repo offline-first, que:
+ *  - Online: pide a la API, cachea en SQLite y aplica filtros/paginación.
+ *  - Offline: lee solo desde la base local.
  */
 export async function loadCatalog(): Promise<FlowSummary[]> {
-  const flows = await loadAllFlowsWithSteps()
-
-  const summaries: FlowSummary[] = flows.map(f => ({
-    id: f.flowId, // En dominio es flowId; el resumen usa id
-    title: f.title,
-    version: String(f.version),
-    description: f.description,
-    stepsCount: f.steps.length,
-    flowType: f.flowType,
-    isActive: f.isActive,
-  }))
-
-  return summaries
+  const repo = getFlowRepo()
+  return repo.getSummaries()
 }
 
 /**
- * Sincronización en frío (placeholder).
- * En una siguiente iteración podemos:
- *  - leer /flows/all (si el backend lo expone),
- *  - persistir catálogo + steps en SQLite,
- *  - y preparar cache offline para SelectorScreen.
+ * Sincronización en frío (hook para procesos cross-feature).
+ *
+ * De momento, la propia carga de flows vía loadAllFlowsWithSteps() ya dispara
+ * la sincronización en SQLite gracias al repositorio offline-first.
+ *
+ * Este placeholder queda como punto de entrada para:
+ *  - bootstrap (al arrancar la app),
+ *  - workers en background/foreground,
+ * sin duplicar lógica de red aquí.
  */
 export async function coldSyncAllFlows(): Promise<void> {
   return

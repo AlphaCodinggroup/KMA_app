@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { View, Alert } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { Flow, FlowSummary } from '@entities/flow/model'
-import { loadAllFlowsWithSteps, coldSyncAllFlows } from '@features/selector/application/usecases'
+import { loadAllFlowsWithSteps } from '@features/selector/application/usecases'
 import { styles } from './styles/selector.styles'
 import FlowList, { type FlowListItem } from './FlowList'
 import SubHeadline from '@shared/ui/subheadline/subHeadline'
@@ -16,17 +16,34 @@ const SelectorScreen: React.FC = () => {
     projectId: string
     facilityId: string
   }>()
+
   const [flows, setFlows] = useState<Flow[]>([])
   const [loading, setLoading] = useState<boolean>(true)
+  const [error, setError] = useState<Error | null>(null)
   const [selectedLetter, setSelectedLetter] = useState<LetterKey>('ALL')
 
   const fetchData = useCallback(async () => {
     setLoading(true)
+    setError(null)
+
     try {
-      // Placeholder de sync (en una futura iteración cachearemos en SQLite)
-      await coldSyncAllFlows()
+      // Offline-first:
+      // - Online: FlowRepo va a la API y cachea en SQLite.
+      // - Offline / error: intenta reconstruir desde SQLite.
       const full = await loadAllFlowsWithSteps()
       setFlows(full)
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error('Failed to load flows')
+      setError(err)
+
+      if (__DEV__) {
+        console.warn('[SelectorScreen] Error loading flows', err)
+      }
+
+      Alert.alert(
+        'Error',
+        'There was a problem loading the flows. If you are offline, please try again after reconnecting.',
+      )
     } finally {
       setLoading(false)
     }
@@ -42,7 +59,11 @@ const SelectorScreen: React.FC = () => {
       flows.map(f => ({
         id: f.flowId,
         title: f.title,
+        version: String(f.version),
+        description: f.description,
+        stepsCount: f.steps.length,
         flowType: f.flowType,
+        isActive: f.isActive,
       })),
     [flows],
   )
@@ -73,13 +94,13 @@ const SelectorScreen: React.FC = () => {
     [facilityId, flows, projectId, router],
   )
 
-  // Letras únicas disponibles (derivadas del backend)
+  // Letras únicas disponibles (derivadas del backend / cache)
   const availableLetters = useMemo<string[]>(
     () => getAvailableLetters(summaries, it => it.flowType),
     [summaries],
   )
 
-  // Lista filtrada
+  // Lista filtrada por letra
   const filteredItems = useMemo<FlowSummary[]>(
     () => filterItemsByLetter(summaries, selectedLetter, it => it.flowType),
     [summaries, selectedLetter],

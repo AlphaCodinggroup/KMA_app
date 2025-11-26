@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, ProjectStatus } from '@entities/project/model'
-import type { ListProjectsParams } from '@entities/project/ports'
+import type { ListProjectsParams, ProjectRepo } from '@entities/project/ports'
 import { createOfflineFirstProjectRepo } from '@features/projects/data/project.repo.offline'
 
 /**
@@ -15,11 +15,24 @@ export type UseProjectsOptions = {
 }
 
 /**
+ * Singleton simple para el ProjectRepo.
+ * Evita crear nuevas instancias del repo en cada uso del hook.
+ */
+let projectRepoInstance: ProjectRepo | null = null
+
+const getProjectRepo = (): ProjectRepo => {
+  if (!projectRepoInstance) {
+    projectRepoInstance = createOfflineFirstProjectRepo()
+  }
+  return projectRepoInstance
+}
+
+/**
  * Hook para consumir proyectos desde la API con paginación por cursor.
  * - Soporta cancelación (AbortController) para evitar race conditions.
+ * - Usa un ProjectRepo offline-first (HTTP + SQLite).
  */
 export function useProjects(opts: UseProjectsOptions = {}) {
-  const repoRef = useRef(createOfflineFirstProjectRepo())
   const [items, setItems] = useState<Project[]>([])
   const [cursor, setCursor] = useState<string | undefined>(undefined)
 
@@ -62,14 +75,15 @@ export function useProjects(opts: UseProjectsOptions = {}) {
           setLoading(true)
         }
 
-        const page = await repoRef.current.list({
+        const repo = getProjectRepo()
+        const page = await repo.list({
           ...params,
           signal: controller.signal,
         })
 
         setCursor(page.nextCursor)
         setItems(prev => (reset ? page.items : prev.concat(page.items)))
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (controller.signal.aborted) return
         setError(e instanceof Error ? e : new Error('Unknown error'))
       } finally {
@@ -114,8 +128,6 @@ export function useProjects(opts: UseProjectsOptions = {}) {
  * Hook para obtener un proyecto por ID.
  */
 export function useProjectById(projectId: string | null | undefined) {
-  const repoRef = useRef(createOfflineFirstProjectRepo())
-
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<Error | null>(null)
@@ -137,9 +149,11 @@ export function useProjectById(projectId: string | null | undefined) {
       try {
         setLoading(true)
         setError(null)
-        const p = await repoRef.current.getById(projectId, { signal: controller.signal })
+
+        const repo = getProjectRepo()
+        const p = await repo.getById(projectId, { signal: controller.signal })
         setProject(p)
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (controller.signal.aborted) return
         setError(e instanceof Error ? e : new Error('Unknown error'))
       } finally {

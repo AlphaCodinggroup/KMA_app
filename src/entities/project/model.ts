@@ -1,49 +1,29 @@
-/**
- * Dominio de Projects
- * ----------------------------------------------------
- * - Tipos y helpers de negocio.
- * - El mapeo DTO
- */
-
 export type ProjectId = string
-export type UserId = string
-export type FacilityId = string
+export type ProjectStatus = 'ACTIVE' | 'ARCHIVED'
 
-export type ProjectStatus = 'active' | 'archived'
+export interface ProjectUserSummary {
+  id: string
+  name: string
+}
+
+export interface ProjectFacilitySummary {
+  id: string
+  name: string
+}
 
 export interface Project {
   id: ProjectId
-  code?: string | null
-  name?: string | null
+  name?: string
   description?: string | null
   status?: ProjectStatus
-  userIds?: UserId[]
-  facilityIds?: FacilityId[]
+  users?: ProjectUserSummary[]
+  facilities?: ProjectFacilitySummary[]
   createdAt?: string
   updatedAt?: string
-  createdBy?: UserId
+  createdBy?: string
 }
-
-/** Página de resultados para listados paginados por cursor */
 export interface ProjectsPage {
   items: Project[]
+  limit: number
   nextCursor?: string
-  limit?: number
-}
-
-/** Helpers de negocio mínimos */
-export const isProjectActive = (p: Project): boolean => p.status === 'active'
-
-/** Fábrica segura para normalizar arrays opcionales */
-export function createProject(
-  input: Omit<Project, 'userIds' | 'facilityIds'> & {
-    userIds?: UserId[] | null
-    facilityIds?: FacilityId[] | null
-  },
-): Project {
-  return {
-    ...input,
-    userIds: input.userIds ?? [],
-    facilityIds: input.facilityIds ?? [],
-  }
 }

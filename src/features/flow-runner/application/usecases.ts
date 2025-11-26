@@ -1,4 +1,3 @@
-import NetInfo from '@react-native-community/netinfo'
 import * as FileSystem from 'expo-file-system'
 import { Buffer } from 'buffer'
 
@@ -6,22 +5,18 @@ import type { FlowDetail } from '@shared/validation/steps.schema'
 import type { Flow, Step } from '@entities/flow/model'
 import type { SubmissionAnswer, SubmissionDraft } from '@entities/submission/model'
 import type { SubmissionRepo } from '@entities/submission/ports'
-import { createHttpFlowRepo } from '@features/selector/data/flow.repo.http'
+import type { FlowRepo } from '@entities/flow/ports'
 import { putPresignedBinary, request } from '@core/http/http'
 import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
 import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
+import { createOfflineFirstFlowRepo } from '@features/selector/data/flow.repo.offline'
+import { isOnlineOnce } from '@shared/lib/network'
 
-// -----------------------------------------------------------------------------
 // Repos / singletons
-// -----------------------------------------------------------------------------
-
-const flowRepo = createHttpFlowRepo()
+const flowRepo: FlowRepo = createOfflineFirstFlowRepo()
 const submissionRepo: SubmissionRepo = sqliteSubmissionRepo
 
-// -----------------------------------------------------------------------------
 // Tipos y constantes internas
-// -----------------------------------------------------------------------------
-
 type PhotoToUpload = {
   stepId: string
   localUri: string
@@ -66,19 +61,30 @@ type AuditSubmissionOutboxPayload = {
  */
 const NUMERIC_OPTIONAL_FIELDS = new Set<string>(['quantity', 'measurements'])
 
-// -----------------------------------------------------------------------------
 // API pública
-// -----------------------------------------------------------------------------
-
-/** Best-effort: asegurar que el flow esté actualizado/local antes de ejecutar. */
+/**
+ * Best-effort: asegurar que el flow esté actualizado/local antes de ejecutar.
+ *
+ * - Si hay red, el FlowRepo offline-first irá a la API y cacheará el detalle.
+ * - Si no hay red, intentará resolverlo desde SQLite.
+ * - Cualquier error se loguea en dev, pero no rompe el flujo de la pantalla.
+ */
 export async function ensureFlowSynced(flowId: string): Promise<void> {
-  // En una versión con cache/SQLite: verificar staleness y refrescar.
-  void flowId
-  return Promise.resolve()
+  try {
+    await flowRepo.getById(flowId)
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[ensureFlowSynced] Failed to sync flow', flowId, err)
+    }
+  }
 }
 
 /**
- * Carga remota del flow desde el repo HTTP y lo mapea a FlowDetail (VM de pantalla).
+ * Carga el flow (incluye steps) utilizando el FlowRepo offline-first
+ * y lo mapea a FlowDetail (VM de pantalla).
+ *
+ * - Online: la implementación del repo consulta la API y cachea en SQLite.
+ * - Offline / error de red: intenta reconstruir desde la cache local.
  */
 export async function loadFlowDetail(flowId: string): Promise<FlowDetail> {
   const flow = await flowRepo.getById(flowId)
@@ -236,23 +242,18 @@ export async function finalizeSubmission(params: {
   }
 }
 
-// -----------------------------------------------------------------------------
 // Helpers privados
-// -----------------------------------------------------------------------------
-
 /**
  * Resuelve el estado online efectivo:
  * - Si se pasa explícitamente `online`, respeta ese valor.
- * - Si no, consulta NetInfo.
+ * - Si no, consulta el helper compartido de red.
  */
 async function resolveOnlineStatus(explicitOnline?: boolean): Promise<boolean> {
   if (typeof explicitOnline === 'boolean') return explicitOnline
-  const state = await NetInfo.fetch()
-  return !!state.isConnected
+  return isOnlineOnce()
 }
 
 // Mappers dominio -> VM de pantalla
-
 function mapToFlowDetail(flow: Flow): FlowDetail {
   return {
     flowId: flow.flowId,
