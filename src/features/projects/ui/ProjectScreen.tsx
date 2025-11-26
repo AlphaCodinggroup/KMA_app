@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react'
-import { View } from 'react-native'
+import { View, Text } from 'react-native'
 import { useRouter } from 'expo-router'
 import ProjectsList from '@features/projects/ui/ProjectList'
 import { useProjects } from '@features/projects'
@@ -12,20 +12,23 @@ import LetterFilter from '@shared/ui/filters/LetterFilter'
 
 const ProjectsScreen: React.FC = () => {
   const router = useRouter()
-  const { items, loading, refresh, refreshing } = useProjects()
+  const { items, loading, refresh, refreshing, error } = useProjects()
   const [selectedLetter, setSelectedLetter] = useState<LetterKey>('ALL')
 
   const handleNavigate = useCallback(
     (item: Project) => {
       router.push({
         pathname: '/(app)/facilities',
-        params: { projectId: item.id },
+        params: {
+          projectId: item.id,
+          facilities: JSON.stringify(item.facilities ?? []),
+        },
       })
     },
     [router],
   )
 
-  // Letras únicas disponibles (derivadas del backend)
+  // Letras únicas disponibles (derivadas de los proyectos cargados: remoto o cache)
   const availableLetters = useMemo<string[]>(
     () => getAvailableLetters(items, it => it.name),
     [items],
@@ -37,9 +40,25 @@ const ProjectsScreen: React.FC = () => {
     [items, selectedLetter],
   )
 
-  if (loading) return <Loader loading={loading} />
+  // Estado de carga inicial
+  if (loading && items.length === 0) return <Loader loading={true} />
 
-  if (items.length === 0) return <Loader text="No projects to display." />
+  // Error sin ningún dato disponible (ni remoto ni cache)
+  if (!loading && error && items.length === 0) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.headerBlock}>
+          <SubHeadline text="Select a project" />
+        </View>
+        <Text style={styles.errorText}>
+          There was a problem loading projects. Please check your connection and try again.
+        </Text>
+      </View>
+    )
+  }
+
+  // Sin proyectos para mostrar (caso vacío real)
+  if (!loading && items.length === 0) return <Loader text="No projects to display." />
 
   return (
     <View style={styles.container}>

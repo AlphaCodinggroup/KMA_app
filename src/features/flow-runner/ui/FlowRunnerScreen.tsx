@@ -9,11 +9,11 @@ import type { SubmissionAnswer } from '@entities/submission/model'
 import { QuestionCard } from '@features/question'
 import { DynamicForm } from '@features/dynamic-form'
 import { pickOrCapturePhoto } from '@features/camera'
-import { styles } from './styles/flowRunner.styles'
+import Loader from '@shared/ui/loader/Loader'
+
 import { finalizeSubmission, persistDraft } from '../application/usecases'
 import EndView from './EndView'
 import StepIllustration from './StepIllustration'
-import Loader from '@shared/ui/loader/Loader'
 import {
   END_ID,
   mapById,
@@ -21,6 +21,7 @@ import {
   resolveInitialStepId,
   toVirtualQuestion,
 } from '../lib/helpers'
+import { styles } from './styles/flowRunner.styles'
 
 export type FlowRunnerRouteParams = {
   flowId: string
@@ -148,6 +149,12 @@ const FlowRunnerScreen: React.FC = () => {
     [scrollToEnd],
   )
 
+  /**
+   * Persistimos el estado completo de la auditoría:
+   * - flowId / title
+   * - answers acumuladas
+   * - projectId / facilityId / version (contexto para el envío)
+   */
   const persistAll = useCallback(async () => {
     if (!detail) return
 
@@ -155,14 +162,17 @@ const FlowRunnerScreen: React.FC = () => {
       flowId: detail.flowId,
       title: detail.title,
       answers: answersRef.current,
+      projectId,
+      facilityId,
+      version,
     })
-  }, [detail])
+  }, [detail, facilityId, projectId, version])
 
   /**
    * Helper general para:
-   *  1) persistir
-   *  2) cortar steps posteriores si se re-edita
-   *  3) resolver y agregar el siguiente step
+   *  persistir
+   *  cortar steps posteriores si se re-edita
+   *  resolver y agregar el siguiente step
    */
   const advanceFrom = useCallback(
     async (currentStepId: string, rawNext?: string | null) => {

@@ -3,23 +3,45 @@ import { z } from 'zod'
 /**
  * DTOs y validaciones de la API de Projects
  * ----------------------------------------------------
- * - La UI/domino se mapea luego a camelCase en mappers.
- * - Preparado para listar y para detalle por ID.
+ * - La UI/dominio se mapea luego a camelCase en mappers.
+ * - Preparado para listado y detalle por ID.
  */
 
 // Estados posibles según doc (ACTIVE | ARCHIVED)
 export const ProjectStatusDtoSchema = z.enum(['ACTIVE', 'ARCHIVED'])
 export type ProjectStatusDTO = z.infer<typeof ProjectStatusDtoSchema>
 
+/**
+ * Usuario embebido en un proyecto.
+ * Viene en `users: [{ id, name }]`.
+ */
+export const ProjectUserDtoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+})
+export type ProjectUserDTO = z.infer<typeof ProjectUserDtoSchema>
+
+/**
+ * Facility embebida en un proyecto.
+ * Viene en `facilities: [{ facility_id, project_id, name }]`.
+ */
+export const ProjectFacilityDtoSchema = z.object({
+  facility_id: z.string(),
+  project_id: z.string().optional().nullable(),
+  name: z.string(),
+})
+export type ProjectFacilityDTO = z.infer<typeof ProjectFacilityDtoSchema>
+
 /** Item del listado/detalle (claves snake_case del backend) */
 export const ProjectItemDtoSchema = z.object({
   project_id: z.string(),
   code: z.string().optional(),
   name: z.string().optional(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
   status: ProjectStatusDtoSchema.optional(),
-  user_ids: z.array(z.string()).default([]).optional(), // siempre presentes (vacíos si no hay)
-  facility_ids: z.array(z.string()).default([]).optional(), // idem
+  users: z.array(ProjectUserDtoSchema).default([]).optional(),
+  facilities: z.array(ProjectFacilityDtoSchema).default([]).optional(),
+
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
   created_by: z.string().optional(),
@@ -31,7 +53,7 @@ export const ProjectsListResponseDtoSchema = z.object({
   data: z.object({
     projects: z.array(ProjectItemDtoSchema),
     limit: z.number().optional(),
-    cursor: z.string().optional(), // aparece solo si hay más páginas
+    cursor: z.string().optional(),
   }),
   status: z.literal('success'),
 })
