@@ -320,10 +320,10 @@ const FlowRunnerScreen: React.FC = () => {
 
               {step.type === 'Question' && (
                 <QuestionCard
-                  step={step as QuestionStep}
-                  onYes={opt => onAnswer(step as QuestionStep, true, opt)}
-                  onNo={opt => onAnswer(step as QuestionStep, false, opt)}
-                  onSkip={() => onSkip(step as QuestionStep)}
+                  step={step}
+                  onYes={opt => onAnswer(step, true, opt)}
+                  onNo={opt => onAnswer(step, false, opt)}
+                  onSkip={() => onSkip(step)}
                 />
               )}
 
