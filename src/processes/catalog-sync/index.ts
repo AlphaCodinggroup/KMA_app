@@ -16,6 +16,10 @@ import { isOnlineOnce } from '@shared/lib/network'
  *    - trae todos los flows y actualiza catálogo + steps en SQLite (saveCatalog + saveFlowDetail)
  * - Si NO hay red o falla la API:
  *    - loggea en dev y no rompe nada
+ *
+ * Nota: actualmente la sincronización de flows se dispara también desde:
+ *  - ProjectsScreen (warmup con loadAllFlowsWithSteps)
+ *  - useFlows / SelectorScreen (cuando se usa el selector)
  */
 export async function syncFlowsCatalog(): Promise<void> {
   const online = await isOnlineOnce()
@@ -127,8 +131,6 @@ export async function syncFacilitiesForAllProjects(): Promise<void> {
       // Si por alguna razón no hay id, lo salteamos defensivamente.
       if (!project.id) continue
       // Secuencial para no hacer spam al backend.
-      // Si quisieras paralelizar, usarías Promise.allSettled con un throttle.
-      // Pero para mobile + offline-first, secuencial es más seguro.
       // eslint-disable-next-line no-await-in-loop
       await syncFacilitiesForProject(project.id)
     }
@@ -141,9 +143,13 @@ export async function syncFacilitiesForAllProjects(): Promise<void> {
 
 /**
  * Punto de entrada de alto nivel:
- * - Flows
  * - Projects
  * - Facilities (para todos los proyectos cacheados)
+ *
+ * Los Flows se sincronizan de forma perezosa (lazy) desde:
+ *  - ProjectsScreen (warmup inicial)
+ *  - useFlows / SelectorScreen (cuando se usa el selector),
+ * para evitar GET duplicados innecesarios.
  *
  * Pensado para ser llamado desde:
  *  - bootstrap (al arrancar la app con red)
@@ -154,7 +160,7 @@ export async function syncAllCatalogs(): Promise<void> {
   if (!online) return
 
   // En paralelo lo que no tiene dependencia entre sí
-  await Promise.allSettled([syncFlowsCatalog(), syncProjectsCatalog()])
+  await Promise.allSettled([syncProjectsCatalog()])
 
   // Facilities dependen de tener los proyectos en SQLite.
   await syncFacilitiesForAllProjects()

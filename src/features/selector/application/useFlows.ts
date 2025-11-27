@@ -16,11 +16,12 @@ export type UseFlowsResult = {
  * usando el FlowRepo offline-first:
  *
  * - Online: va a la API y sincroniza SQLite (catálogo + steps).
- * - Offline / error de red: intenta reconstruir desde SQLite.
+ * - Offline / error de red: intenta reconstruir desde la cache local.
  *
  * Además:
  * - Expone estados de loading / refreshing.
- * - Maneja errores con Alert (igual que la pantalla actual).
+ * - Mantiene los items actuales ante error (no borra la lista).
+ * - Maneja errores con Alert (igual que la pantalla original).
  */
 export const useFlows = (): UseFlowsResult => {
   const [items, setItems] = useState<Flow[]>([])
@@ -29,7 +30,7 @@ export const useFlows = (): UseFlowsResult => {
   const [error, setError] = useState<Error | null>(null)
 
   // Evitamos setState después de unmount
-  const isMountedRef = useRef(true)
+  const isMountedRef = useRef(false)
 
   useEffect(() => {
     isMountedRef.current = true
@@ -55,6 +56,8 @@ export const useFlows = (): UseFlowsResult => {
       const full = await loadAllFlowsWithSteps()
       if (!isMountedRef.current) return
 
+      // Importante: no borramos items si falla;
+      // sólo los reemplazamos en caso de éxito.
       setItems(full)
     } catch (e) {
       if (!isMountedRef.current) return

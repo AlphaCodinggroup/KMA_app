@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { View } from 'react-native'
 import { useRouter } from 'expo-router'
 import ProjectsList from '@features/projects/ui/ProjectList'
@@ -10,11 +10,27 @@ import type { Project } from '@entities/project/model'
 import { filterItemsByLetter, getAvailableLetters, type LetterKey } from '@shared/lib/alphaFilter'
 import LetterFilter from '@shared/ui/filters/LetterFilter'
 import { EntityErrorState } from '@shared/ui/states/EntityErrorState'
+import { loadAllFlowsWithSteps } from '@features/selector/application/usecases'
 
 const ProjectsScreen: React.FC = () => {
   const router = useRouter()
   const { items, loading, refresh, refreshing, error } = useProjects()
   const [selectedLetter, setSelectedLetter] = useState<LetterKey>('ALL')
+
+  useEffect(() => {
+    const warmupFlows = async () => {
+      try {
+        await loadAllFlowsWithSteps()
+      } catch (err) {
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.warn('[ProjectsScreen] Warmup flows failed', err)
+        }
+      }
+    }
+
+    void warmupFlows()
+  }, [])
 
   const handleNavigate = useCallback(
     (item: Project) => {

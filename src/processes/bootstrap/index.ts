@@ -183,15 +183,19 @@ export async function bootstrapApp(): Promise<void> {
     /**
      * Helper centralizado para disparar:
      *  - sync de outbox (auditorías pendientes)
-     *  - sync de catálogos (flows, projects, facilities)
      *
-     * No bloquea la UI: syncAllCatalogs corre en best-effort (fire & forget).
+     * Los catálogos se disparan aparte, de forma controlada,
+     * para evitar GET redundantes (projects/facilities/flows).
      */
-    const queueFullSync = () => {
-      // Outbox (usa su propia cola y backoff interno)
+    const queueOutboxSync = () => {
       sync.queue()
+    }
 
-      // Catálogos: best-effort, no queremos romper nada si falla
+    /**
+     * Helper para sync de catálogos (projects + facilities).
+     * Best-effort: no queremos romper la UI si falla.
+     */
+    const queueCatalogSync = () => {
       syncAllCatalogs().catch(err => {
         if (__DEV__) {
           console.warn('[bootstrap] syncAllCatalogs failed', err)
@@ -199,25 +203,34 @@ export async function bootstrapApp(): Promise<void> {
       })
     }
 
-    // AppState: cuando la app vuelve a foreground, disparamos sync completo
+    // AppState: cuando la app vuelve a foreground, disparamos outbox + catálogos
     const handleAppStateChange = (state: AppStateStatus) => {
       if (state === 'active') {
-        queueFullSync()
+        queueOutboxSync()
+        queueCatalogSync()
       }
     }
     const appStateSub = AppState.addEventListener('change', handleAppStateChange)
 
-    // NetInfo: cuando vuelve la conexión, disparamos sync completo
+    // NetInfo: cuando vuelve la conexión, disparamos outbox + catálogos
     const unsubscribeNetInfo = NetInfo.addEventListener(state => {
       if (state.isConnected) {
-        queueFullSync()
+        queueOutboxSync()
+        queueCatalogSync()
       }
     })
 
-    // Eventos de sesión: en login/refresh intentamos sincronizar lo pendiente
+    // Eventos de sesión:
+    // - login: solo outbox (los catálogos se cargan perezosamente desde las pantallas
+    //   y, en tu caso, flows se "calientan" desde ProjectsScreen).
+    // - refresh: outbox + catálogos (tokens renovados → tiene sentido refrescar data).
     const unsubscribeSession = subscribe(e => {
-      if (e.type === 'login' || e.type === 'refresh') {
-        queueFullSync()
+      if (e.type === 'login') {
+        queueOutboxSync()
+      }
+      if (e.type === 'refresh') {
+        queueOutboxSync()
+        queueCatalogSync()
       }
       if (e.type === 'logout') {
         // Si más adelante hay workers ligados a sesión, se limpian acá.
@@ -237,8 +250,11 @@ export async function bootstrapApp(): Promise<void> {
       unregisterBackgroundSync().catch(() => void 0)
     }
 
-    // Disparo inicial al boot (outbox + catálogos)
-    queueFullSync()
+    // Disparo inicial al boot:
+    //  - solo outbox. Los catálogos se cargan:
+    //    - perezosamente desde las features (useProjects, useFlows, etc.),
+    //    - o por los triggers de AppState/NetInfo/refresh.
+    queueOutboxSync()
   })()
 
   return _bootPromise
