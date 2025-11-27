@@ -5,6 +5,16 @@ import type { FlowDetail } from '@shared/validation/steps.schema'
 export type FlowCatalog = { flows: FlowSummary[] }
 
 /**
+ * Normaliza cualquier valor de versión a un string no vacío.
+ * Si viene null/undefined/'' → '1'.
+ */
+const normalizeVersion = (value: unknown): string => {
+  if (value == null) return '1'
+  const s = String(value).trim()
+  return s === '' ? '1' : s
+}
+
+/**
  * Repositorio SQLite para catálogo de flows y sus steps.
  * - Usa tablas: flows, flow_steps (definidas en migrations.ts)
  * - Mantiene consistencia y hace upsert idempotente.
@@ -17,10 +27,12 @@ export const sqliteFlowRepo = {
     await withTransaction(async () => {
       // Upsert de cada flow
       for (const f of cat.flows) {
+        const safeVersion = normalizeVersion(f.version)
+
         await run(
           `INSERT OR REPLACE INTO flows (id, title, version, description, stepsCount)
            VALUES (?, ?, ?, ?, ?)`,
-          [f.id, f.title, f.version, f.description ?? null, f.stepsCount ?? null],
+          [f.id, f.title, safeVersion, f.description ?? null, f.stepsCount ?? null],
         )
       }
 
@@ -37,11 +49,13 @@ export const sqliteFlowRepo = {
   /** Guarda el detalle completo de un flow (steps) y actualiza su metadata. */
   async saveFlowDetail(detail: FlowDetail): Promise<void> {
     await withTransaction(async () => {
+      const safeVersion = normalizeVersion(detail.version)
+
       // Asegura la fila en flows (title/version/stepsCount)
       await run(
         `INSERT OR REPLACE INTO flows (id, title, version, description, stepsCount)
          VALUES (?, ?, ?, ?, ?)`,
-        [detail.flowId, detail.title, detail.version, null, detail.steps.length],
+        [detail.flowId, detail.title, safeVersion, null, detail.steps.length],
       )
 
       // Reemplaza steps del flow
@@ -72,7 +86,7 @@ export const sqliteFlowRepo = {
         (r): FlowSummary => ({
           id: r.id,
           title: r.title,
-          version: r.version ?? 'v1.0',
+          version: normalizeVersion(r.version),
           description: r.description ?? '',
           stepsCount: r.stepsCount ?? 0,
         }),
@@ -94,13 +108,13 @@ export const sqliteFlowRepo = {
       [flowId],
     )
     const row = flow?.[0]
-    if (!row) return null as any
+    if (!row) return null
 
     const steps = stepsRows.map(r => JSON.parse(r.step_json))
     return {
       flowId,
       title: row.title,
-      version: row.version,
+      version: normalizeVersion(row.version),
       steps,
     }
   },

@@ -222,16 +222,34 @@ class OfflineFirstFlowRepo implements FlowRepo {
  */
 export const createOfflineFirstFlowRepo = (): FlowRepo => new OfflineFirstFlowRepo()
 
+// -----------------------------------------------------------------------------
 // Helpers puros (sin side-effects)
+// -----------------------------------------------------------------------------
+
+/**
+ * Normaliza la versión a un número “sano” (>0).
+ * Si el backend manda cualquier cosa rara (undefined, "v1", "", etc.)
+ * devolvemos 1 como default.
+ */
+const normalizeVersion = (v: string | number | null | undefined): string => {
+  if (v == null) return '1'
+  if (typeof v === 'number') return String(v)
+
+  const trimmed = v.trim()
+  return trimmed === '' ? '1' : trimmed
+}
 
 /**
  * Convierte Flow dominio → FlowSummary (para tarjetas de Selector).
+ * Siempre genera una versión numérica válida (para no romper el NOT NULL en SQLite).
  */
 function flowToSummary(flow: Flow): FlowSummary {
+  const version = normalizeVersion(flow.version)
+
   return {
     id: flow.flowId,
     title: flow.title,
-    version: String(flow.version),
+    version, // número “sano” (>=1)
     description: flow.description ?? '',
     stepsCount: flow.steps.length,
     flowType: flow.flowType ?? '',
