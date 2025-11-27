@@ -12,6 +12,7 @@ import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
 import type { SubmissionSnapshot } from '@entities/submission/ports'
 import { finalizeSubmission } from '@features/flow-runner/application/usecases'
 import { syncAllCatalogs } from '@processes/catalog-sync'
+import { coldSyncAllFlows } from '@features/selector/application/usecases'
 
 let _bootPromise: Promise<void> | null = null
 let _cleanup: (() => void) | null = null
@@ -203,27 +204,52 @@ export async function bootstrapApp(): Promise<void> {
       })
     }
 
-    // AppState: cuando la app vuelve a foreground, disparamos outbox + catálogos
+    /**
+     * Helper para cold sync de flows (incluye steps e imágenes,
+     * según la implementación de coldSyncAllFlows).
+     *
+     * Usa un pequeño guard para evitar múltiples llamadas concurrentes
+     * cuando se disparan AppState + NetInfo al mismo tiempo.
+     */
+    let flowsSyncInProgress = false
+    const queueFlowsSync = () => {
+      if (flowsSyncInProgress) return
+      flowsSyncInProgress = true
+
+      coldSyncAllFlows()
+        .catch(err => {
+          if (__DEV__) {
+            console.warn('[bootstrap] coldSyncAllFlows failed', err)
+          }
+        })
+        .finally(() => {
+          flowsSyncInProgress = false
+        })
+    }
+
+    // AppState: cuando la app vuelve a foreground, disparamos outbox + catálogos + flows
     const handleAppStateChange = (state: AppStateStatus) => {
       if (state === 'active') {
         queueOutboxSync()
         queueCatalogSync()
+        queueFlowsSync()
       }
     }
     const appStateSub = AppState.addEventListener('change', handleAppStateChange)
 
-    // NetInfo: cuando vuelve la conexión, disparamos outbox + catálogos
+    // NetInfo: cuando vuelve la conexión, disparamos outbox + catálogos + flows
     const unsubscribeNetInfo = NetInfo.addEventListener(state => {
       if (state.isConnected) {
         queueOutboxSync()
         queueCatalogSync()
+        queueFlowsSync()
       }
     })
 
     // Eventos de sesión:
-    // - login: solo outbox (los catálogos se cargan perezosamente desde las pantallas
-    //   y, en tu caso, flows se "calientan" desde ProjectsScreen).
-    // - refresh: outbox + catálogos (tokens renovados → tiene sentido refrescar data).
+    // - login: solo outbox (los catálogos/flows se cargan perezosamente
+    //   desde las pantallas y por los triggers de AppState/NetInfo).
+    // - refresh: outbox + catálogos + flows (tokens renovados → refrescamos data).
     const unsubscribeSession = subscribe(e => {
       if (e.type === 'login') {
         queueOutboxSync()
@@ -231,6 +257,7 @@ export async function bootstrapApp(): Promise<void> {
       if (e.type === 'refresh') {
         queueOutboxSync()
         queueCatalogSync()
+        queueFlowsSync()
       }
       if (e.type === 'logout') {
         // Si más adelante hay workers ligados a sesión, se limpian acá.
@@ -238,8 +265,9 @@ export async function bootstrapApp(): Promise<void> {
     })
 
     // Background task (best effort iOS) → por ahora sólo outbox.
-    // Si en algún momento quisieras incluir catálogos acá, podés llamar
-    // a syncAllCatalogs() dentro del callback, con la misma filosofía best-effort.
+    // Si en algún momento quisieras incluir catálogos/flows acá, podés llamar
+    // a syncAllCatalogs() y coldSyncAllFlows() dentro del callback, con la
+    // misma filosofía best-effort.
     await registerBackgroundSync(() => sync.runOnce())
 
     // Cleanup centralizado
@@ -251,7 +279,7 @@ export async function bootstrapApp(): Promise<void> {
     }
 
     // Disparo inicial al boot:
-    //  - solo outbox. Los catálogos se cargan:
+    //  - solo outbox. Los catálogos y flows se cargan:
     //    - perezosamente desde las features (useProjects, useFlows, etc.),
     //    - o por los triggers de AppState/NetInfo/refresh.
     queueOutboxSync()

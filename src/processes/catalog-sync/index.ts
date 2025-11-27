@@ -1,38 +1,33 @@
 import type { Project } from '@entities/project/model'
 import type { ProjectId } from '@entities/project/model'
-import type { FlowRepo } from '@entities/flow/ports'
 import type { Facility } from '@entities/facility/model'
-import { createOfflineFirstFlowRepo } from '@features/selector/data/flow.repo.offline'
 import { createHttpProjectRepo } from '@features/projects/data/project.repo.http'
 import { createHttpFacilityRepo } from '@features/facility/data/facility.repo.http'
 import { sqliteProjectRepo } from '@core/repos/sqliteProjectRepo'
 import { sqliteFacilityRepo } from '@core/repos/sqliteFacilityRepo'
 import { isOnlineOnce } from '@shared/lib/network'
+import { coldSyncAllFlows } from '@features/selector/application/usecases'
 
 /**
  * Sincroniza el catálogo de Flows:
  * - Si hay red:
  *    - usa el FlowRepo offline-first (HTTP + SQLite)
  *    - trae todos los flows y actualiza catálogo + steps en SQLite (saveCatalog + saveFlowDetail)
+ *    - además, via coldSyncAllFlows, dispara la precarga de imágenes de steps.
  * - Si NO hay red o falla la API:
  *    - loggea en dev y no rompe nada
  *
  * Nota: actualmente la sincronización de flows se dispara también desde:
  *  - ProjectsScreen (warmup con loadAllFlowsWithSteps)
  *  - useFlows / SelectorScreen (cuando se usa el selector)
+ *  - syncAllCatalogs (cuando hay reconexión / refresh de sesión)
  */
 export async function syncFlowsCatalog(): Promise<void> {
   const online = await isOnlineOnce()
   if (!online) return
 
-  const repo: FlowRepo = createOfflineFirstFlowRepo()
-
   try {
-    // getAll() ya se encarga de:
-    //  - llamar a la API,
-    //  - cachear catálogo + detalle en SQLite,
-    //  - y hacer prune vía saveCatalog.
-    await repo.getAll()
+    await coldSyncAllFlows()
   } catch (err) {
     if (__DEV__) {
       console.warn('[catalog-sync] syncFlowsCatalog failed', err)
@@ -144,23 +139,20 @@ export async function syncFacilitiesForAllProjects(): Promise<void> {
 /**
  * Punto de entrada de alto nivel:
  * - Projects
+ * - Flows (catálogo + steps + precarga de imágenes)
  * - Facilities (para todos los proyectos cacheados)
- *
- * Los Flows se sincronizan de forma perezosa (lazy) desde:
- *  - ProjectsScreen (warmup inicial)
- *  - useFlows / SelectorScreen (cuando se usa el selector),
- * para evitar GET duplicados innecesarios.
  *
  * Pensado para ser llamado desde:
  *  - bootstrap (al arrancar la app con red)
  *  - workers de background/foreground cuando vuelve la conectividad
+ *  - eventos de sesión (refresh, etc.)
  */
 export async function syncAllCatalogs(): Promise<void> {
   const online = await isOnlineOnce()
   if (!online) return
 
   // En paralelo lo que no tiene dependencia entre sí
-  await Promise.allSettled([syncProjectsCatalog()])
+  await Promise.allSettled([syncProjectsCatalog(), syncFlowsCatalog()])
 
   // Facilities dependen de tener los proyectos en SQLite.
   await syncFacilitiesForAllProjects()

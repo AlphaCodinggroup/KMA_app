@@ -12,6 +12,15 @@ export type UseFlowsResult = {
 }
 
 /**
+ * Cache en memoria a nivel módulo.
+ *
+ * - Comparte los flows entre montajes sucesivos del hook en la MISMA sesión.
+ * - No reemplaza la cache SQLite ni la precarga de imágenes:
+ *   sólo mejora la UX (no mostrar skeleton si ya tenemos data).
+ */
+let flowsCache: Flow[] = []
+
+/**
  * Hook de aplicación para cargar los flows completos (incluye steps),
  * usando el FlowRepo offline-first:
  *
@@ -21,11 +30,13 @@ export type UseFlowsResult = {
  * Además:
  * - Expone estados de loading / refreshing.
  * - Mantiene los items actuales ante error (no borra la lista).
- * - Maneja errores con Alert (igual que la pantalla original).
+ * - Maneja errores con Alert.
+ * - Usa una cache en memoria para UX tipo "stale-while-revalidate":
+ *   si ya hay flowsCache, los muestra al instante y refeshea en segundo plano.
  */
 export const useFlows = (): UseFlowsResult => {
-  const [items, setItems] = useState<Flow[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
+  const [items, setItems] = useState<Flow[]>(() => flowsCache)
+  const [loading, setLoading] = useState<boolean>(() => flowsCache.length === 0)
   const [refreshing, setRefreshing] = useState<boolean>(false)
   const [error, setError] = useState<Error | null>(null)
 
@@ -44,9 +55,12 @@ export const useFlows = (): UseFlowsResult => {
 
     if (!isMountedRef.current) return
 
+    const hasCache = flowsCache.length > 0
+
     if (reset) {
       setRefreshing(true)
-    } else {
+    } else if (!hasCache) {
+      // Sólo mostramos loading "duro" cuando no hay datos cacheados.
       setLoading(true)
     }
 
@@ -56,8 +70,8 @@ export const useFlows = (): UseFlowsResult => {
       const full = await loadAllFlowsWithSteps()
       if (!isMountedRef.current) return
 
-      // Importante: no borramos items si falla;
-      // sólo los reemplazamos en caso de éxito.
+      // Actualizamos cache en memoria + estado local
+      flowsCache = full
       setItems(full)
     } catch (e) {
       if (!isMountedRef.current) return
@@ -70,6 +84,7 @@ export const useFlows = (): UseFlowsResult => {
         console.warn('[useFlows] Error loading flows', err)
       }
 
+      // Importante: NO vaciamos items.
       Alert.alert(
         'Error',
         'There was a problem loading the flows. If you are offline, please try again after reconnecting.',
