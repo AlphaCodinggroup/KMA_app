@@ -6,11 +6,4 @@ export const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: AppColors.Background },
   listContent: { paddingHorizontal: RFValue(12) },
   text: { paddingHorizontal: RFValue(12), paddingTop: RFValue(16), paddingBottom: RFValue(8) },
-  errorText: {
-    color: AppColors.Error,
-    textAlign: 'center',
-    marginTop: RFValue(16),
-    paddingHorizontal: RFValue(16),
-    fontSize: RFValue(12),
-  },
 })

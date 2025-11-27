@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react'
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
 import { useRouter } from 'expo-router'
 import ProjectsList from '@features/projects/ui/ProjectList'
 import { useProjects } from '@features/projects'
@@ -9,6 +9,7 @@ import Loader from '@shared/ui/loader/Loader'
 import type { Project } from '@entities/project/model'
 import { filterItemsByLetter, getAvailableLetters, type LetterKey } from '@shared/lib/alphaFilter'
 import LetterFilter from '@shared/ui/filters/LetterFilter'
+import { EntityErrorState } from '@shared/ui/states/EntityErrorState'
 
 const ProjectsScreen: React.FC = () => {
   const router = useRouter()
@@ -46,14 +47,10 @@ const ProjectsScreen: React.FC = () => {
   // Error sin ningún dato disponible (ni remoto ni cache)
   if (!loading && error && items.length === 0) {
     return (
-      <View style={styles.container}>
-        <View style={styles.headerBlock}>
-          <SubHeadline text="Select a project" />
-        </View>
-        <Text style={styles.errorText}>
-          There was a problem loading projects. Please check your connection and try again.
-        </Text>
-      </View>
+      <EntityErrorState
+        title="Select a project"
+        message="There was a problem loading projects. Please check your connection and try again."
+      />
     )
   }
 

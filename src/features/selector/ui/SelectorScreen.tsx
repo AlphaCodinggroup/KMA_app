@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { View, Alert } from 'react-native'
+import { useCallback, useMemo, useState } from 'react'
+import { View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { Flow, FlowSummary } from '@entities/flow/model'
-import { loadAllFlowsWithSteps } from '@features/selector/application/usecases'
 import { styles } from './styles/selector.styles'
 import FlowList, { type FlowListItem } from './FlowList'
 import SubHeadline from '@shared/ui/subheadline/subHeadline'
 import Loader from '@shared/ui/loader/Loader'
 import { filterItemsByLetter, getAvailableLetters, type LetterKey } from '@shared/lib/alphaFilter'
 import LetterFilter from '@shared/ui/filters/LetterFilter'
+import { useFlows } from '../application/useFlows'
+import { EntityErrorState } from '@shared/ui/states/EntityErrorState'
 
 const SelectorScreen: React.FC = () => {
   const router = useRouter()
@@ -16,42 +17,9 @@ const SelectorScreen: React.FC = () => {
     projectId: string
     facilityId: string
   }>()
+  const { items: flows, loading, error } = useFlows()
 
-  const [flows, setFlows] = useState<Flow[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
-  const [error, setError] = useState<Error | null>(null)
   const [selectedLetter, setSelectedLetter] = useState<LetterKey>('ALL')
-
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-
-    try {
-      // Offline-first:
-      // - Online: FlowRepo va a la API y cachea en SQLite.
-      // - Offline / error: intenta reconstruir desde SQLite.
-      const full = await loadAllFlowsWithSteps()
-      setFlows(full)
-    } catch (e) {
-      const err = e instanceof Error ? e : new Error('Failed to load flows')
-      setError(err)
-
-      if (__DEV__) {
-        console.warn('[SelectorScreen] Error loading flows', err)
-      }
-
-      Alert.alert(
-        'Error',
-        'There was a problem loading the flows. If you are offline, please try again after reconnecting.',
-      )
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
 
   // Derivar resumen SOLO para la UI (no perdemos datos del flow completo)
   const summaries: FlowSummary[] = useMemo(
@@ -107,6 +75,19 @@ const SelectorScreen: React.FC = () => {
   )
 
   if (loading) return <Loader loading={loading} />
+
+  // Error sin ningún dato disponible (ni remoto ni cache)
+  if (!loading && error && flows.length === 0) {
+    return (
+      <EntityErrorState
+        title="Select a flow"
+        message="There was a problem loading flows. Please check your connection and try again."
+      />
+    )
+  }
+
+  // Sin proyectos para mostrar (caso vacío real)
+  if (!loading && flows.length === 0) return <Loader text="No flows to display." />
 
   return (
     <View style={styles.container}>
