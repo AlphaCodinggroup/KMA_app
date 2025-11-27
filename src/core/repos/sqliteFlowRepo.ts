@@ -25,14 +25,47 @@ export const sqliteFlowRepo = {
     const ids = cat.flows.map(f => f.id)
 
     await withTransaction(async () => {
-      // Upsert de cada flow
+      // Upsert de cada flow (incluyendo metadatos extra si están en FlowSummary)
       for (const f of cat.flows) {
         const safeVersion = normalizeVersion(f.version)
+        const anyFlow = f as any
+
+        const flowType: string | null =
+          typeof anyFlow.flowType === 'string' ? anyFlow.flowType : null
+
+        const isActive: number | null =
+          typeof anyFlow.isActive === 'boolean' ? (anyFlow.isActive ? 1 : 0) : null
+
+        const createdAt: string | null =
+          typeof anyFlow.createdAt === 'string' ? anyFlow.createdAt : null
+
+        const updatedAt: string | null =
+          typeof anyFlow.updatedAt === 'string' ? anyFlow.updatedAt : null
 
         await run(
-          `INSERT OR REPLACE INTO flows (id, title, version, description, stepsCount)
-           VALUES (?, ?, ?, ?, ?)`,
-          [f.id, f.title, safeVersion, f.description ?? null, f.stepsCount ?? null],
+          `INSERT OR REPLACE INTO flows (
+             id,
+             title,
+             version,
+             description,
+             stepsCount,
+             flowType,
+             isActive,
+             createdAt,
+             updatedAt
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            f.id,
+            f.title,
+            safeVersion,
+            f.description ?? null,
+            f.stepsCount ?? null,
+            flowType,
+            isActive,
+            createdAt,
+            updatedAt,
+          ],
         )
       }
 
@@ -46,16 +79,27 @@ export const sqliteFlowRepo = {
     })
   },
 
-  /** Guarda el detalle completo de un flow (steps) y actualiza su metadata. */
+  /**
+   * Guarda el detalle completo de un flow (steps) y actualiza solo
+   * los campos que realmente dependen del detalle.
+   */
   async saveFlowDetail(detail: FlowDetail): Promise<void> {
     await withTransaction(async () => {
       const safeVersion = normalizeVersion(detail.version)
 
-      // Asegura la fila en flows (title/version/stepsCount)
+      // Aseguramos que exista la fila sin pisar metadatos si ya estaban
       await run(
-        `INSERT OR REPLACE INTO flows (id, title, version, description, stepsCount)
+        `INSERT OR IGNORE INTO flows (id, title, version, description, stepsCount)
          VALUES (?, ?, ?, ?, ?)`,
         [detail.flowId, detail.title, safeVersion, null, detail.steps.length],
+      )
+
+      // Actualizamos solo lo que depende del detalle
+      await run(
+        `UPDATE flows
+           SET title = ?, version = ?, stepsCount = ?
+         WHERE id = ?`,
+        [detail.title, safeVersion, detail.steps.length, detail.flowId],
       )
 
       // Reemplaza steps del flow
@@ -79,7 +123,26 @@ export const sqliteFlowRepo = {
       version: string
       description: string | null
       stepsCount: number | null
-    }>(`SELECT id, title, version, description, stepsCount FROM flows ORDER BY title ASC`)
+      flowType: string | null
+      isActive: number | null
+      createdAt: string | null
+      updatedAt: string | null
+    }>(
+      `
+      SELECT
+        id,
+        title,
+        version,
+        description,
+        stepsCount,
+        flowType,
+        isActive,
+        createdAt,
+        updatedAt
+      FROM flows
+      ORDER BY title ASC
+    `,
+    )
 
     return {
       flows: rows.map(
@@ -89,6 +152,10 @@ export const sqliteFlowRepo = {
           version: normalizeVersion(r.version),
           description: r.description ?? '',
           stepsCount: r.stepsCount ?? 0,
+          flowType: r.flowType ?? '',
+          isActive: r.isActive == null ? true : Boolean(r.isActive),
+          createdAt: r.createdAt ?? '',
+          updatedAt: r.updatedAt ?? '',
         }),
       ),
     }
@@ -107,7 +174,8 @@ export const sqliteFlowRepo = {
       `SELECT step_json FROM flow_steps WHERE flow_id = ? ORDER BY rowid ASC`,
       [flowId],
     )
-    const row = flow?.[0]
+
+    const row = flow[0]
     if (!row) return null
 
     const steps = stepsRows.map(r => JSON.parse(r.step_json))

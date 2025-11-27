@@ -24,15 +24,24 @@ const SelectorScreen: React.FC = () => {
   // Derivar resumen SOLO para la UI (no perdemos datos del flow completo)
   const summaries: FlowSummary[] = useMemo(
     () =>
-      flows.map(f => ({
-        id: f.flowId,
-        title: f.title,
-        version: String(f.version),
-        description: f.description,
-        stepsCount: f.steps.length,
-        flowType: f.flowType,
-        isActive: f.isActive,
-      })),
+      flows.map(f => {
+        const description = f.description ?? ''
+        const rawFlowType = f.flowType ?? ''
+        const normalizedFlowType =
+          typeof rawFlowType === 'string' && rawFlowType.trim().length > 0 ? rawFlowType : f.title
+
+        return {
+          id: f.flowId,
+          title: f.title,
+          version: String(f.version),
+          description,
+          stepsCount: f.steps.length,
+          flowType: normalizedFlowType,
+          isActive: f.isActive ?? true,
+          createdAt: f.createdAt ?? '',
+          updatedAt: f.updatedAt ?? '',
+        }
+      }),
     [flows],
   )
 
@@ -86,7 +95,7 @@ const SelectorScreen: React.FC = () => {
     )
   }
 
-  // Sin proyectos para mostrar (caso vacío real)
+  // Sin flows para mostrar (caso vacío real)
   if (!loading && flows.length === 0) return <Loader text="No flows to display." />
 
   return (

@@ -113,4 +113,15 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_facilities_status ON facilities(status);
     `,
   },
+  {
+    id: 3,
+    name: 'add_flow_metadata_columns_v1',
+    up: `
+      -- Metadatos adicionales para flows (para selector offline)
+      ALTER TABLE flows ADD COLUMN flowType TEXT;
+      ALTER TABLE flows ADD COLUMN isActive INTEGER;
+      ALTER TABLE flows ADD COLUMN createdAt TEXT;
+      ALTER TABLE flows ADD COLUMN updatedAt TEXT;
+    `,
+  },
 ]

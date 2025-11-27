@@ -89,6 +89,8 @@ export interface FlowSummary {
   stepsCount?: number
   flowType?: string
   isActive?: boolean
+  createdAt?: string // ISO
+  updatedAt?: string // ISO
 }
 
 /** Payload mínimo que espera el Runner (según requerimiento del cliente) */

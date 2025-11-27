@@ -79,6 +79,8 @@ const FlowRunnerScreen: React.FC = () => {
     try {
       const steps = parseStepsParam(rawSteps)
 
+      console.log({ steps })
+
       const data: FlowDetail = {
         flowId,
         title,
