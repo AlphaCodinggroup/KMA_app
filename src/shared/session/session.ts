@@ -35,11 +35,13 @@ function emit(e: SessionEvent) {
   listeners.forEach(cb => {
     try {
       cb(e)
-    } catch {}
+    } catch {
+      // noop
+    }
   })
 }
 
-// Control de refresh concurrente
+// Control de refresh concurrente (single-flight)
 let inflightRefresh: Promise<string> | null = null
 
 // --- Utilidades
@@ -86,15 +88,18 @@ export async function saveSession(tokens: LoginTokens): Promise<void> {
     refreshToken: tokens.refreshToken,
     expiresAt: tokens.expiresAt,
   }
+
   try {
     await repo.save(rec)
   } catch (e: any) {
     if (e?.name === 'SessionError') throw e
     throw new SessionError('PERSISTENCE_FAILED', String(e?.message ?? e))
   }
+
   mem.idToken = rec.idToken
   mem.refreshToken = rec.refreshToken
   mem.expiresAt = rec.expiresAt
+
   const snap = snapshot()
   emit({ type: 'login', snapshot: snap })
   emit({ type: 'change', snapshot: snap })
@@ -114,41 +119,83 @@ export function getSnapshot(): SessionSnapshot {
 }
 
 /**
- * Devuelve un bearer válido.
- * Si está a punto de expirar/expirado, refresca usando REFRESH_TOKEN_AUTH.
- * Single-flight: múltiples llamados comparten el mismo refresh en curso.
+ * Devuelve un IdToken válido para usar en Authorization: Bearer <IdToken>.
+ *
+ * - Si el token en memoria sigue vigente → lo devuelve.
+ * - Si está vencido y hay RefreshToken → intenta REFRESH_TOKEN_AUTH vía refreshTokensUseCase.
+ * - Si Cognito responde NotAuthorized (refresh expirado / inválido) → hace logout forzado.
+ *
+ * Single-flight:
+ * - Múltiples llamados concurrentes comparten el mismo refresh en curso.
  */
 export async function getValidToken(): Promise<string> {
-  //token válido en memoria
+  // Token en memoria aún válido
   if (mem.idToken && !isExpired(mem.expiresAt)) {
     return mem.idToken
   }
 
-  //sin refresh token, no podemos recuperar
+  // Sin refreshToken -> no hay forma de recuperar sesión
   if (!mem.refreshToken) {
-    throw new Error('NotAuthorized: missing refresh token')
+    throw new SessionError('UNAUTHORIZED', 'Missing refresh token')
   }
 
-  //refresh single-flight
+  // Refresh single-flight
   if (!inflightRefresh) {
     inflightRefresh = (async () => {
-      const next = await refreshTokensUseCase(mem.refreshToken!)
-      // persistimos sólo cambios de idToken/expiración; el refreshToken se conserva
-      const updated: SessionRecord = {
-        idToken: next.idToken,
-        refreshToken: mem.refreshToken!,
-        expiresAt: next.expiresAt,
+      try {
+        const next = await refreshTokensUseCase(mem.refreshToken as string)
+
+        // Persistimos sólo cambios de IdToken / expiración.
+        // El RefreshToken se conserva (Cognito no lo rota por defecto).
+        const updated: SessionRecord = {
+          idToken: next.idToken,
+          refreshToken: mem.refreshToken as string,
+          expiresAt: next.expiresAt,
+        }
+
+        await repo.save(updated)
+
+        mem.idToken = updated.idToken
+        mem.refreshToken = updated.refreshToken
+        mem.expiresAt = updated.expiresAt
+
+        const snap = toSnapshot(updated)
+        emit({ type: 'refresh', snapshot: snap })
+        emit({ type: 'change', snapshot: snap })
+
+        return updated.idToken
+      } catch (e: any) {
+        // Diferenciamos "refresh token inválido/expirado" de errores de red.
+        const code = (e?.code ?? e?.name) as string | undefined
+        const message = typeof e?.message === 'string' ? e.message : ''
+
+        const normalizedMsg = message.toLowerCase()
+
+        const isNotAuthorized =
+          code === 'NotAuthorizedException' ||
+          code === 'NOT_AUTHORIZED' ||
+          code === 'REFRESH_TOKEN_EXPIRED' ||
+          normalizedMsg.includes('notauthorizedexception') ||
+          normalizedMsg.includes('not authorized') ||
+          normalizedMsg.includes('refresh token has expired')
+
+        if (isNotAuthorized) {
+          // RefreshToken expirado → logout forzado.
+          try {
+            await clearSession()
+          } catch {
+            // ignoramos errores de limpieza
+          }
+        }
+
+        // Propagamos el error para que:
+        // - http.scheduleRefresh() lo traduzca a null y deje de reintentar
+        // - otros callers puedan reaccionar si lo necesitan
+        throw e
+      } finally {
+        inflightRefresh = null
       }
-      await repo.save(updated)
-      mem.idToken = updated.idToken
-      mem.expiresAt = updated.expiresAt
-      const snap = toSnapshot(updated)
-      emit({ type: 'refresh', snapshot: snap })
-      emit({ type: 'change', snapshot: snap })
-      return updated.idToken
-    })().finally(() => {
-      inflightRefresh = null
-    })
+    })()
   }
 
   return inflightRefresh

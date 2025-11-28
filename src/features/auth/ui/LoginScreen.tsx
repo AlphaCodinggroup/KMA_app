@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef } from 'react'
 import { View, Text, KeyboardAvoidingView, Platform } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useForm } from 'react-hook-form'
@@ -7,9 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { FormTextInput } from '@shared/ui/forms/FormTextInput'
 import { styles } from './login.styles'
 import PrimaryButton from '@shared/ui/buttons/PrimaryButton'
-import { loginUseCase } from '@features/auth/application/usecases'
-import { saveSession } from '@shared/session/session'
-import { normalizeAuthError } from '../lib/utils'
+import { useLogin } from '@features/auth/application/useLogin'
 
 // Cuando activemos backend real, movemos el schema a model/
 const LoginSchema = z.object({
@@ -25,8 +23,6 @@ type LoginForm = z.infer<typeof LoginSchema>
 
 const LoginScreen: React.FC = () => {
   const router = useRouter()
-  const [submitting, setSubmitting] = useState<boolean>(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
   const pwdRef = useRef(null)
 
   const {
@@ -39,22 +35,16 @@ const LoginScreen: React.FC = () => {
     defaultValues: { username: '', password: '' },
   })
 
+  const { submitting, error, login } = useLogin()
+
   const onSubmit = useCallback(
     async (data: LoginForm) => {
-      if (submitting) return
-      setSubmitting(true)
-      setSubmitError(null)
-      try {
-        const tokens = await loginUseCase(data.username.trim(), data.password)
-        await saveSession(tokens)
+      const ok = await login(data.username, data.password)
+      if (ok) {
         router.replace('/(app)/projects')
-      } catch (e) {
-        setSubmitError(normalizeAuthError(e))
-      } finally {
-        setSubmitting(false)
       }
     },
-    [router, submitting],
+    [login, router],
   )
 
   return (
@@ -99,7 +89,7 @@ const LoginScreen: React.FC = () => {
           style={styles.primaryButton}
         />
 
-        {submitError && <Text style={styles.errorText}>{submitError}</Text>}
+        {error && <Text style={styles.errorText}>{error}</Text>}
       </View>
 
       <Text style={styles.footerText}>v1.0.3</Text>
