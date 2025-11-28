@@ -16,13 +16,48 @@ const getFlowRepo = (): FlowRepo => {
 }
 
 /**
+ * Gate global para evitar múltiples getAll() concurrentes hacia /flows.
+ * - Si ya hay una carga en curso, todos los callers reutilizan la misma Promise.
+ */
+let inflightAllFlowsPromise: Promise<Flow[]> | null = null
+
+/**
+ * Helper interno: obtiene todos los flows usando el repo offline-first,
+ * garantizando que sólo haya un getAll() activo a la vez.
+ *
+ * - Online: pega a la API, sincroniza SQLite (catálogo + steps).
+ * - Offline / error de red: reconstruye desde SQLite.
+ */
+async function fetchAllFlowsOnce(): Promise<Flow[]> {
+  if (inflightAllFlowsPromise) {
+    return inflightAllFlowsPromise
+  }
+
+  const repo = getFlowRepo()
+
+  inflightAllFlowsPromise = (async () => {
+    const flows = await repo.getAll()
+    return flows
+  })()
+
+  try {
+    return await inflightAllFlowsPromise
+  } finally {
+    // Siempre liberamos el gate al completar (éxito o error),
+    // para permitir una futura recarga explícita.
+    inflightAllFlowsPromise = null
+  }
+}
+
+/**
  * Carga todos los flows completos (incluye steps).
  * Además de usar el repo offline-first, dispara en segundo plano
  * la precarga de imágenes de los steps para uso offline.
+ *
+ * - Si otra parte de la app ya está cargando flows, se reutiliza la misma Promise.
  */
 export async function loadAllFlowsWithSteps(): Promise<Flow[]> {
-  const repo = getFlowRepo()
-  const flows = await repo.getAll()
+  const flows = await fetchAllFlowsOnce()
 
   // Fire-and-forget: precarga de imágenes sin bloquear la UI
   void precacheFlowImages(flows).catch(err => {
@@ -49,16 +84,14 @@ export async function loadCatalog(): Promise<FlowSummary[]> {
 /**
  * Sincronización en frío (hook para procesos cross-feature / bootstrap).
  *
- * - Online:
- *    - repo.getAll() forza fetch remoto + cache en SQLite (flows + steps).
- *    - precacheFlowImages() descarga y cachea imágenes (S3 → file://) best-effort.
- * - Offline:
- *    - repo.getAll() reconstruye desde SQLite.
- *    - precacheFlowImages() no rompe: si no puede resolver/descargar, se ignora.
+ * - Reutiliza el mismo gate de fetchAllFlowsOnce:
+ *    - Si otra parte ya está pidiendo todos los flows, comparte el mismo getAll().
+ * - Luego hace una pasada adicional de precarga de imágenes, pero:
+ *    - Deduplica URLs.
+ *    - Usa resolveFlowImageUri (que es idempotente a nivel de archivo local).
  */
 export async function coldSyncAllFlows(): Promise<void> {
-  const repo = getFlowRepo()
-  const flows = await repo.getAll()
+  const flows = await fetchAllFlowsOnce()
   if (!flows.length) return
 
   await precacheFlowImages(flows)

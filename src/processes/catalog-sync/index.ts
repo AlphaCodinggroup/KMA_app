@@ -1,5 +1,4 @@
-import type { Project } from '@entities/project/model'
-import type { ProjectId } from '@entities/project/model'
+import type { Project, ProjectId } from '@entities/project/model'
 import type { Facility } from '@entities/facility/model'
 import { createHttpProjectRepo } from '@features/projects/data/project.repo.http'
 import { createHttpFacilityRepo } from '@features/facility/data/facility.repo.http'
@@ -9,6 +8,13 @@ import { isOnlineOnce } from '@shared/lib/network'
 import { coldSyncAllFlows } from '@features/selector/application/usecases'
 
 /**
+ * Estado interno para evitar syncs concurrentes o demasiado frecuentes.
+ */
+let catalogsSyncPromise: Promise<void> | null = null
+let lastCatalogSyncAt = 0
+const CATALOG_SYNC_COOLDOWN_MS = 60_000 // 1 minuto de ventana mínima entre syncs "globales"
+
+/**
  * Sincroniza el catálogo de Flows:
  * - Si hay red:
  *    - usa el FlowRepo offline-first (HTTP + SQLite)
@@ -16,11 +22,6 @@ import { coldSyncAllFlows } from '@features/selector/application/usecases'
  *    - además, via coldSyncAllFlows, dispara la precarga de imágenes de steps.
  * - Si NO hay red o falla la API:
  *    - loggea en dev y no rompe nada
- *
- * Nota: actualmente la sincronización de flows se dispara también desde:
- *  - ProjectsScreen (warmup con loadAllFlowsWithSteps)
- *  - useFlows / SelectorScreen (cuando se usa el selector)
- *  - syncAllCatalogs (cuando hay reconexión / refresh de sesión)
  */
 export async function syncFlowsCatalog(): Promise<void> {
   const online = await isOnlineOnce()
@@ -56,7 +57,6 @@ export async function syncProjectsCatalog(): Promise<void> {
     let cursor: string | undefined = undefined
 
     // Paginación por cursor hasta agotar resultados
-    // Si la API no usa paginación, nextCursor vendrá vacío y sale en una vuelta.
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const page = await httpRepo.list({ cursor })
@@ -90,6 +90,7 @@ export async function syncFacilitiesForProject(projectId: ProjectId): Promise<vo
     const all: Facility[] = []
     let cursor: string | undefined = undefined
 
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       const page = await httpRepo.listByProject(projectId, { cursor })
       all.push(...page.items)
@@ -118,12 +119,9 @@ export async function syncFacilitiesForAllProjects(): Promise<void> {
   if (!online) return
 
   try {
-    // Obtenemos todos los proyectos cacheados.
-    // listAll({}) debería devolver todos sin filtrar por status/search.
     const projects: Project[] = await sqliteProjectRepo.listAll({})
 
     for (const project of projects) {
-      // Si por alguna razón no hay id, lo salteamos defensivamente.
       if (!project.id) continue
       // Secuencial para no hacer spam al backend.
       // eslint-disable-next-line no-await-in-loop
@@ -142,18 +140,35 @@ export async function syncFacilitiesForAllProjects(): Promise<void> {
  * - Flows (catálogo + steps + precarga de imágenes)
  * - Facilities (para todos los proyectos cacheados)
  *
- * Pensado para ser llamado desde:
- *  - bootstrap (al arrancar la app con red)
- *  - workers de background/foreground cuando vuelve la conectividad
- *  - eventos de sesión (refresh, etc.)
+ * Además:
+ * - Evita ejecuciones concurrentes (re-uso de la misma Promise).
+ * - Aplica un cooldown mínimo entre syncs "globales" para no spamear la API
+ *   cuando hay muchos eventos de AppState / NetInfo / sesión.
  */
 export async function syncAllCatalogs(): Promise<void> {
   const online = await isOnlineOnce()
   if (!online) return
 
-  // En paralelo lo que no tiene dependencia entre sí
-  await Promise.allSettled([syncProjectsCatalog(), syncFlowsCatalog()])
+  // Si ya hay un sync en curso, devolvemos ese mismo promise
+  if (catalogsSyncPromise) return catalogsSyncPromise
 
-  // Facilities dependen de tener los proyectos en SQLite.
-  await syncFacilitiesForAllProjects()
+  const now = Date.now()
+
+  // Si se llamó hace muy poco, salimos silenciosamente (cooldown)
+  if (now - lastCatalogSyncAt < CATALOG_SYNC_COOLDOWN_MS) return
+
+  catalogsSyncPromise = (async () => {
+    try {
+      // En paralelo lo que no tiene dependencia entre sí
+      await Promise.allSettled([syncProjectsCatalog(), syncFlowsCatalog()])
+
+      // Facilities dependen de tener los proyectos en SQLite.
+      await syncFacilitiesForAllProjects()
+    } finally {
+      lastCatalogSyncAt = Date.now()
+      catalogsSyncPromise = null
+    }
+  })()
+
+  return catalogsSyncPromise
 }
