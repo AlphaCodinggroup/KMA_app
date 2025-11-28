@@ -60,7 +60,7 @@ const SelectorScreen: React.FC = () => {
         pathname: '/(app)/flow/[flowId]',
         params: {
           flowId: flow.flowId,
-          title: flow.flowType,
+          title: flow.title,
           version: String(flow.version),
           steps: stepsParam,
           projectId: projectId || '',
@@ -73,13 +73,13 @@ const SelectorScreen: React.FC = () => {
 
   // Letras únicas disponibles (derivadas del backend / cache)
   const availableLetters = useMemo<string[]>(
-    () => getAvailableLetters(summaries, it => it.flowType),
+    () => getAvailableLetters(summaries, it => it.title),
     [summaries],
   )
 
   // Lista filtrada por letra
   const filteredItems = useMemo<FlowSummary[]>(
-    () => filterItemsByLetter(summaries, selectedLetter, it => it.flowType),
+    () => filterItemsByLetter(summaries, selectedLetter, it => it.title),
     [summaries, selectedLetter],
   )
 
