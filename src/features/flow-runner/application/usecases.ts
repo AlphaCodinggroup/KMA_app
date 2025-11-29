@@ -11,6 +11,7 @@ import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
 import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
 import { createOfflineFirstFlowRepo } from '@features/selector/data/flow.repo.offline'
 import { isOnlineOnce } from '@shared/lib/network'
+import { showAuditCreatedToast, showAuditProcessingToast } from '@shared/ui/toast/AppToast'
 
 // Repos / singletons
 const flowRepo: FlowRepo = createOfflineFirstFlowRepo()
@@ -219,23 +220,22 @@ export async function finalizeSubmission(params: {
     })
 
     // POST /audits (crea la auditoría final)
-    const body = {
-      id: auditId,
-      flow_id: params.flowId,
-      project_id: params.projectId ?? '',
-      facility_id: params.facilityId ?? '',
-      answers: answersForApi,
-      flow_version: Number(params.version ?? 1),
-    }
-
-    const resp = await request<{ status?: number }>({
+    await request<void>({
       method: 'POST',
       url: '/audits',
-      data: body,
+      data: {
+        id: auditId,
+        flow_id: params.flowId,
+        project_id: params.projectId ?? '',
+        facility_id: params.facilityId ?? '',
+        answers: answersForApi,
+        flow_version: Number(params.version ?? 1),
+      },
     })
 
-    const ok = resp.status === 201
-    return ok
+    // Si llegamos acá sin throw, el HTTP fue 2xx → éxito.
+    showAuditCreatedToast(params.title)
+    return true
   } catch (err) {
     console.warn('[finalizeSubmission] error:', err)
     return false
@@ -340,10 +340,8 @@ function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): PhotoToU
       // p puede ser string ("file:///...jpg") o un objeto { uri, name, type }
       const localUri: string =
         (typeof p === 'string' ? p : (p as any)?.uri || (p as any)?.localUri || '') ?? ''
-      if (!localUri || !localUri.startsWith('file')) {
-        // si NO es file:// asumimos que ya es remoto (ej "s3://...") -> no subir
-        return
-      }
+      // si NO es file:// asumimos que ya es remoto (ej "s3://...") -> no subir
+      if (!localUri || !localUri.startsWith('file')) return
 
       // Inferir nombre base
       const rawName: string | undefined =
@@ -405,7 +403,7 @@ async function readFileAsUint8(uri: string): Promise<Uint8Array> {
  */
 function buildAnswersForApi(params: {
   answers: Record<string, SubmissionAnswer>
-  uploadMap: Record<string, string> // fileName -> s3://...
+  uploadMap: Record<string, string>
 }): AuditAnswerForApi[] {
   const { answers, uploadMap } = params
 
@@ -443,10 +441,8 @@ function buildAnswersForApi(params: {
     // FORMULARIOS
     if (ans.type === 'Form') {
       const values = ans.values ?? {}
-
       // Copiamos valores para no mutar el original
       const outValues: Record<string, unknown> = { ...values }
-
       // Fotos → "photos": ['s3://...']
       const rawArray = extractPhotoArray(outValues)
 
@@ -454,7 +450,6 @@ function buildAnswersForApi(params: {
         .map((p, idx: number) => {
           // Caso ya remoto
           if (typeof p === 'string' && p.startsWith('s3://')) return p
-
           // Caso local: buscamos key en uploadMap que matchee `${stepId}_${idx}_...`
           const prefix = `${stepId}_${idx}_`
           const matchKey = Object.keys(uploadMap).find(k => k.startsWith(prefix))
@@ -535,6 +530,9 @@ async function queueOfflineSubmission(
       facilityId: context.facilityId ?? '',
       version: context.version ?? '',
     })
+
+    // Avisamos que se está procesando (modo offline / encolado)
+    showAuditProcessingToast(draft.title)
 
     // Detectamos fotos locales para adjuntarlas como filePaths
     const photosToUpload = collectLocalPhotos(draft.answers)

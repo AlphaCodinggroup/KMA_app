@@ -96,6 +96,7 @@ async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 
       facilityId: snapshot.facilityId ?? '',
       version: snapshot.version ?? '',
       // Forzamos online=true para que NO vuelva a encolar en outbox
+      // y para que, en caso de éxito, dispare el toast global de auditoría creada.
       online: true,
     })
 
@@ -272,9 +273,6 @@ export async function bootstrapApp(): Promise<void> {
     })
 
     // Background task (best effort iOS) → por ahora sólo outbox.
-    // Si en algún momento quisieras incluir catálogos/flows acá, podés llamar
-    // a syncAllCatalogs() y coldSyncAllFlows() dentro del callback, con la
-    // misma filosofía best-effort.
     await registerBackgroundSync(() => sync.runOnce())
 
     // Cleanup centralizado
