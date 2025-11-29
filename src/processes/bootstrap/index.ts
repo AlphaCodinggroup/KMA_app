@@ -32,11 +32,18 @@ type AuditSubmissionOutboxPayload = {
  */
 function createOutboxDispatcher() {
   return async (item: OutboxItem): Promise<'success' | 'retry' | 'drop'> => {
-    if (item.type === AUDIT_SUBMISSION_ENDPOINT) return handleAuditSubmissionItem(item)
+    // Usamos `type` como discriminante lógico del trabajo
+    if (item.type === AUDIT_SUBMISSION_ENDPOINT) {
+      return handleAuditSubmissionItem(item)
+    }
 
     if (__DEV__) {
-      console.log('[SyncService] dispatch (noop):', item)
+      console.log('[SyncService] dispatch (noop):', {
+        id: item.id,
+        type: item.type,
+      })
     }
+
     // Cualquier otro tipo que aún no manejemos explícitamente se considera éxito
     return 'success'
   }
