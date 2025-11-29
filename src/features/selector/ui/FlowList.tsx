@@ -31,7 +31,7 @@ const FlowList: React.FC<FlowListProps> = ({
 
   const renderItem = useCallback(
     (item: FlowListItem) => {
-      const title = item.flowType ?? ''
+      const title = item.title ?? ''
       const version = `v ${isFlow(item) ? String(item.version) : item.version}`
       const description = (item as FlowSummary).description ?? (item as Flow).description ?? ''
       const stepsCount = isFlow(item) ? item.steps.length : (item.stepsCount ?? 0)

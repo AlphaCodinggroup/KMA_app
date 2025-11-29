@@ -1,44 +1,34 @@
 import React, { type PropsWithChildren, useEffect, useState } from 'react'
 import { useRouter } from 'expo-router'
-import { getSnapshot, getValidToken, subscribe } from '@shared/session/session'
+import { getSnapshot, subscribe } from '@shared/session/session'
 
 const AuthGuard: React.FC<PropsWithChildren> = ({ children }) => {
   const router = useRouter()
   const [ready, setReady] = useState(false)
-  const [hasSession, setHasSession] = useState<boolean>(false)
+  const [hasSession, setHasSession] = useState(false)
 
   useEffect(() => {
-    let cancelled = false
-    const bootstrap = async () => {
-      try {
-        await getValidToken()
-        if (!cancelled) setHasSession(true)
-      } catch {
-        if (!cancelled) setHasSession(false)
-      } finally {
-        if (!cancelled) setReady(true)
-      }
-    }
-
+    // Estado inicial: confiamos en lo que haya en memoria (initSession ya corrió en bootstrap)
     const snap = getSnapshot()
-    if (snap.idToken) {
-      setHasSession(true)
-      setReady(true)
-    } else {
-      bootstrap()
-    }
+    setHasSession(!!snap.refreshToken)
+    setReady(true)
 
+    // Nos suscribimos a cambios de sesión:
+    // - login → hay refreshToken
+    // - refresh → seguimos teniendo refreshToken
+    // - logout → se borra todo
     const unsub = subscribe(e => {
       if (e.type === 'logout') {
         setHasSession(false)
+        return
       }
-      if (e.type === 'login' || e.type === 'refresh') {
-        setHasSession(!!e.snapshot.idToken)
+
+      if (e.type === 'login' || e.type === 'refresh' || e.type === 'change') {
+        setHasSession(!!e.snapshot.refreshToken)
       }
     })
 
     return () => {
-      cancelled = true
       unsub()
     }
   }, [])
@@ -52,6 +42,7 @@ const AuthGuard: React.FC<PropsWithChildren> = ({ children }) => {
 
   if (!ready) return null
   if (!hasSession) return null
+
   return <>{children}</>
 }
 

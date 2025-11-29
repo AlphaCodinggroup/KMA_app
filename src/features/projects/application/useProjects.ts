@@ -53,8 +53,13 @@ export function useProjects(opts: UseProjectsOptions = {}) {
     }
   }, [opts.status, opts.search, opts.limit, opts.sortBy, opts.sortOrder])
 
+  /**
+   * fetchPage:
+   * - NO depende de `cursor` en su closure para evitar disparar el efecto inicial 2 veces.
+   * - El cursor se pasa explícitamente como argumento cuando se quiere paginar.
+   */
   const fetchPage = useCallback(
-    async ({ reset }: { reset: boolean }) => {
+    async ({ reset, cursorOverride }: { reset: boolean; cursorOverride?: string }) => {
       // Cancelar request previo (si lo hubiera)
       abortRef.current?.abort()
       const controller = new AbortController()
@@ -62,14 +67,18 @@ export function useProjects(opts: UseProjectsOptions = {}) {
 
       const params: ListProjectsParams = {
         ...baseParams,
-        cursor: reset ? undefined : cursor,
+        cursor: reset ? undefined : cursorOverride,
       }
 
       try {
         setError(null)
+
         if (reset) {
+          // Para primera carga y refresh:
+          // - En la primera carga `loading` ya está en true por defecto.
+          // - En refresh, típicamente mostrarás indicador de `refreshing`.
           setRefreshing(true)
-        } else if (cursor) {
+        } else if (cursorOverride) {
           setLoadingMore(true)
         } else {
           setLoading(true)
@@ -92,21 +101,24 @@ export function useProjects(opts: UseProjectsOptions = {}) {
         setRefreshing(false)
       }
     },
-    [baseParams, cursor],
+    [baseParams],
   )
 
   // Primera carga + cambios de filtros/orden → resetear y recargar
   useEffect(() => {
-    fetchPage({ reset: true })
+    fetchPage({ reset: true, cursorOverride: undefined })
     // cleanup: abortar si el componente se desmonta
     return () => abortRef.current?.abort()
   }, [fetchPage])
 
-  const refresh = useCallback(() => fetchPage({ reset: true }), [fetchPage])
+  const refresh = useCallback(
+    () => fetchPage({ reset: true, cursorOverride: undefined }),
+    [fetchPage],
+  )
 
   const loadMore = useCallback(() => {
     if (!cursor) return
-    fetchPage({ reset: false })
+    fetchPage({ reset: false, cursorOverride: cursor })
   }, [cursor, fetchPage])
 
   const hasNextPage = Boolean(cursor)

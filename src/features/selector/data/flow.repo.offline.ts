@@ -28,7 +28,7 @@ class OfflineFirstFlowRepo implements FlowRepo {
    *    - sincroniza SQLite
    *    - aplica filtros/paginación en memoria
    * - Offline / error API:
-   *    - reconstruye todos los flows desde SQLite y aplica filtros/paginación
+   *    - reconstruye desde SQLite y aplica filtros/paginación
    */
   async getAll(query?: FlowsQuery): Promise<Flow[]> {
     const isOnline = await isOnlineOnce()
@@ -155,10 +155,8 @@ class OfflineFirstFlowRepo implements FlowRepo {
       flows: flows.map(flowToSummary),
     }
 
-    // Catalogo con prune de ids que ya no existen
     await sqliteFlowRepo.saveCatalog(catalog)
 
-    // Detalle de cada flow (steps)
     for (const flow of flows) {
       await this.cacheFlowDetail(flow)
     }
@@ -171,6 +169,7 @@ class OfflineFirstFlowRepo implements FlowRepo {
     const detail: FlowDetail = {
       flowId: flow.flowId,
       title: flow.title,
+      version: String(flow.version),
       steps: flow.steps,
     }
 
@@ -222,27 +221,46 @@ class OfflineFirstFlowRepo implements FlowRepo {
  */
 export const createOfflineFirstFlowRepo = (): FlowRepo => new OfflineFirstFlowRepo()
 
+// -----------------------------------------------------------------------------
 // Helpers puros (sin side-effects)
+// -----------------------------------------------------------------------------
+
+/**
+ * Normaliza la versión a un string “sano”.
+ * Si el backend manda cualquier cosa rara (undefined, "v1", "", etc.)
+ * devolvemos '1' como default.
+ */
+const normalizeVersion = (v: string | number | null | undefined): string => {
+  if (v == null) return '1'
+  if (typeof v === 'number') return String(v)
+
+  const trimmed = v.trim()
+  return trimmed === '' ? '1' : trimmed
+}
 
 /**
  * Convierte Flow dominio → FlowSummary (para tarjetas de Selector).
+ * Incluye metadatos extra para que el modo offline se vea igual al online.
  */
 function flowToSummary(flow: Flow): FlowSummary {
+  const version = normalizeVersion(flow.version)
+
   return {
     id: flow.flowId,
     title: flow.title,
-    version: String(flow.version),
+    version,
     description: flow.description ?? '',
     stepsCount: flow.steps.length,
     flowType: flow.flowType ?? '',
     isActive: flow.isActive ?? true,
+    createdAt: flow.createdAt ?? '',
+    updatedAt: flow.updatedAt ?? '',
   }
 }
 
 /**
  * Reconstruye Flow dominio a partir de FlowDetail + metadata opcional del catálogo.
- * - Si hay summary, se usan descripción / versión / flags desde ahí.
- * - Version cae en 1 si no se puede parsear nada razonable.
+ * - Si hay summary, se usan descripción / versión / flags / timestamps desde ahí.
  */
 function detailToFlow(detail: FlowDetail, summary?: FlowSummary): Flow {
   const versionSource = summary?.version
@@ -255,16 +273,18 @@ function detailToFlow(detail: FlowDetail, summary?: FlowSummary): Flow {
     version = Number.isFinite(numeric) && numeric > 0 ? numeric : 1
   }
 
+  const anySummary = summary as any
+
   return {
     flowId: detail.flowId,
     title: detail.title,
-    description: summary?.description ?? '',
+    description: anySummary?.description ?? '',
     steps: detail.steps as any,
-    flowType: summary?.flowType ?? '',
+    flowType: anySummary?.flowType ?? '',
     version,
-    isActive: summary?.isActive ?? true,
-    createdAt: '',
-    updatedAt: '',
+    isActive: anySummary?.isActive ?? true,
+    createdAt: anySummary?.createdAt ?? '',
+    updatedAt: anySummary?.updatedAt ?? '',
   }
 }
 
@@ -308,8 +328,9 @@ function applySummaryQuery(summaries: FlowSummary[], query?: FlowsQuery): FlowSu
     const letter = String(anyQuery.flowTypeStartsWith).toUpperCase()
 
     out = out.filter(s => {
-      const base = (s.flowType || s.title || '').trim()
-      return (base[0]?.toUpperCase() ?? '') === letter
+      const base = s.flowType || s.title || ''
+      const trimmed = base.trim()
+      return (trimmed[0]?.toUpperCase() ?? '') === letter
     })
   }
 

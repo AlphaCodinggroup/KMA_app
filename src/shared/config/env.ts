@@ -86,13 +86,16 @@ if (!parsed.success) {
   )
 }
 
+function normalizeBaseUrl(url: string): string {
+  return url.replace(/\/+$/, '') // sin slash al final
+}
 /**
  * Export tipado y congelado.
  */
 export const Env = Object.freeze({
-  apiBaseUrl: parsed.data.EXPO_PUBLIC_API_BASE_URL,
+  apiBaseUrl: normalizeBaseUrl(parsed.data.EXPO_PUBLIC_API_BASE_URL),
   cognito: {
-    baseUrl: parsed.data.EXPO_PUBLIC_COGNITO_BASE_URL,
+    baseUrl: parsed.data.EXPO_PUBLIC_COGNITO_BASE_URL.replace(/\/+$/, ''),
     region: parsed.data.EXPO_PUBLIC_COGNITO_REGION,
     clientId: parsed.data.EXPO_PUBLIC_COGNITO_CLIENT_ID,
   },

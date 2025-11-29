@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useNetInfo } from '@react-native-community/netinfo'
 
@@ -12,6 +12,7 @@ import type { Facility } from '@entities/facility/model'
 import type { ProjectFacilitySummary } from '@entities/project/model'
 import LetterFilter from '@shared/ui/filters/LetterFilter'
 import { filterItemsByLetter, getAvailableLetters, type LetterKey } from '@shared/lib/alphaFilter'
+import { EntityErrorState } from '@shared/ui/states/EntityErrorState'
 
 const FacilityScreen: React.FC = () => {
   const router = useRouter()
@@ -86,12 +87,10 @@ const FacilityScreen: React.FC = () => {
   // Error y sin ningún dato (ni repo ni fallback)
   if (!loading && error && baseItems.length === 0) {
     return (
-      <View style={styles.container}>
-        <SubHeadline text="Select a facility to audit" stylesText={styles.text} />
-        <Text style={styles.errorText}>
-          There was a problem loading facilities. Please check your connection and try again.
-        </Text>
-      </View>
+      <EntityErrorState
+        title="Select a facility to audit"
+        message="There was a problem loading facilities. Please check your connection and try again."
+      />
     )
   }
 

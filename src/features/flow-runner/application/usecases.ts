@@ -156,14 +156,14 @@ export async function finalizeSubmission(params: {
     answers: params.answers,
   }
 
-  // OFFLINE → encolar en outbox y salir
+  // OFFLINE → encolar en outbox y salir (éxito lógico: se guardó para sync)
   if (!isOnline) {
     await queueOfflineSubmission(draft, {
       projectId: params.projectId ?? '',
       facilityId: params.facilityId ?? '',
       version: params.version ?? '',
     })
-    return false
+    return true
   }
 
   // ONLINE
@@ -543,16 +543,17 @@ async function queueOfflineSubmission(
         ? photosToUpload
             .map(p => p.localUri)
             .filter(uri => typeof uri === 'string' && uri.startsWith('file://'))
-        : undefined
+        : []
 
-    // Encolamos en outbox
+    // Encolamos en outbox usando el contrato real del repo:
+    // endpoint + method, donde endpoint actúa como “tipo” lógico de la tarea.
     const payload: AuditSubmissionOutboxPayload = { submissionId: id }
 
     await sqliteOutboxRepo.enqueue({
       endpoint: 'AUDIT_SUBMISSION',
       method: 'USECASE',
       payload,
-      filePaths: filePaths ?? [],
+      filePaths,
     })
 
     if (__DEV__) {

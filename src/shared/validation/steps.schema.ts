@@ -20,8 +20,7 @@ export const FormStepSchema = z.object({
   type: z.literal('Form'),
   title: z.string(),
   next: z.string().optional(),
-  // barrierId no se usaba en UI; si en el futuro hace falta, descomentar:
-  // barrierId: z.string().optional(),
+  barrierId: z.string().optional(),
   fields: z.array(FormFieldSchema).min(1),
   image: z.string().optional(),
 })
@@ -36,7 +35,7 @@ export const QuestionStepSchema = z.object({
   yesNext: z.string().optional(),
   noNext: z.string().optional(),
   image: z.string().optional(),
-  // barrierId: z.string().optional(), // disponible en dominio pero omitido en FlowDetail actual
+  barrierId: z.string().optional(),
 })
 export type QuestionStep = z.infer<typeof QuestionStepSchema>
 
@@ -81,9 +80,18 @@ export type Step = z.infer<typeof StepSchema>
 
 /* ------------------------------ FlowDetail ------------------------------- */
 
+/**
+ * FlowDetail se usa en dos mundos:
+ *  - cache / repos: generalmente viene con version
+ *  - runner (params de navegación): muchas veces solo manda flowId/title/steps
+ *
+ * Por eso version se marca opcional: los repos la normalizan con `normalizeVersion`,
+ * y el runner no se rompe si no la tiene.
+ */
 export const FlowDetailSchema = z.object({
   flowId: z.string(),
   title: z.string(),
+  version: z.string().optional(),
   steps: z.array(StepSchema).min(1),
 })
 export type FlowDetail = z.infer<typeof FlowDetailSchema>
