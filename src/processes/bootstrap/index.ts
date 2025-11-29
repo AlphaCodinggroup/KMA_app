@@ -10,9 +10,10 @@ import { SyncService, type OutboxRepo, type OutboxItem } from '@processes/sync/S
 import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
 import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
 import type { SubmissionSnapshot } from '@entities/submission/ports'
-import { finalizeSubmission } from '@features/flow-runner/application/usecases'
+import { submitAuditOnlineFromSnapshot } from '@features/flow-runner/application/usecases'
 import { syncAllCatalogs } from '@processes/catalog-sync'
 import { coldSyncAllFlows } from '@features/selector/application/usecases'
+import { registerOutboxSyncTrigger } from '@processes/sync/outboxTrigger'
 
 let _bootPromise: Promise<void> | null = null
 let _cleanup: (() => void) | null = null
@@ -25,17 +26,10 @@ type AuditSubmissionOutboxPayload = {
 
 /**
  * Dispatcher del SyncService.
- *
- * - AUDIT_SUBMISSION: toma la submission local, ejecuta el mismo flujo online
- *   que `finalizeSubmission` y, si sale bien, borra datos/fotos locales.
- * - Otros tipos: por ahora NO-OP (success inmediato).
  */
 function createOutboxDispatcher() {
   return async (item: OutboxItem): Promise<'success' | 'retry' | 'drop'> => {
-    // Usamos `type` como discriminante lógico del trabajo
-    if (item.type === AUDIT_SUBMISSION_ENDPOINT) {
-      return handleAuditSubmissionItem(item)
-    }
+    if (item.type === AUDIT_SUBMISSION_ENDPOINT) return handleAuditSubmissionItem(item)
 
     if (__DEV__) {
       console.log('[SyncService] dispatch (noop):', {
@@ -44,25 +38,12 @@ function createOutboxDispatcher() {
       })
     }
 
-    // Cualquier otro tipo que aún no manejemos explícitamente se considera éxito
     return 'success'
   }
 }
 
 /**
- * Maneja un item de outbox de tipo AUDIT_SUBMISSION:
- *
- *  Lee submissionId del payload.
- *  Recupera la submission desde SQLite.
- *  Llama a finalizeSubmission(...) forzando `online: true`.
- *  Si salió bien:
- *    - borra fotos locales (file://)
- *    - borra la submission local
- *
- * Devuelve:
- * - 'success' → SyncService hará markSuccess(id) y eliminará el item de outbox.
- * - 'retry'   → SyncService aplicará backoff y reintento.
- * - 'drop'    → SyncService eliminará el item sin reintento.
+ * Maneja un item de outbox de tipo AUDIT_SUBMISSION.
  */
 async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 'retry' | 'drop'> {
   const payload = (item.payload ?? null) as Partial<AuditSubmissionOutboxPayload> | null
@@ -88,21 +69,10 @@ async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 
   }
 
   try {
-    const ok = await finalizeSubmission({
-      flowId: snapshot.flowId,
-      title: snapshot.title,
-      answers: snapshot.answers,
-      projectId: snapshot.projectId ?? '',
-      facilityId: snapshot.facilityId ?? '',
-      version: snapshot.version ?? '',
-      // Forzamos online=true para que NO vuelva a encolar en outbox
-      // y para que, en caso de éxito, dispare el toast global de auditoría creada.
-      online: true,
-    })
+    const ok = await submitAuditOnlineFromSnapshot(snapshot)
 
     if (!ok) {
-      // Puede ser error de red, 5xx, auth, etc.
-      // Dejamos que SyncService reintente con backoff.
+      // Error de red / 5xx / etc → reintenta con backoff
       return 'retry'
     }
 
@@ -125,7 +95,6 @@ async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 
 
 /**
  * Borra todas las fotos locales (file://...) asociadas a una submission.
- * Se basa en las respuestas guardadas en `snapshot.answers`.
  */
 async function cleanupSubmissionFiles(snapshot: SubmissionSnapshot): Promise<void> {
   const answers = snapshot.answers ?? {}
@@ -177,33 +146,21 @@ export async function bootstrapApp(): Promise<void> {
   if (_bootPromise) return _bootPromise
 
   _bootPromise = (async () => {
-    // DB y sesión primero
     await initDatabase()
     await initSession()
 
-    // SyncService con outbox real (SQLite) + dispatcher con AUDIT_SUBMISSION
     const outbox: OutboxRepo = sqliteOutboxRepo
     const sync = new SyncService({
       outbox,
       dispatch: createOutboxDispatcher(),
-      // batchSize / retryBaseDelayMs / retryMaxAttempts vienen por env o defaults
     })
 
-    /**
-     * Helper centralizado para disparar:
-     *  - sync de outbox (auditorías pendientes)
-     *
-     * Los catálogos se disparan aparte, de forma controlada,
-     * para evitar GET redundantes (projects/facilities/flows).
-     */
     const queueOutboxSync = () => {
       sync.queue()
     }
 
-    /**
-     * Helper para sync de catálogos (projects + facilities).
-     * Best-effort: no queremos romper la UI si falla.
-     */
+    registerOutboxSyncTrigger(queueOutboxSync)
+
     const queueCatalogSync = () => {
       syncAllCatalogs().catch(err => {
         if (__DEV__) {
@@ -212,13 +169,6 @@ export async function bootstrapApp(): Promise<void> {
       })
     }
 
-    /**
-     * Helper para cold sync de flows (incluye steps e imágenes,
-     * según la implementación de coldSyncAllFlows).
-     *
-     * Usa un pequeño guard para evitar múltiples llamadas concurrentes
-     * cuando se disparan AppState + NetInfo al mismo tiempo.
-     */
     let flowsSyncInProgress = false
     const queueFlowsSync = () => {
       if (flowsSyncInProgress) return
@@ -235,7 +185,6 @@ export async function bootstrapApp(): Promise<void> {
         })
     }
 
-    // AppState: cuando la app vuelve a foreground, disparamos outbox + catálogos + flows
     const handleAppStateChange = (state: AppStateStatus) => {
       if (state === 'active') {
         queueOutboxSync()
@@ -245,7 +194,6 @@ export async function bootstrapApp(): Promise<void> {
     }
     const appStateSub = AppState.addEventListener('change', handleAppStateChange)
 
-    // NetInfo: cuando vuelve la conexión, disparamos outbox + catálogos + flows
     const unsubscribeNetInfo = NetInfo.addEventListener(state => {
       if (state.isConnected) {
         queueOutboxSync()
@@ -254,10 +202,6 @@ export async function bootstrapApp(): Promise<void> {
       }
     })
 
-    // Eventos de sesión:
-    // - login: solo outbox (los catálogos/flows se cargan perezosamente
-    //   desde las pantallas y por los triggers de AppState/NetInfo).
-    // - refresh: outbox + catálogos + flows (tokens renovados → refrescamos data).
     const unsubscribeSession = subscribe(e => {
       if (e.type === 'login') {
         queueOutboxSync()
@@ -272,10 +216,8 @@ export async function bootstrapApp(): Promise<void> {
       }
     })
 
-    // Background task (best effort iOS) → por ahora sólo outbox.
     await registerBackgroundSync(() => sync.runOnce())
 
-    // Cleanup centralizado
     _cleanup = () => {
       appStateSub.remove()
       unsubscribeNetInfo()
@@ -283,10 +225,7 @@ export async function bootstrapApp(): Promise<void> {
       unregisterBackgroundSync().catch(() => void 0)
     }
 
-    // Disparo inicial al boot:
-    //  - solo outbox. Los catálogos y flows se cargan:
-    //    - perezosamente desde las features (useProjects, useFlows, etc.),
-    //    - o por los triggers de AppState/NetInfo/refresh.
+    // Disparo inicial al boot: solo outbox.
     queueOutboxSync()
   })()
 

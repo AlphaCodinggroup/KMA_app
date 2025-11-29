@@ -3,8 +3,8 @@ import type { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios'
 import { Env } from '@shared/config/env'
 import { clearSession, getValidToken } from '@shared/session/session'
 import { isOnlineOnce } from '@shared/lib/network'
-import { showAuthExpiredToast } from '@shared/ui/toast/AppToast' /**
- /**
+import { showAuthExpiredToast } from '@shared/ui/toast/AppToast'
+/**
  * http.ts
  *
  * Responsabilidades:

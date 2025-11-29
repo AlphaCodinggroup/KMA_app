@@ -4,14 +4,15 @@ import { Buffer } from 'buffer'
 import type { FlowDetail } from '@shared/validation/steps.schema'
 import type { Flow, Step } from '@entities/flow/model'
 import type { SubmissionAnswer, SubmissionDraft } from '@entities/submission/model'
-import type { SubmissionRepo } from '@entities/submission/ports'
+import type { SubmissionRepo, SubmissionSnapshot } from '@entities/submission/ports'
 import type { FlowRepo } from '@entities/flow/ports'
 import { putPresignedBinary, request } from '@core/http/http'
 import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
 import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
 import { createOfflineFirstFlowRepo } from '@features/selector/data/flow.repo.offline'
-import { isOnlineOnce } from '@shared/lib/network'
 import { showAuditCreatedToast, showAuditProcessingToast } from '@shared/ui/toast/AppToast'
+import { triggerOutboxSync } from '@processes/sync/outboxTrigger'
+import { isOnlineOnce } from '@shared/lib/network'
 
 // Repos / singletons
 const flowRepo: FlowRepo = createOfflineFirstFlowRepo()
@@ -62,14 +63,9 @@ type AuditSubmissionOutboxPayload = {
  */
 const NUMERIC_OPTIONAL_FIELDS = new Set<string>(['quantity', 'measurements'])
 
+// -----------------------------------------------------------------------------
 // API pública
-/**
- * Best-effort: asegurar que el flow esté actualizado/local antes de ejecutar.
- *
- * - Si hay red, el FlowRepo offline-first irá a la API y cacheará el detalle.
- * - Si no hay red, intentará resolverlo desde SQLite.
- * - Cualquier error se loguea en dev, pero no rompe el flujo de la pantalla.
- */
+// -----------------------------------------------------------------------------
 export async function ensureFlowSynced(flowId: string): Promise<void> {
   try {
     await flowRepo.getById(flowId)
@@ -80,13 +76,6 @@ export async function ensureFlowSynced(flowId: string): Promise<void> {
   }
 }
 
-/**
- * Carga el flow (incluye steps) utilizando el FlowRepo offline-first
- * y lo mapea a FlowDetail (VM de pantalla).
- *
- * - Online: la implementación del repo consulta la API y cachea en SQLite.
- * - Offline / error de red: intenta reconstruir desde la cache local.
- */
 export async function loadFlowDetail(flowId: string): Promise<FlowDetail> {
   const flow = await flowRepo.getById(flowId)
   if (!flow) {
@@ -130,14 +119,14 @@ export async function persistDraft(params: {
 /**
  * finalizeSubmission
  *
- * Flujo online:
- * 1. Detecta fotos locales (file://)
- * 2. POST /uploads -> presigned URLs + audit_id
- * 3. PUT binario a cada upload_url (S3, sin Authorization)
- * 4. POST /audits con { id, flow_id, project_id, facility_id, answers:[...] }
+ * Nuevo comportamiento:
+ * - Siempre guarda la auditoría en SQLite como submission "final".
+ * - Siempre la encola en outbox con type "AUDIT_SUBMISSION".
+ * - Muestra un toast de "Processing" con el título.
+ * - Devuelve `true` si pudo guardar + encolar (independientemente de la conexión).
  *
- * Offline:
- * - Guarda el draft en SQLite y lo encola en outbox como "AUDIT_SUBMISSION".
+ * El envío real (uploads + /audits) se hace SOLO desde el SyncService
+ * vía `submitAuditOnlineFromSnapshot`.
  */
 export async function finalizeSubmission(params: {
   flowId: string
@@ -148,8 +137,6 @@ export async function finalizeSubmission(params: {
   facilityId?: string
   version?: string
 }): Promise<boolean> {
-  const isOnline = await resolveOnlineStatus(params.online)
-
   const draft: SubmissionDraft = {
     flowId: params.flowId,
     title: params.title,
@@ -157,20 +144,56 @@ export async function finalizeSubmission(params: {
     answers: params.answers,
   }
 
-  // OFFLINE → encolar en outbox y salir (éxito lógico: se guardó para sync)
-  if (!isOnline) {
-    await queueOfflineSubmission(draft, {
-      projectId: params.projectId ?? '',
-      facilityId: params.facilityId ?? '',
-      version: params.version ?? '',
-    })
-    return true
+  // Guardar en SQLite + encolar en outbox + toast "Processing"
+  await queueOfflineSubmission(draft, {
+    projectId: params.projectId ?? '',
+    facilityId: params.facilityId ?? '',
+    version: params.version ?? '',
+  })
+
+  // Si sabemos que está online, disparamos sync inmediato.
+  //    Si está offline, dejamos que NetInfo/AppState/background lo disparen cuando corresponda.
+  if (params.online === true) {
+    triggerOutboxSync()
   }
 
-  // ONLINE
+  return true
+}
+
+/**
+ * Usecase específico para el SyncService:
+ *
+ * - Recibe un SubmissionSnapshot desde SQLite.
+ * - Ejecuta TODO el flujo online:
+ *   1) Detecta fotos locales (file://)
+ *   2) POST /uploads -> presigned URLs + audit_id
+ *   3) PUT binario a cada upload_url
+ *   4) POST /audits con { id, flow_id, project_id, facility_id, answers:[...] }
+ * - Si sale bien:
+ *   - Muestra toast de éxito con el título.
+ *   - Devuelve `true`.
+ * - Si falla:
+ *   - Devuelve `false` (para que el SyncService reintente).
+ */
+export async function submitAuditOnlineFromSnapshot(
+  snapshot: SubmissionSnapshot,
+): Promise<boolean> {
+  // Antes de hacer cualquier request, chequeamos conectividad real
+  const online = await isOnlineOnce()
+  if (!online) {
+    if (__DEV__) {
+      console.log('[submitAuditOnlineFromSnapshot] skipped: offline')
+    }
+    // Devolvemos false para que el SyncService lo marque como "retry"
+    // y vuelva a intentarlo más adelante cuando haya conexión.
+    return false
+  }
+
   try {
+    const answers = snapshot.answers as Record<string, SubmissionAnswer>
+
     // Fotos locales -> lista para presign
-    const photosToUpload = collectLocalPhotos(params.answers)
+    const photosToUpload = collectLocalPhotos(answers)
     const presignFiles: PresignRequestFile[] = photosToUpload.map(p => ({
       name: p.uploadName,
       step_id: p.stepId,
@@ -215,7 +238,7 @@ export async function finalizeSubmission(params: {
 
     // Armar answers normalizados para /audits
     const answersForApi: AuditAnswerForApi[] = buildAnswersForApi({
-      answers: params.answers,
+      answers,
       uploadMap,
     })
 
@@ -225,33 +248,27 @@ export async function finalizeSubmission(params: {
       url: '/audits',
       data: {
         id: auditId,
-        flow_id: params.flowId,
-        project_id: params.projectId ?? '',
-        facility_id: params.facilityId ?? '',
+        flow_id: snapshot.flowId,
+        project_id: snapshot.projectId ?? '',
+        facility_id: snapshot.facilityId ?? '',
         answers: answersForApi,
-        flow_version: Number(params.version ?? 1),
+        flow_version: Number(snapshot.version ?? 1),
       },
     })
 
-    // Si llegamos acá sin throw, el HTTP fue 2xx → éxito.
-    showAuditCreatedToast(params.title)
+    // Éxito → toast de auditoría creada
+    showAuditCreatedToast(snapshot.title)
+
     return true
   } catch (err) {
-    console.warn('[finalizeSubmission] error:', err)
+    console.warn('[submitAuditOnlineFromSnapshot] error:', err)
     return false
   }
 }
 
+// -----------------------------------------------------------------------------
 // Helpers privados
-/**
- * Resuelve el estado online efectivo:
- * - Si se pasa explícitamente `online`, respeta ese valor.
- * - Si no, consulta el helper compartido de red.
- */
-async function resolveOnlineStatus(explicitOnline?: boolean): Promise<boolean> {
-  if (typeof explicitOnline === 'boolean') return explicitOnline
-  return isOnlineOnce()
-}
+// -----------------------------------------------------------------------------
 
 // Mappers dominio -> VM de pantalla
 function mapToFlowDetail(flow: Flow): FlowDetail {
@@ -311,8 +328,6 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
 /**
  * Algunos formularios guardan las fotos en `values.photo`
  * Otros podrían guardarlas en `values.photos`.
- *
- * Normalizamos eso: devolvemos SIEMPRE un array de fotos.
  */
 function extractPhotoArray(values: Record<string, unknown>): unknown[] {
   const v = values ?? {}
@@ -323,8 +338,6 @@ function extractPhotoArray(values: Record<string, unknown>): unknown[] {
 
 /**
  * Recorre todas las respuestas y junta las fotos locales (file://...) que haya que subir.
- *
- * Genera pares (uploadName, localUri) para alimentar `/uploads`.
  */
 function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): PhotoToUpload[] {
   const out: PhotoToUpload[] = []
@@ -337,13 +350,10 @@ function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): PhotoToU
     const photos = extractPhotoArray(vals)
 
     photos.forEach((p, idx: number) => {
-      // p puede ser string ("file:///...jpg") o un objeto { uri, name, type }
       const localUri: string =
         (typeof p === 'string' ? p : (p as any)?.uri || (p as any)?.localUri || '') ?? ''
-      // si NO es file:// asumimos que ya es remoto (ej "s3://...") -> no subir
       if (!localUri || !localUri.startsWith('file')) return
 
-      // Inferir nombre base
       const rawName: string | undefined =
         (typeof p === 'string'
           ? undefined
@@ -353,10 +363,8 @@ function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): PhotoToU
 
       const ext = rawName?.includes('.') ? rawName.split('.').pop() : 'jpg'
 
-      // Nombre final único para esta subida
       const uploadName = `${stepId}_${idx}_${nowTs}.${ext}`
 
-      // Inferir mime
       const mimeType: string =
         (typeof p === 'string' ? undefined : (p as any).type) || guessMimeFromExt(ext || 'jpg')
 
@@ -384,8 +392,7 @@ function guessMimeFromExt(ext: string): string {
 }
 
 /**
- * Lee file://... como base64 y lo convierte a Uint8Array binario
- * para poder hacer PUT a S3 con la URL presignada.
+ * Lee file://... como base64 y lo convierte a Uint8Array binario.
  */
 async function readFileAsUint8(uri: string): Promise<Uint8Array> {
   const base64 = await FileSystem.readAsStringAsync(uri, {
@@ -397,9 +404,6 @@ async function readFileAsUint8(uri: string): Promise<Uint8Array> {
 
 /**
  * Convierte tus respuestas internas en lo que /audits espera.
- * Normaliza:
- *  - 'Question' con option => 'Select'
- *  - 'Form' con { photo / photos } => { photos: ['s3://...'] }
  */
 function buildAnswersForApi(params: {
   answers: Record<string, SubmissionAnswer>
@@ -416,10 +420,7 @@ function buildAnswersForApi(params: {
       }
     }
 
-    // PREGUNTAS (YES/NO o SELECT)
     if (ans.type === 'Question') {
-      // Caso SELECT:
-      // runtime guarda { type:'Question', answer:null, option:'...' }
       if (ans.option && !ans.answer) {
         return {
           step_id: stepId,
@@ -428,7 +429,6 @@ function buildAnswersForApi(params: {
         }
       }
 
-      // Caso YES / NO / skip
       const normalized = ans.answer != null ? String(ans.answer).toLowerCase() : null
 
       return {
@@ -441,9 +441,9 @@ function buildAnswersForApi(params: {
     // FORMULARIOS
     if (ans.type === 'Form') {
       const values = ans.values ?? {}
-      // Copiamos valores para no mutar el original
-      const outValues: Record<string, unknown> = { ...values }
       // Fotos → "photos": ['s3://...']
+      const outValues: Record<string, unknown> = { ...values }
+
       const rawArray = extractPhotoArray(outValues)
 
       const mappedUrls = rawArray
@@ -517,49 +517,43 @@ function buildAnswersForApi(params: {
  *  - Guarda el draft en `submissions`.
  *  - Encola item en `outbox` con type "AUDIT_SUBMISSION".
  *  - Adjunta filePaths con los file:// de las fotos para futura limpieza.
+ *  - Muestra toast de "Processing".
  */
 async function queueOfflineSubmission(
   draft: SubmissionDraft,
   context: { projectId?: string; facilityId?: string; version?: string },
 ): Promise<void> {
-  try {
-    // Persistimos el draft en submissions
-    const { id } = await submissionRepo.saveDraft({
-      draft,
-      projectId: context.projectId ?? '',
-      facilityId: context.facilityId ?? '',
-      version: context.version ?? '',
-    })
+  // Persistimos el draft en submissions
+  const { id } = await submissionRepo.saveDraft({
+    draft,
+    projectId: context.projectId ?? '',
+    facilityId: context.facilityId ?? '',
+    version: context.version ?? '',
+  })
 
-    // Avisamos que se está procesando (modo offline / encolado)
-    showAuditProcessingToast(draft.title)
+  // Avisamos que se está procesando (modo offline / encolado)
+  showAuditProcessingToast(draft.title)
 
-    // Detectamos fotos locales para adjuntarlas como filePaths
-    const photosToUpload = collectLocalPhotos(draft.answers)
-    const filePaths =
-      photosToUpload.length > 0
-        ? photosToUpload
-            .map(p => p.localUri)
-            .filter(uri => typeof uri === 'string' && uri.startsWith('file://'))
-        : []
+  // Detectamos fotos locales para adjuntarlas como filePaths
+  const photosToUpload = collectLocalPhotos(draft.answers)
+  const filePaths =
+    photosToUpload.length > 0
+      ? photosToUpload
+          .map(p => p.localUri)
+          .filter(uri => typeof uri === 'string' && uri.startsWith('file://'))
+      : []
 
-    // Encolamos en outbox usando el contrato real del repo:
-    // endpoint + method, donde endpoint actúa como “tipo” lógico de la tarea.
-    const payload: AuditSubmissionOutboxPayload = { submissionId: id }
+  // Encolamos en outbox usando el contrato real del repo
+  const payload: AuditSubmissionOutboxPayload = { submissionId: id }
 
-    await sqliteOutboxRepo.enqueue({
-      endpoint: 'AUDIT_SUBMISSION',
-      method: 'USECASE',
-      payload,
-      filePaths,
-    })
+  await sqliteOutboxRepo.enqueue({
+    endpoint: 'AUDIT_SUBMISSION',
+    method: 'USECASE',
+    payload,
+    filePaths,
+  })
 
-    if (__DEV__) {
-      console.log('[OUTBOX] Enqueued AUDIT_SUBMISSION', { submissionId: id })
-    }
-  } catch (err) {
-    if (__DEV__) {
-      console.warn('[queueOfflineSubmission] Failed to enqueue submission', err)
-    }
+  if (__DEV__) {
+    console.log('[OUTBOX] Enqueued AUDIT_SUBMISSION', { submissionId: id })
   }
 }
