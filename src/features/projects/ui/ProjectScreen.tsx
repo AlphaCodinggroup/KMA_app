@@ -71,7 +71,8 @@ const ProjectsScreen: React.FC = () => {
   }
 
   // Sin proyectos para mostrar (caso vacío real)
-  if (!loading && items.length === 0) return <Loader text="No projects to display." />
+  if (!loading && items.length === 0)
+    return <Loader text="No projects to display." refresh={refresh} />
 
   return (
     <View style={styles.container}>
