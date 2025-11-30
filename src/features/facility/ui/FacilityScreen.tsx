@@ -27,7 +27,7 @@ const FacilityScreen: React.FC = () => {
 
   const [selectedLetter, setSelectedLetter] = useState<LetterKey>('ALL')
 
-  // Parseamos las facilities embebidas que vienen desde ProjectsScreen
+  // Facilities embebidas que vienen desde ProjectsScreen (params)
   const projectFacilities = useMemo<ProjectFacilitySummary[]>(() => {
     if (!facilities) return []
     try {
@@ -42,6 +42,17 @@ const FacilityScreen: React.FC = () => {
     }
   }, [facilities])
 
+  // Las mapeamos explícitamente al modelo Facility, con projectId incluido
+  const facilitiesFromProject: Facility[] = useMemo(
+    () =>
+      projectFacilities.map(f => ({
+        id: f.id,
+        name: f.name,
+        projectId,
+      })),
+    [projectFacilities, projectId],
+  )
+
   const isOffline = netInfo.isConnected === false
 
   /**
@@ -54,10 +65,10 @@ const FacilityScreen: React.FC = () => {
   const baseItems: Facility[] = useMemo(() => {
     if (items.length > 0) return items
 
-    if (isOffline && projectFacilities.length > 0) return projectFacilities
+    if (isOffline && facilitiesFromProject.length > 0) return facilitiesFromProject
 
     return items
-  }, [items, isOffline, projectFacilities])
+  }, [items, isOffline, facilitiesFromProject])
 
   const handlePressItem = useCallback(
     (item: Facility) => {
@@ -75,7 +86,7 @@ const FacilityScreen: React.FC = () => {
     [baseItems],
   )
 
-  // Lista filtrada
+  // Lista filtrada por letra
   const filteredItems = useMemo<Facility[]>(
     () => filterItemsByLetter(baseItems, selectedLetter, it => it.name),
     [baseItems, selectedLetter],

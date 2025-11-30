@@ -17,7 +17,7 @@ const SelectorScreen: React.FC = () => {
     projectId: string
     facilityId: string
   }>()
-  const { items: flows, loading, error } = useFlows()
+  const { items: flows, loading, error, refresh, refreshing } = useFlows()
 
   const [selectedLetter, setSelectedLetter] = useState<LetterKey>('ALL')
 
@@ -106,7 +106,12 @@ const SelectorScreen: React.FC = () => {
         selected={selectedLetter}
         onSelect={setSelectedLetter}
       />
-      <FlowList items={filteredItems} onPressItem={onPressItem} />
+      <FlowList
+        items={filteredItems}
+        onPressItem={onPressItem}
+        refreshing={refreshing}
+        onRefresh={refresh}
+      />
     </View>
   )
 }

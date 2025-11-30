@@ -11,6 +11,8 @@ export interface FlowListProps {
   items: ReadonlyArray<FlowListItem>
   onPressItem: (item: FlowListItem) => void
   contentContainerStyle?: StyleProp<ViewStyle>
+  refreshing?: boolean
+  onRefresh?: () => void
   testID?: string
 }
 
@@ -22,6 +24,8 @@ const FlowList: React.FC<FlowListProps> = ({
   items,
   onPressItem,
   contentContainerStyle,
+  refreshing = false,
+  onRefresh,
   testID,
 }) => {
   const keyExtractor = useCallback(
@@ -55,6 +59,8 @@ const FlowList: React.FC<FlowListProps> = ({
       items={items}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
+      refreshing={refreshing}
+      {...(onRefresh ? { onRefresh } : {})}
       {...(contentContainerStyle ? { contentContainerStyle } : {})}
       {...(testID ? { testID } : {})}
       itemSpacing={12}
