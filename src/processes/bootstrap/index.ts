@@ -14,6 +14,7 @@ import { submitAuditOnlineFromSnapshot } from '@features/flow-runner/application
 import { syncAllCatalogs } from '@processes/catalog-sync'
 import { coldSyncAllFlows } from '@features/selector/application/usecases'
 import { registerOutboxSyncTrigger } from '@processes/sync/outboxTrigger'
+import { initNetworkWatcher } from '@shared/lib/network'
 
 let _bootPromise: Promise<void> | null = null
 let _cleanup: (() => void) | null = null
@@ -143,6 +144,7 @@ function extractPhotoArrayFromValues(values: Record<string, unknown>): unknown[]
 // -----------------------------------------------------------------------------
 
 export async function bootstrapApp(): Promise<void> {
+  initNetworkWatcher()
   if (_bootPromise) return _bootPromise
 
   _bootPromise = (async () => {

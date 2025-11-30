@@ -153,16 +153,13 @@ class OfflineFirstProjectRepo implements ProjectRepo {
   private async listFromCache(params?: ListProjectsParams): Promise<ProjectsPage> {
     const cached = await sqliteProjectRepo.listAll({
       // Mantengo el comportamiento que ya tenías: default ARCHIVED si no viene status
-      status: params?.status ?? 'ARCHIVED',
+      status: params?.status,
       search: params?.search ?? '',
     })
 
     return {
       items: cached,
-      // Para no romper firma de ProjectsPage:
-      // - limit: usamos el pedido o 1 como fallback "dummy"
-      // - nextCursor: string vacío = no hay siguiente página
-      limit: params?.limit ?? 1,
+      limit: cached.length,
       nextCursor: '',
     }
   }
