@@ -3,7 +3,7 @@ import type { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios'
 import { Env } from '@shared/config/env'
 import { clearSession, getValidToken } from '@shared/session/session'
 import { isOnlineOnce } from '@shared/lib/network'
-
+import { showAuthExpiredToast } from '@shared/ui/toast/AppToast'
 /**
  * http.ts
  *
@@ -44,6 +44,9 @@ function expoBackoffDelay(attempt: number, baseMs: number): number {
 // Marcadores internos para evitar loops
 const RETRIED = Symbol('retried')
 const RETRIED_401 = Symbol('retried401')
+
+// Flag para no spamear el toast de sesión expirada
+let authExpiredToastShown = false
 
 // ------------------- Refresh con cola (una sola renovación) -------------------
 let refreshPromise: Promise<string | null> | null = null
@@ -142,11 +145,22 @@ http.interceptors.response.use(
         return http.request(config)
       }
 
+      // No se pudo renovar el token → limpiamos sesión y avisamos al usuario
       try {
         await clearSession()
       } catch {
         // ignore
       }
+
+      if (!authExpiredToastShown) {
+        authExpiredToastShown = true
+        showAuthExpiredToast()
+        // Pequeña ventana para evitar spamear toasts si llegan varios 401 seguidos
+        setTimeout(() => {
+          authExpiredToastShown = false
+        }, 3000)
+      }
+
       return Promise.reject(error)
     }
 

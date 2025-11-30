@@ -58,7 +58,7 @@ export const sqliteProjectRepo = {
             p.code ?? null,
             p.name ?? null,
             p.description ?? null,
-            // Guardamos status en formato dominio: 'active' | 'archived'
+            // Guardamos status exactamente como en dominio: 'ACTIVE' | 'ARCHIVED'
             p.status ?? null,
             JSON.stringify(p.userIds ?? []),
             JSON.stringify(p.facilityIds ?? []),
@@ -116,12 +116,12 @@ export const sqliteProjectRepo = {
 
   /**
    * Devuelve todos los proyectos cacheados, con filtros básicos:
-   * - status: 'active' | 'archived'
+   * - status: 'ACTIVE' | 'ARCHIVED'
    * - search: substring en name (LIKE %search%)
    */
   async listAll(filter: ListFilter = {}): Promise<Project[]> {
     const where: string[] = []
-    const params = []
+    const params: unknown[] = []
 
     if (filter.status) {
       where.push('status = ?')
@@ -205,22 +205,19 @@ function mapRowToDomain(row: ProjectRow): Project {
     code: row.code ?? null,
     name: row.name ?? null,
     description: row.description ?? null,
-    status: normalizeStatus(row.status) ?? 'archived',
+    status: normalizeStatus(row.status) ?? 'ARCHIVED',
     userIds: parseIdArray(row.user_ids_json),
     facilityIds: parseIdArray(row.facility_ids_json),
-    createdAt: row.created_at ?? '',
-    updatedAt: row.updated_at ?? '',
-    createdBy: row.created_by ?? '',
+    createdAt: row.created_at ?? undefined,
+    updatedAt: row.updated_at ?? undefined,
+    createdBy: row.created_by ?? undefined,
   })
 }
 
 function normalizeStatus(value: string | null): ProjectStatus | undefined {
   if (!value) return undefined
-  const lower = value.toLowerCase()
-  if (lower === 'active' || lower === 'archived') return lower
-
-  // Por si alguna vez se guardó 'ACTIVE' / 'ARCHIVED'
-  if (value === 'ACTIVE' || value === 'ARCHIVED') return value.toLowerCase() as ProjectStatus
+  const upper = value.toUpperCase()
+  if (upper === 'ACTIVE' || upper === 'ARCHIVED') return upper as ProjectStatus
 
   return undefined
 }

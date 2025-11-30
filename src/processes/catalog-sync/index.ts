@@ -159,10 +159,8 @@ export async function syncAllCatalogs(): Promise<void> {
 
   catalogsSyncPromise = (async () => {
     try {
-      // En paralelo lo que no tiene dependencia entre sí
-      await Promise.allSettled([syncProjectsCatalog(), syncFlowsCatalog()])
-
-      // Facilities dependen de tener los proyectos en SQLite.
+      await syncProjectsCatalog()
+      await syncFlowsCatalog()
       await syncFacilitiesForAllProjects()
     } finally {
       lastCatalogSyncAt = Date.now()

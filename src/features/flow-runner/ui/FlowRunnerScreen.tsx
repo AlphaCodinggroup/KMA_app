@@ -244,7 +244,7 @@ const FlowRunnerScreen: React.FC = () => {
     try {
       setSubmitting(true)
 
-      await finalizeSubmission({
+      const ok = await finalizeSubmission({
         flowId: detail.flowId,
         title: detail.title,
         answers: answersRef.current,
@@ -254,13 +254,19 @@ const FlowRunnerScreen: React.FC = () => {
         version,
       })
 
-      router.replace({
-        pathname: '/(app)/selector',
-        params: { facilityId, projectId },
-      })
+      if (ok) {
+        router.replace({
+          pathname: '/(app)/selector',
+          params: { facilityId, projectId },
+        })
+      } else {
+        // finalizeSubmission ya registra logs y/o toasts;
+        // acá solo informamos que no se pudo completar.
+        Alert.alert('Error', 'We were unable to complete the submission.')
+      }
     } catch (err) {
       console.log('[FlowRunnerScreen.onFinish] finalizeSubmission error', err)
-      Alert.alert('Error', 'We were unable to complete the shipment.')
+      Alert.alert('Error', 'We were unable to complete the submission.')
     } finally {
       setSubmitting(false)
     }

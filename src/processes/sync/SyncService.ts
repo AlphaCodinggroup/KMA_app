@@ -72,10 +72,9 @@ export class SyncService {
     for (const item of items) {
       try {
         const result = await this.dispatch(item)
-        if (result === 'success') {
+
+        if (result === 'success' || result === 'drop') {
           await this.outbox.markSuccess(item.id)
-        } else if (result === 'drop') {
-          await this.outbox.markFailure(item.id, 'dropped')
         } else {
           // retry: backoff básico
           await this.delay(this.retryBaseDelayMs)
