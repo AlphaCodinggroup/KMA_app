@@ -197,7 +197,13 @@ export async function bootstrapApp(): Promise<void> {
     const appStateSub = AppState.addEventListener('change', handleAppStateChange)
 
     const unsubscribeNetInfo = NetInfo.addEventListener(state => {
-      if (state.isConnected) {
+      const isConnected = state.isConnected === true
+      const isInternetReachable =
+        state.isInternetReachable == null || state.isInternetReachable === true
+
+      const online = isConnected && isInternetReachable
+
+      if (online) {
         queueOutboxSync()
         queueCatalogSync()
         queueFlowsSync()

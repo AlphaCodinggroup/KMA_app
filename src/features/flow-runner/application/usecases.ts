@@ -151,9 +151,22 @@ export async function finalizeSubmission(params: {
     version: params.version ?? '',
   })
 
-  // Si sabemos que está online, disparamos sync inmediato.
-  //    Si está offline, dejamos que NetInfo/AppState/background lo disparen cuando corresponda.
-  if (params.online === true) {
+  let shouldTriggerSync = false
+
+  try {
+    if (params.online === true) {
+      shouldTriggerSync = true
+    } else {
+      const onlineNow = await isOnlineOnce()
+      shouldTriggerSync = onlineNow
+    }
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[finalizeSubmission] isOnlineOnce failed, skipping immediate sync', err)
+    }
+  }
+
+  if (shouldTriggerSync) {
     triggerOutboxSync()
   }
 
