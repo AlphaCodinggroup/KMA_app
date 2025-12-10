@@ -3,8 +3,8 @@ import type { ListProjectsParams, ProjectRepo } from '@entities/project/ports'
 import type { Facility } from '@entities/facility/model'
 import { createHttpProjectRepo } from './project.repo.http'
 import { sqliteProjectRepo } from '@core/repos/sqliteProjectRepo'
-import { isOnlineOnce } from '@shared/lib/network'
 import { sqliteFacilityRepo } from '@core/repos/sqliteFacilityRepo'
+import { isOnlineOnce } from '@shared/lib/network'
 
 /**
  * Repo offline-first para Projects:
@@ -26,11 +26,11 @@ class OfflineFirstProjectRepo implements ProjectRepo {
    * Listado de proyectos:
    * - Si hay conexión:
    *     - llama a la API
-   *     - guarda/actualiza en SQLite
+   *     - guarda/actualiza en SQLite (projects + facilities best-effort)
    *     - devuelve la página remota (respeta nextCursor, limit, etc.)
    * - Si NO hay conexión, o la API falla:
-   *     - devuelve todos los proyectos cacheados que matcheen status/search
-   *       (sin paginación real: nextCursor = '', limit ≈ dummy para no romper contrato)
+   *     - devuelve proyectos cacheados que matcheen status/search
+   *       (sin paginación real: nextCursor = '', limit “dummy” para no romper contrato)
    */
   async list(params?: ListProjectsParams): Promise<ProjectsPage> {
     const isOnline = await isOnlineOnce()
@@ -41,7 +41,10 @@ class OfflineFirstProjectRepo implements ProjectRepo {
 
         // Best-effort: cachear en SQLite, pero sin romper si falla
         try {
+          // Cache de projects
           await sqliteProjectRepo.upsertMany(page.items)
+
+          // Cache de facilities derivadas de cada project
           const facilitiesToUpsert: Facility[] = []
 
           for (const project of page.items) {
@@ -52,7 +55,7 @@ class OfflineFirstProjectRepo implements ProjectRepo {
                 id: f.id,
                 projectId: project.id,
                 name: f.name,
-                // El resto de campos son opcionales en Facility y quedan como undefined
+                // El resto de campos de Facility quedan como undefined
               })
             }
           }
@@ -82,12 +85,13 @@ class OfflineFirstProjectRepo implements ProjectRepo {
   }
 
   /**
-   * Detalle de un proyecto:
+   * Detalle de proyecto:
    * - Online:
-   *    - intenta traer desde API y cachea el resultado
-   *    - si la API falla: intenta devolver lo que haya en cache
+   *    - intenta remoto
+   *    - cachea en SQLite (project + facilities mínimas)
+   *    - si falla, intenta cache local
    * - Offline:
-   *    - devuelve desde cache si existe
+   *    - lee sólo desde cache
    *    - si no existe, lanza error
    */
   async getById(id: ProjectId): Promise<Project> {
@@ -99,7 +103,10 @@ class OfflineFirstProjectRepo implements ProjectRepo {
 
         // Cache best-effort
         try {
+          // Cache de project
           await sqliteProjectRepo.upsertMany([project])
+
+          // Cache de facilities asociadas (SOLUCIÓN)
           if (project.facilities && project.facilities.length > 0) {
             const facilities: Facility[] = project.facilities.map(f => ({
               id: f.id,
@@ -135,23 +142,24 @@ class OfflineFirstProjectRepo implements ProjectRepo {
     throw new Error('Project not available offline')
   }
 
+  // --------------------
   // Helpers internos
+  // --------------------
+
   /**
-   * Lee todos los proyectos cacheados aplicando filtros básicos
+   * Lee proyectos cacheados aplicando filtros básicos
    * y los empaqueta en un ProjectsPage "fake" (sin paginación remota real).
    */
   private async listFromCache(params?: ListProjectsParams): Promise<ProjectsPage> {
     const cached = await sqliteProjectRepo.listAll({
-      status: params?.status ?? 'ARCHIVED',
+      // Mantengo el comportamiento que ya tenías: default ARCHIVED si no viene status
+      status: params?.status,
       search: params?.search ?? '',
     })
 
     return {
       items: cached,
-      // Para no romper firma de ProjectsPage:
-      // - limit: usamos el pedido o 1 como fallback "dummy"
-      // - nextCursor: string vacío = no hay siguiente página
-      limit: params?.limit ?? 1,
+      limit: cached.length,
       nextCursor: '',
     }
   }

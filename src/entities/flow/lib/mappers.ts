@@ -28,6 +28,32 @@ import type {
  */
 
 // --------------------
+// Helpers
+// --------------------
+/**
+ * Normaliza la versión a un número “sano” (>0).
+ * Admite formatos tipo "1", "1.0", "v1", etc.
+ */
+function normalizeVersion(value: FlowItemDTO['version'] | null | undefined): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return 1
+
+    // Soporta "v1", "V2", "1.0", etc.
+    const numeric = Number(trimmed.replace(/^v/i, ''))
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric
+    }
+  }
+
+  return 1
+}
+
+// --------------------
 // Helpers de fields/opciones
 // --------------------
 function mapField(dto: StepFieldDTO): Field {
@@ -117,12 +143,12 @@ export function mapFlowItemDto(dto: FlowItemDTO): Flow {
     flowId: dto.id,
     title: dto.title,
     description: dto.description,
-    steps: dto.steps.map(mapStep),
     flowType: dto.flow_type,
-    version: dto.version,
-    isActive: dto.is_active,
-    createdAt: dto.created_at,
-    updatedAt: dto.updated_at,
+    version: normalizeVersion(dto.version),
+    isActive: dto.is_active ?? true,
+    createdAt: dto.created_at ?? '',
+    updatedAt: dto.updated_at ?? '',
+    steps: dto.steps.map(mapStep),
   }
 }
 

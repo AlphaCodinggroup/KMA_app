@@ -1,5 +1,13 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react'
-import { Image, ImageSourcePropType, LayoutChangeEvent, View, Dimensions } from 'react-native'
+import {
+  Image,
+  type ImageSourcePropType,
+  type LayoutChangeEvent,
+  View,
+  Dimensions,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
   useSharedValue,
@@ -15,7 +23,7 @@ type Props = {
   maxScale?: number
   doubleTapScale?: number
   onZoomChange?: (isZoomed: boolean) => void
-  style?: any
+  style?: StyleProp<ViewStyle>
 }
 
 const AnimatedImage = Animated.createAnimatedComponent(Image)
@@ -37,11 +45,15 @@ const ZoomableImage: React.FC<Props> = ({
   // Intentamos obtener tamaño "natural" (assets locales)
   const asset = useMemo(() => getAssetSize(source), [source])
 
-  // Para imágenes remotas, intentamos resolver w/h asincrónicamente (mejor AR)
+  // Para imágenes remotas / file://, resolvemos w/h asincrónicamente
   const [remoteSize, setRemoteSize] = useState<{ w: number; h: number } | null>(null)
+
   useEffect(() => {
     const uri: string | undefined = (source as any)?.uri
-    if (!uri) return setRemoteSize(null)
+    if (!uri) {
+      setRemoteSize(null)
+      return
+    }
 
     let mounted = true
     Image.getSize(
@@ -60,7 +72,8 @@ const ZoomableImage: React.FC<Props> = ({
 
   // Aspect ratio preferido: style.aspectRatio > tamaño remoto > asset > fallback 16/9
   const aspectRatio = useMemo(() => {
-    if (style?.aspectRatio) return Number(style.aspectRatio)
+    const aspectFromStyle = (style as any)?.aspectRatio
+    if (aspectFromStyle) return Number(aspectFromStyle)
     if (remoteSize) return remoteSize.w / remoteSize.h
     if (asset) return asset.w / asset.h
     return 16 / 9
@@ -84,13 +97,27 @@ const ZoomableImage: React.FC<Props> = ({
 
   const notifyZoom = useCallback(
     (val: boolean) => {
-      onZoomChange && onZoomChange(val)
+      if (onZoomChange) onZoomChange(val)
     },
     [onZoomChange],
   )
 
+  // Si cambia la imagen, reseteamos estado de zoom/posición
+  useEffect(() => {
+    scale.value = 1
+    savedScale.value = 1
+    translateX.value = 0
+    translateY.value = 0
+    startX.value = 0
+    startY.value = 0
+    runOnJS(notifyZoom)(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source])
+
   const onLayout = (e: LayoutChangeEvent) => {
     const { width: containerW } = e.nativeEvent.layout
+    if (!containerW || containerW <= 0) return
+
     // Ajuste: la imagen debe ocupar como mucho el 25% de la pantalla
     const screenH = Dimensions.get('window').height
     const maxDisplayH = screenH * 0.25
@@ -141,7 +168,18 @@ const ZoomableImage: React.FC<Props> = ({
             runOnJS(notifyZoom)(true)
           }
         }),
-    [maxScale],
+    [
+      maxScale,
+      notifyZoom,
+      boxWsv,
+      boxHsv,
+      contentWsv,
+      contentHsv,
+      scale,
+      savedScale,
+      translateX,
+      translateY,
+    ],
   )
 
   // PAN
@@ -179,7 +217,7 @@ const ZoomableImage: React.FC<Props> = ({
             translateY.value = withTiming(clamp(translateY.value, -maxY, maxY))
           }
         }),
-    [],
+    [boxWsv, boxHsv, contentWsv, contentHsv, scale, startX, startY, translateX, translateY],
   )
 
   // DOUBLE TAP (zoom centrado en el toque)
@@ -219,10 +257,23 @@ const ZoomableImage: React.FC<Props> = ({
             runOnJS(notifyZoom)(true)
           }
         }),
-    [doubleTapScale],
+    [
+      doubleTapScale,
+      notifyZoom,
+      boxWsv,
+      boxHsv,
+      contentWsv,
+      contentHsv,
+      scale,
+      translateX,
+      translateY,
+    ],
   )
 
-  const composed = Gesture.Simultaneous(pinch, pan, doubleTap)
+  const composed = useMemo(
+    () => Gesture.Simultaneous(pinch, pan, doubleTap),
+    [pinch, pan, doubleTap],
+  )
 
   const animatedStyle = useAnimatedStyle(() => {
     return {

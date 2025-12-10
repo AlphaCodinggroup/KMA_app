@@ -1,5 +1,6 @@
 import { query, run } from '@shared/storage/db'
 import type { OutboxItem, OutboxRepo } from '@processes/sync/SyncService'
+import { isOnlineOnce } from '@shared/lib/network'
 
 /**
  * Row real en SQLite para la tabla `outbox`.
@@ -97,8 +98,21 @@ export const sqliteOutboxRepo: OutboxRepo & {
 
   /**
    * Devuelve el siguiente lote de items a procesar, ordenados por created_at ASC.
+   *
+   * Ajuste clave:
+   * - Si NO hay conexión real, devolvemos [] → el SyncService no procesa nada
+   *   y, por lo tanto, no intenta llamar a /uploads ni /audits.
    */
   async nextBatch(limit: number): Promise<OutboxItem[]> {
+    const online = await isOnlineOnce()
+
+    if (!online) {
+      if (__DEV__) {
+        console.log('[Outbox] nextBatch: offline, returning empty batch')
+      }
+      return []
+    }
+
     const rows = await query<OutboxRow>(
       `
         SELECT

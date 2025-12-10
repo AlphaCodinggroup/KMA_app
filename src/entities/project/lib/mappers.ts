@@ -4,7 +4,12 @@ import type {
   ProjectDetailResponseDTO,
   ProjectStatusDTO,
 } from '@entities/project/api/project.dto'
-import type { Project, ProjectsPage, ProjectStatus } from '@entities/project/model'
+import {
+  createProject,
+  type Project,
+  type ProjectsPage,
+  type ProjectStatus,
+} from '@entities/project/model'
 
 /** Map de estado API → dominio */
 function mapStatus(dto: ProjectStatusDTO): ProjectStatus {
@@ -16,7 +21,7 @@ function mapStatus(dto: ProjectStatusDTO): ProjectStatus {
 
 /** DTO (snake_case) → Dominio (camelCase) */
 export function mapProjectItemDto(dto: ProjectItemDTO): Project {
-  return {
+  return createProject({
     id: dto.project_id,
     name: dto.name ?? '',
     description: dto.description ?? null,
@@ -26,22 +31,25 @@ export function mapProjectItemDto(dto: ProjectItemDTO): Project {
       name: u.name,
     })),
     facilities: (dto.facilities ?? []).map(f => ({
-      id: f.facility_id,
+      // Si el DTO cambiara a `id`, esto lo hace más tolerante
+      id: (f as any).facility_id ?? (f as any).id,
       name: f.name,
     })),
-    createdAt: dto.created_at ?? '',
-    updatedAt: dto.updated_at ?? '',
-    createdBy: dto.created_by ?? '',
-  }
+    createdAt: dto.created_at ?? undefined,
+    updatedAt: dto.updated_at ?? undefined,
+    createdBy: dto.created_by ?? undefined,
+  })
 }
 
 /** Respuesta de listado → Página de dominio (items + cursor/limit) */
 export function mapProjectsListResponseDto(dto: ProjectsListResponseDTO): ProjectsPage {
   const items = dto.data.projects.map(mapProjectItemDto)
+
   return {
     items,
     limit: dto.data.limit ?? items.length,
-    nextCursor: dto.data.cursor || '',
+    // Si el backend no manda cursor, lo dejamos como undefined
+    nextCursor: dto.data.cursor ?? undefined,
   }
 }
 

@@ -1,17 +1,9 @@
 import React, { memo, useCallback, useMemo } from 'react'
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Keyboard,
-  KeyboardAvoidingView,
-} from 'react-native'
+import { View, Text, TextInput, TouchableOpacity, Keyboard } from 'react-native'
 import { Controller, useForm } from 'react-hook-form'
 import type { FormField, FormStep } from '@shared/validation/steps.schema'
 import { styles } from './styles/dynamicForm.styles'
 import PhotoField from './fields/PhotoField'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 type Field = FormField
 
@@ -26,7 +18,6 @@ type Props = {
  * - Compatibilidad: si `photo` viniera como string desde datos antiguos, se normaliza a string[] solo en UI.
  */
 function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
-  const insets = useSafeAreaInsets()
   const defaultValues = React.useMemo(() => {
     const acc: Record<string, unknown> = {}
     for (const f of step.fields) {
@@ -141,7 +132,9 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
           const next = list.slice(0, index).concat(list.slice(index + 1))
           rhf.onChange(next)
         }
+
         const shouldShowError = !!submitError && list.length === 0
+
         return (
           <View style={styles.inputBlock}>
             <PhotoField
@@ -197,24 +190,20 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
     [handleSubmit, onSubmit],
   )
 
-  const keyboardVerticalOffset = insets.top + 8
-
   return (
-    <KeyboardAvoidingView behavior={'padding'} keyboardVerticalOffset={keyboardVerticalOffset}>
-      <View style={styles.container}>
-        <View style={styles.formFields}>{step.fields.map(renderField)}</View>
+    <View style={styles.container}>
+      <View style={styles.formFields}>{step.fields.map(renderField)}</View>
 
-        <TouchableOpacity
-          onPress={handleNextPress}
-          style={[styles.button, styles.primaryBtn, isSubmitDisabled && styles.btnDisabled]}
-          disabled={isSubmitDisabled}
-          accessibilityRole="button"
-          accessibilityLabel="Next"
-        >
-          <Text style={[styles.btnText, styles.primaryBtnText]}>NEXT</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+      <TouchableOpacity
+        onPress={handleNextPress}
+        style={[styles.button, styles.primaryBtn, isSubmitDisabled && styles.btnDisabled]}
+        disabled={isSubmitDisabled}
+        accessibilityRole="button"
+        accessibilityLabel="Next"
+      >
+        <Text style={[styles.btnText, styles.primaryBtnText]}>NEXT</Text>
+      </TouchableOpacity>
+    </View>
   )
 }
 

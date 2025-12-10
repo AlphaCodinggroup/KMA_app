@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { View, Text } from 'react-native'
+import { View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useNetInfo } from '@react-native-community/netinfo'
 
@@ -12,6 +12,7 @@ import type { Facility } from '@entities/facility/model'
 import type { ProjectFacilitySummary } from '@entities/project/model'
 import LetterFilter from '@shared/ui/filters/LetterFilter'
 import { filterItemsByLetter, getAvailableLetters, type LetterKey } from '@shared/lib/alphaFilter'
+import { EntityErrorState } from '@shared/ui/states/EntityErrorState'
 
 const FacilityScreen: React.FC = () => {
   const router = useRouter()
@@ -26,7 +27,7 @@ const FacilityScreen: React.FC = () => {
 
   const [selectedLetter, setSelectedLetter] = useState<LetterKey>('ALL')
 
-  // Parseamos las facilities embebidas que vienen desde ProjectsScreen
+  // Facilities embebidas que vienen desde ProjectsScreen (params)
   const projectFacilities = useMemo<ProjectFacilitySummary[]>(() => {
     if (!facilities) return []
     try {
@@ -41,6 +42,17 @@ const FacilityScreen: React.FC = () => {
     }
   }, [facilities])
 
+  // Las mapeamos explícitamente al modelo Facility, con projectId incluido
+  const facilitiesFromProject: Facility[] = useMemo(
+    () =>
+      projectFacilities.map(f => ({
+        id: f.id,
+        name: f.name,
+        projectId,
+      })),
+    [projectFacilities, projectId],
+  )
+
   const isOffline = netInfo.isConnected === false
 
   /**
@@ -53,10 +65,10 @@ const FacilityScreen: React.FC = () => {
   const baseItems: Facility[] = useMemo(() => {
     if (items.length > 0) return items
 
-    if (isOffline && projectFacilities.length > 0) return projectFacilities
+    if (isOffline && facilitiesFromProject.length > 0) return facilitiesFromProject
 
     return items
-  }, [items, isOffline, projectFacilities])
+  }, [items, isOffline, facilitiesFromProject])
 
   const handlePressItem = useCallback(
     (item: Facility) => {
@@ -74,7 +86,7 @@ const FacilityScreen: React.FC = () => {
     [baseItems],
   )
 
-  // Lista filtrada
+  // Lista filtrada por letra
   const filteredItems = useMemo<Facility[]>(
     () => filterItemsByLetter(baseItems, selectedLetter, it => it.name),
     [baseItems, selectedLetter],
@@ -86,12 +98,10 @@ const FacilityScreen: React.FC = () => {
   // Error y sin ningún dato (ni repo ni fallback)
   if (!loading && error && baseItems.length === 0) {
     return (
-      <View style={styles.container}>
-        <SubHeadline text="Select a facility to audit" stylesText={styles.text} />
-        <Text style={styles.errorText}>
-          There was a problem loading facilities. Please check your connection and try again.
-        </Text>
-      </View>
+      <EntityErrorState
+        title="Select a facility to audit"
+        message="There was a problem loading facilities. Please check your connection and try again."
+      />
     )
   }
 

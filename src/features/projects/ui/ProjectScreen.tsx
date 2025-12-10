@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react'
-import { View, Text } from 'react-native'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { View } from 'react-native'
 import { useRouter } from 'expo-router'
 import ProjectsList from '@features/projects/ui/ProjectList'
 import { useProjects } from '@features/projects'
@@ -9,11 +9,28 @@ import Loader from '@shared/ui/loader/Loader'
 import type { Project } from '@entities/project/model'
 import { filterItemsByLetter, getAvailableLetters, type LetterKey } from '@shared/lib/alphaFilter'
 import LetterFilter from '@shared/ui/filters/LetterFilter'
+import { EntityErrorState } from '@shared/ui/states/EntityErrorState'
+import { loadAllFlowsWithSteps } from '@features/selector/application/usecases'
 
 const ProjectsScreen: React.FC = () => {
   const router = useRouter()
   const { items, loading, refresh, refreshing, error } = useProjects()
   const [selectedLetter, setSelectedLetter] = useState<LetterKey>('ALL')
+
+  useEffect(() => {
+    const warmupFlows = async () => {
+      try {
+        await loadAllFlowsWithSteps()
+      } catch (err) {
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.warn('[ProjectsScreen] Warmup flows failed', err)
+        }
+      }
+    }
+
+    void warmupFlows()
+  }, [])
 
   const handleNavigate = useCallback(
     (item: Project) => {
@@ -46,19 +63,16 @@ const ProjectsScreen: React.FC = () => {
   // Error sin ningún dato disponible (ni remoto ni cache)
   if (!loading && error && items.length === 0) {
     return (
-      <View style={styles.container}>
-        <View style={styles.headerBlock}>
-          <SubHeadline text="Select a project" />
-        </View>
-        <Text style={styles.errorText}>
-          There was a problem loading projects. Please check your connection and try again.
-        </Text>
-      </View>
+      <EntityErrorState
+        title="Select a project"
+        message="There was a problem loading projects. Please check your connection and try again."
+      />
     )
   }
 
   // Sin proyectos para mostrar (caso vacío real)
-  if (!loading && items.length === 0) return <Loader text="No projects to display." />
+  if (!loading && items.length === 0)
+    return <Loader text="No projects to display." refresh={refresh} />
 
   return (
     <View style={styles.container}>

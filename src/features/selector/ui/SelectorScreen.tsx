@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { View, Alert } from 'react-native'
+import { useCallback, useMemo, useState } from 'react'
+import { View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { Flow, FlowSummary } from '@entities/flow/model'
-import { loadAllFlowsWithSteps } from '@features/selector/application/usecases'
 import { styles } from './styles/selector.styles'
 import FlowList, { type FlowListItem } from './FlowList'
 import SubHeadline from '@shared/ui/subheadline/subHeadline'
 import Loader from '@shared/ui/loader/Loader'
 import { filterItemsByLetter, getAvailableLetters, type LetterKey } from '@shared/lib/alphaFilter'
 import LetterFilter from '@shared/ui/filters/LetterFilter'
+import { useFlows } from '../application/useFlows'
+import { EntityErrorState } from '@shared/ui/states/EntityErrorState'
 
 const SelectorScreen: React.FC = () => {
   const router = useRouter()
@@ -16,55 +17,31 @@ const SelectorScreen: React.FC = () => {
     projectId: string
     facilityId: string
   }>()
+  const { items: flows, loading, error, refresh, refreshing } = useFlows()
 
-  const [flows, setFlows] = useState<Flow[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
-  const [error, setError] = useState<Error | null>(null)
   const [selectedLetter, setSelectedLetter] = useState<LetterKey>('ALL')
-
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-
-    try {
-      // Offline-first:
-      // - Online: FlowRepo va a la API y cachea en SQLite.
-      // - Offline / error: intenta reconstruir desde SQLite.
-      const full = await loadAllFlowsWithSteps()
-      setFlows(full)
-    } catch (e) {
-      const err = e instanceof Error ? e : new Error('Failed to load flows')
-      setError(err)
-
-      if (__DEV__) {
-        console.warn('[SelectorScreen] Error loading flows', err)
-      }
-
-      Alert.alert(
-        'Error',
-        'There was a problem loading the flows. If you are offline, please try again after reconnecting.',
-      )
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
 
   // Derivar resumen SOLO para la UI (no perdemos datos del flow completo)
   const summaries: FlowSummary[] = useMemo(
     () =>
-      flows.map(f => ({
-        id: f.flowId,
-        title: f.title,
-        version: String(f.version),
-        description: f.description,
-        stepsCount: f.steps.length,
-        flowType: f.flowType,
-        isActive: f.isActive,
-      })),
+      flows.map(f => {
+        const description = f.description ?? ''
+        const rawFlowType = f.flowType ?? ''
+        const normalizedFlowType =
+          typeof rawFlowType === 'string' && rawFlowType.trim().length > 0 ? rawFlowType : f.title
+
+        return {
+          id: f.flowId,
+          title: f.title,
+          version: String(f.version),
+          description,
+          stepsCount: f.steps.length,
+          flowType: normalizedFlowType,
+          isActive: f.isActive ?? true,
+          createdAt: f.createdAt ?? '',
+          updatedAt: f.updatedAt ?? '',
+        }
+      }),
     [flows],
   )
 
@@ -83,7 +60,7 @@ const SelectorScreen: React.FC = () => {
         pathname: '/(app)/flow/[flowId]',
         params: {
           flowId: flow.flowId,
-          title: flow.flowType,
+          title: flow.title,
           version: String(flow.version),
           steps: stepsParam,
           projectId: projectId || '',
@@ -96,17 +73,30 @@ const SelectorScreen: React.FC = () => {
 
   // Letras únicas disponibles (derivadas del backend / cache)
   const availableLetters = useMemo<string[]>(
-    () => getAvailableLetters(summaries, it => it.flowType),
+    () => getAvailableLetters(summaries, it => it.title),
     [summaries],
   )
 
   // Lista filtrada por letra
   const filteredItems = useMemo<FlowSummary[]>(
-    () => filterItemsByLetter(summaries, selectedLetter, it => it.flowType),
+    () => filterItemsByLetter(summaries, selectedLetter, it => it.title),
     [summaries, selectedLetter],
   )
 
   if (loading) return <Loader loading={loading} />
+
+  // Error sin ningún dato disponible (ni remoto ni cache)
+  if (!loading && error && flows.length === 0) {
+    return (
+      <EntityErrorState
+        title="Select a flow"
+        message="There was a problem loading flows. Please check your connection and try again."
+      />
+    )
+  }
+
+  // Sin flows para mostrar (caso vacío real)
+  if (!loading && flows.length === 0) return <Loader text="No flows to display." />
 
   return (
     <View style={styles.container}>
@@ -116,7 +106,12 @@ const SelectorScreen: React.FC = () => {
         selected={selectedLetter}
         onSelect={setSelectedLetter}
       />
-      <FlowList items={filteredItems} onPressItem={onPressItem} />
+      <FlowList
+        items={filteredItems}
+        onPressItem={onPressItem}
+        refreshing={refreshing}
+        onRefresh={refresh}
+      />
     </View>
   )
 }

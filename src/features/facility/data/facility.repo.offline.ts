@@ -126,7 +126,7 @@ class OfflineFirstFacilityRepo implements FacilityRepo {
     params?: ListFacilitiesParams,
   ): Promise<FacilitiesPage> {
     const cached = await sqliteFacilityRepo.listByProjectCached(projectId, {
-      status: params?.status ?? 'ARCHIVED',
+      status: params?.status,
       search: params?.search ?? '',
     })
 

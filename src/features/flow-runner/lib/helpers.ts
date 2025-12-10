@@ -1,6 +1,9 @@
-import type { Step } from '@entities/flow/model'
-import type { FlowRunnerRouteParams, SelectStep } from '../ui/FlowRunnerScreen'
-import type { QuestionStep } from '@shared/validation/steps.schema'
+import {
+  StepSchema,
+  type Step,
+  type QuestionStep,
+  type SelectStep,
+} from '@shared/validation/steps.schema'
 
 /**
  * Identificador reservado para el paso de fin de flujo.
@@ -19,6 +22,7 @@ export function mapById(steps: Step[]): Record<string, Step> {
 
 /**
  * Verifica que el payload crudo tenga la forma mínima de Step[].
+ * (fallback de bajo nivel por si Zod falla pero la estructura es "usable").
  */
 export function isValidStepsPayload(v: unknown): v is Step[] {
   return (
@@ -35,9 +39,14 @@ export function isValidStepsPayload(v: unknown): v is Step[] {
 
 /**
  * Parsear el parámetro `steps` proveniente de la navegación y validarlo.
- * Lanza un error si el JSON es inválido o no coincide con la forma esperada.
+ *
+ * - `rawSteps` viene de los params de Expo Router (string | string[] | undefined).
+ * - Primero intentamos parsear + validar con Zod (StepSchema[]).
+ * - Si Zod falla pero la estructura mínima está bien, caemos al validador liviano
+ *   para no romper flujos antiguos.
+ * - Si nada sirve, se lanza error.
  */
-export function parseStepsParam(rawSteps: FlowRunnerRouteParams['steps']): Step[] {
+export function parseStepsParam(rawSteps: string | string[] | undefined): Step[] {
   const stepsStr = Array.isArray(rawSteps) ? rawSteps[0] : rawSteps
 
   if (!stepsStr) {
@@ -51,11 +60,17 @@ export function parseStepsParam(rawSteps: FlowRunnerRouteParams['steps']): Step[
     throw new Error(`Invalid steps JSON in navigation params, ${String(e)}`)
   }
 
-  if (!isValidStepsPayload(parsed)) {
-    throw new Error('Steps payload does not match expected shape')
+  // Intentamos validación "full" con Zod
+  const zodResult = StepSchema.array().safeParse(parsed)
+  if (zodResult.success) {
+    return zodResult.data
   }
 
-  return parsed as Step[]
+  // Fallback: estructura mínima compatible con el runner
+  if (isValidStepsPayload(parsed)) return parsed as Step[]
+
+  //  Nada sirve → error explícito
+  throw new Error('Steps payload does not match expected shape')
 }
 
 /**
@@ -77,6 +92,9 @@ export function resolveInitialStepId(steps: Step[]): string | null {
 
 /**
  * Adapta un SelectStep a un QuestionStep "virtual" para reutilizar QuestionCard.
+ *
+ * usamos SelectStep del schema compartido, no del UI,
+ * para evitar dependencias circulares entre lib/ y ui/.
  */
 export const toVirtualQuestion = (s: SelectStep): QuestionStep => ({
   id: s.id,
