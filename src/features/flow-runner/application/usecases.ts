@@ -300,6 +300,9 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
         text: step.text,
         yesNext: step.yesNext,
         noNext: step.noNext,
+        barrierId: step.barrierId,
+        image: step.image,
+        checkPreviousNos: step.checkPreviousNos,
       }
     }
     case 'Form': {
@@ -308,11 +311,13 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
         type: 'Form',
         title: step.title,
         next: step.next,
+        barrierId: step.barrierId,
         fields: step.fields.map(f => ({
           id: f.id,
           type: f.type,
           label: f.label,
         })),
+        image: step.image,
       }
     }
     case 'Select': {
@@ -321,7 +326,16 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
         type: 'Select',
         title: step.title,
         text: step.text,
-        options: step.options.map(o => ({ label: o.label, next: o.next })),
+        image: step.image,
+        options: step.options.map(o => ({
+          label: o.label,
+          next: o.next,
+          yesNext: o.yesNext,
+          noNext: o.noNext,
+          condition: o.condition
+            ? { stepId: o.condition.stepId, answer: o.condition.answer }
+            : undefined,
+        })),
       }
     }
     case 'End': {

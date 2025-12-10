@@ -14,9 +14,18 @@ export const StepFieldDtoSchema = z.object({
 })
 export type StepFieldDTO = z.infer<typeof StepFieldDtoSchema>
 
+export const OptionConditionDtoSchema = z.object({
+  step_id: z.string(),
+  answer: z.string(),
+})
+export type OptionConditionDTO = z.infer<typeof OptionConditionDtoSchema>
+
 export const SelectOptionDtoSchema = z.object({
   label: z.string(),
-  next: z.string(),
+  next: z.string().optional(),
+  yes_next: z.string().optional(),
+  no_next: z.string().optional(),
+  condition: OptionConditionDtoSchema.optional(),
 })
 export type SelectOptionDTO = z.infer<typeof SelectOptionDtoSchema>
 
@@ -29,6 +38,7 @@ export const QuestionStepDtoSchema = z.object({
   no_next: z.string().optional(),
   barrier_id: z.string().optional(),
   image: z.string().optional(),
+  check_previous_nos: z.array(z.string()).optional(),
 })
 export type QuestionStepDTO = z.infer<typeof QuestionStepDtoSchema>
 

@@ -4,7 +4,13 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import NetInfo from '@react-native-community/netinfo'
 
-import type { FlowDetail, Step, QuestionStep, FormStep } from '@shared/validation/steps.schema'
+import type {
+  FlowDetail,
+  Step,
+  QuestionStep,
+  FormStep,
+  SelectOption,
+} from '@shared/validation/steps.schema'
 import type { SubmissionAnswer } from '@entities/submission/model'
 import { QuestionCard } from '@features/question'
 import { DynamicForm } from '@features/dynamic-form'
@@ -149,6 +155,58 @@ const FlowRunnerScreen: React.FC = () => {
     [scrollToEnd],
   )
 
+  const getNormalizedQuestionAnswer = useCallback((stepId: string): string | null => {
+    const stored = answersRef.current[stepId]
+    if (!stored || stored.type !== 'Question') return null
+
+    const value = stored.answer
+    if (value === null) return null
+
+    return String(value).toUpperCase()
+  }, [])
+
+  const resolveQuestionNext = useCallback(
+    (step: QuestionStep, answeredYes: boolean): string | null => {
+      const defaultNext = answeredYes
+        ? step.yesNext ?? step.noNext ?? null
+        : step.noNext ?? step.yesNext ?? null
+
+      if (!Array.isArray(step.checkPreviousNos) || step.checkPreviousNos.length === 0) {
+        return defaultNext
+      }
+
+      const answers = step.checkPreviousNos.map(id => getNormalizedQuestionAnswer(id))
+
+      const hasNo = answers.some(ans => ans === 'NO')
+      const allYes = step.checkPreviousNos.length > 0 && answers.every(ans => ans === 'YES')
+
+      if (hasNo) return step.noNext ?? step.yesNext ?? defaultNext
+      if (allYes) return step.yesNext ?? step.noNext ?? defaultNext
+
+      // Si falta info, preferimos el camino defensivo (noNext) para no saltar validaciones.
+      return step.noNext ?? step.yesNext ?? defaultNext
+    },
+    [getNormalizedQuestionAnswer],
+  )
+
+  const resolveOptionNext = useCallback(
+    (option: SelectOption): string | null => {
+      if (option.condition) {
+        const expected = String(option.condition.answer ?? '').toUpperCase()
+        const actual = getNormalizedQuestionAnswer(option.condition.stepId) ?? ''
+        const matches = actual === expected
+
+        if (matches) {
+          return option.yesNext ?? option.next ?? option.noNext ?? null
+        }
+        return option.noNext ?? option.next ?? option.yesNext ?? null
+      }
+
+      return option.next ?? option.yesNext ?? option.noNext ?? null
+    },
+    [getNormalizedQuestionAnswer],
+  )
+
   /**
    * Persistimos el estado completo de la auditoría:
    * - flowId / title
@@ -207,10 +265,10 @@ const FlowRunnerScreen: React.FC = () => {
         ...(extra?.option ? { option: extra.option } : {}),
       }
 
-      const rawNext = yes ? step.yesNext : step.noNext
+      const rawNext = resolveQuestionNext(step, yes)
       await advanceFrom(step.id, rawNext ?? null)
     },
-    [advanceFrom],
+    [advanceFrom, resolveQuestionNext],
   )
 
   const onSubmitForm = useCallback(
@@ -226,16 +284,17 @@ const FlowRunnerScreen: React.FC = () => {
   )
 
   const onSelectOption = useCallback(
-    async (stepId: string, payload: { label: string; next: string }) => {
+    async (stepId: string, option: SelectOption) => {
       answersRef.current[stepId] = {
         type: 'Question',
         answer: null,
-        option: payload.label,
+        option: option.label,
       }
 
-      await advanceFrom(stepId, payload.next ?? null)
+      const rawNext = resolveOptionNext(option)
+      await advanceFrom(stepId, rawNext ?? null)
     },
-    [advanceFrom],
+    [advanceFrom, resolveOptionNext],
   )
 
   const onFinish = useCallback(async () => {
