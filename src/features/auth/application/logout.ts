@@ -1,23 +1,17 @@
 import { clearSession, getSnapshot } from '@shared/session/session'
-// import { http } from '@core/http/http'
-// import { Env } from '@shared/config/env'
+import { globalSignOutUseCase } from './usecases'
 
 /**
  * Cierra la sesión del usuario en el dispositivo.
  * Best-effort:
+ *  - Revoca sesión en Cognito (GlobalSignOut) usando AccessToken.
  *  - Limpia tokens locales (SecureStore + caché)
- *  - Revoca sesión en Cognito (GlobalSignOut) si guardamos accessToken
  */
 export async function logoutUseCase(): Promise<void> {
-  // TODO:
-  // Si decidimos persistir accessToken, podemos hacer GlobalSignOut:
-  // const { idToken, refreshToken } = getSnapshot()
-  // const accessToken = ... // si lo persistimos en SessionRecord
-  // try {
-  //   await http.post('/global-sign-out', { accessToken }) // o llamada directa a Cognito
-  // } catch {
-  //   // best-effort: ignoramos error remoto, seguimos con clear local
-  // }
+  const snap = getSnapshot()
+  if (snap.accessToken) {
+    await globalSignOutUseCase(snap.accessToken)
+  }
 
   await clearSession()
 }

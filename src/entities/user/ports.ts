@@ -16,6 +16,8 @@ export interface UserSessionRepo {
  */
 export interface AuthService {
   login(params: { username: string; password: string }): Promise<SessionRecord>
-  refresh(params: { refreshToken: string }): Promise<Pick<SessionRecord, 'idToken' | 'expiresAt'>>
+  refresh(params: {
+    refreshToken: string
+  }): Promise<Pick<SessionRecord, 'idToken' | 'accessToken' | 'expiresAt'>>
   logout?(params: { accessToken?: string }): Promise<void>
 }
