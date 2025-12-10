@@ -4,6 +4,7 @@
 node_modules/
 package-lock.json
 Podfile.lock
+pnpm-lock.yaml
 
 # Expo
 .expo/
