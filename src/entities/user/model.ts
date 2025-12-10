@@ -1,11 +1,13 @@
 /**
  * Snapshot de sesión persistible a nivel dominio.
  * - idToken: se usa como Bearer en el backend
+ * - accessToken: se usa para GlobalSignOut en Cognito
  * - refreshToken: para REFRESH_TOKEN_AUTH en Cognito
  * - expiresAt: epoch ms
  */
 export type SessionRecord = {
   idToken: string
+  accessToken: string
   refreshToken: string
   expiresAt: number
 }

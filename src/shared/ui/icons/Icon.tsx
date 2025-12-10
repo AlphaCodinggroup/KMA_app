@@ -21,6 +21,7 @@ export type IconName =
   | 'trash'
   | 'eye'
   | 'eyeOff'
+  | 'person'
 
 type RegistryItem =
   | { lib: 'ion'; name: React.ComponentProps<typeof Ionicons>['name'] }
@@ -47,6 +48,7 @@ const REGISTRY: Record<IconName, RegistryItem> = {
   trash: { lib: 'mci', name: 'trash-can-outline' },
   eye: { lib: 'ion', name: 'eye' },
   eyeOff: { lib: 'ion', name: 'eye-off' },
+  person: { lib: 'ion', name: 'person-circle-outline' },
 }
 
 export interface IconProps {

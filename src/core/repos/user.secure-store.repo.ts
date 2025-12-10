@@ -4,6 +4,7 @@ import { SessionError, type SessionRecord } from '@entities/user/model'
 
 // Claves privadas
 const KEY_ID = 'kma.session.idToken'
+const KEY_AT = 'kma.session.accessToken'
 const KEY_RF = 'kma.session.refreshToken'
 const KEY_EX = 'kma.session.expiresAt'
 
@@ -109,6 +110,7 @@ async function read(key: string): Promise<string | null> {
 function validate(rec: Partial<SessionRecord>): rec is SessionRecord {
   return (
     typeof rec.idToken === 'string' &&
+    typeof rec.accessToken === 'string' &&
     typeof rec.refreshToken === 'string' &&
     typeof rec.expiresAt === 'number' &&
     Number.isFinite(rec.expiresAt)
@@ -121,6 +123,7 @@ export function createUserSessionSecureRepo(): UserSessionRepo {
       try {
         await Promise.all([
           write(KEY_ID, rec.idToken),
+          write(KEY_AT, rec.accessToken),
           write(KEY_RF, rec.refreshToken),
           write(KEY_EX, String(rec.expiresAt)),
         ])
@@ -131,15 +134,16 @@ export function createUserSessionSecureRepo(): UserSessionRepo {
     },
 
     async read(): Promise<SessionRecord | null> {
-      const [idToken, refreshToken, expiresAtStr] = await Promise.all([
+      const [idToken, accessToken, refreshToken, expiresAtStr] = await Promise.all([
         read(KEY_ID),
+        read(KEY_AT),
         read(KEY_RF),
         read(KEY_EX),
       ])
 
-      if (!idToken && !refreshToken && !expiresAtStr) return null
+      if (!idToken && !refreshToken && !expiresAtStr && !accessToken) return null
 
-      const partial: Partial<SessionRecord> = {}
+      const partial: Partial<SessionRecord> = { accessToken: accessToken ?? '' }
       if (idToken) partial.idToken = idToken
       if (refreshToken) partial.refreshToken = refreshToken
       if (expiresAtStr) {
@@ -149,7 +153,12 @@ export function createUserSessionSecureRepo(): UserSessionRepo {
 
       if (!validate(partial)) {
         // Limpiar datos corruptos para evitar loops
-        await Promise.all([write(KEY_ID, null), write(KEY_RF, null), write(KEY_EX, null)])
+        await Promise.all([
+          write(KEY_ID, null),
+          write(KEY_AT, null),
+          write(KEY_RF, null),
+          write(KEY_EX, null),
+        ])
         throw new SessionError('CORRUPTED_DATA', 'Datos de sesión inválidos')
       }
 
@@ -158,7 +167,12 @@ export function createUserSessionSecureRepo(): UserSessionRepo {
 
     async clear(): Promise<void> {
       try {
-        await Promise.all([write(KEY_ID, null), write(KEY_RF, null), write(KEY_EX, null)])
+        await Promise.all([
+          write(KEY_ID, null),
+          write(KEY_AT, null),
+          write(KEY_RF, null),
+          write(KEY_EX, null),
+        ])
       } catch (e) {
         if (e instanceof SessionError) throw e
         throw new SessionError('PERSISTENCE_FAILED', 'Fallo al limpiar la sesión')

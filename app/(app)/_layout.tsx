@@ -52,6 +52,21 @@ const AppLayout: React.FC = () => {
     [openExitModal],
   )
 
+  const ProfileButton = useCallback(
+    () => (
+      <TouchableOpacity
+        onPress={() => router.push('/(app)/profile')}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Open profile"
+        style={{ paddingRight: RFValue(8), paddingLeft: RFValue(4) }}
+      >
+        <Icon name="person" color={AppColors.Primary} size={RFValue(22)} />
+      </TouchableOpacity>
+    ),
+    [router],
+  )
+
   return (
     <AuthGuard>
       <>
@@ -65,7 +80,7 @@ const AppLayout: React.FC = () => {
         >
           <Stack.Screen
             name="projects"
-            options={{ title: 'Select Project', headerBackVisible: false }}
+            options={{ title: 'Select Project', headerBackVisible: false, headerRight: ProfileButton }}
           />
 
           <Stack.Screen
@@ -74,6 +89,7 @@ const AppLayout: React.FC = () => {
               title: 'Select Facility',
               headerLeft: BackButton,
               headerBackVisible: false,
+              headerRight: ProfileButton,
             }}
           />
 
@@ -81,6 +97,16 @@ const AppLayout: React.FC = () => {
             name="selector"
             options={{
               title: 'Select Flow',
+              headerLeft: BackButton,
+              headerBackVisible: false,
+              headerRight: ProfileButton,
+            }}
+          />
+
+          <Stack.Screen
+            name="profile"
+            options={{
+              title: 'Profile',
               headerLeft: BackButton,
               headerBackVisible: false,
             }}

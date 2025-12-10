@@ -7,6 +7,7 @@ import { createUserSessionSecureRepo } from '@core/repos/user.secure-store.repo'
 // --- Tipos públicos
 export type SessionSnapshot = {
   idToken: string | null
+  accessToken: string | null
   refreshToken: string | null
   expiresAt: number | null // epoch ms
 }
@@ -27,7 +28,7 @@ export function setSessionRepo(custom: UserSessionRepo) {
 }
 
 // Caché en memoria
-const mem: SessionSnapshot = { idToken: null, refreshToken: null, expiresAt: null }
+const mem: SessionSnapshot = { idToken: null, accessToken: null, refreshToken: null, expiresAt: null }
 
 // Observadores simples
 const listeners = new Set<(e: SessionEvent) => void>()
@@ -55,14 +56,21 @@ function snapshot(): SessionSnapshot {
 }
 
 function toSnapshot(r: SessionRecord | null): SessionSnapshot {
-  if (!r) return { idToken: null, refreshToken: null, expiresAt: null }
-  return { idToken: r.idToken, refreshToken: r.refreshToken, expiresAt: r.expiresAt }
+  if (!r)
+    return { idToken: null, accessToken: null, refreshToken: null, expiresAt: null }
+  return {
+    idToken: r.idToken,
+    accessToken: r.accessToken,
+    refreshToken: r.refreshToken,
+    expiresAt: r.expiresAt,
+  }
 }
 
 // --- API pública
 export async function initSession(): Promise<SessionSnapshot> {
   const rec = await repo.read()
   mem.idToken = rec?.idToken ?? null
+  mem.accessToken = rec?.accessToken ?? null
   mem.refreshToken = rec?.refreshToken ?? null
   mem.expiresAt = rec?.expiresAt ?? null
 
@@ -85,6 +93,7 @@ export async function initSession(): Promise<SessionSnapshot> {
 export async function saveSession(tokens: LoginTokens): Promise<void> {
   const rec: SessionRecord = {
     idToken: tokens.idToken,
+    accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
     expiresAt: tokens.expiresAt,
   }
@@ -97,6 +106,7 @@ export async function saveSession(tokens: LoginTokens): Promise<void> {
   }
 
   mem.idToken = rec.idToken
+  mem.accessToken = rec.accessToken
   mem.refreshToken = rec.refreshToken
   mem.expiresAt = rec.expiresAt
 
@@ -108,6 +118,7 @@ export async function saveSession(tokens: LoginTokens): Promise<void> {
 export async function clearSession(): Promise<void> {
   await repo.clear()
   mem.idToken = null
+  mem.accessToken = null
   mem.refreshToken = null
   mem.expiresAt = null
   emit({ type: 'logout' })
@@ -149,6 +160,7 @@ export async function getValidToken(): Promise<string> {
         // El RefreshToken se conserva (Cognito no lo rota por defecto).
         const updated: SessionRecord = {
           idToken: next.idToken,
+          accessToken: next.accessToken,
           refreshToken: mem.refreshToken as string,
           expiresAt: next.expiresAt,
         }
@@ -156,6 +168,7 @@ export async function getValidToken(): Promise<string> {
         await repo.save(updated)
 
         mem.idToken = updated.idToken
+        mem.accessToken = updated.accessToken
         mem.refreshToken = updated.refreshToken
         mem.expiresAt = updated.expiresAt
 
