@@ -1,6 +1,4 @@
 import * as FileSystem from 'expo-file-system'
-import { Buffer } from 'buffer'
-
 import type { FlowDetail } from '@shared/validation/steps.schema'
 import type { Flow, Step } from '@entities/flow/model'
 import type { SubmissionAnswer, SubmissionDraft } from '@entities/submission/model'
@@ -62,6 +60,7 @@ type AuditSubmissionOutboxPayload = {
  * - Si están vacíos o no son parseables -> no mandarlos
  */
 const NUMERIC_OPTIONAL_FIELDS = new Set<string>(['quantity', 'measurements'])
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
 
 // -----------------------------------------------------------------------------
 // API pública
@@ -301,6 +300,9 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
         text: step.text,
         yesNext: step.yesNext,
         noNext: step.noNext,
+        barrierId: step.barrierId,
+        image: step.image,
+        checkPreviousNos: step.checkPreviousNos,
       }
     }
     case 'Form': {
@@ -309,11 +311,13 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
         type: 'Form',
         title: step.title,
         next: step.next,
+        barrierId: step.barrierId,
         fields: step.fields.map(f => ({
           id: f.id,
           type: f.type,
           label: f.label,
         })),
+        image: step.image,
       }
     }
     case 'Select': {
@@ -322,7 +326,16 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
         type: 'Select',
         title: step.title,
         text: step.text,
-        options: step.options.map(o => ({ label: o.label, next: o.next })),
+        image: step.image,
+        options: step.options.map(o => ({
+          label: o.label,
+          next: o.next,
+          yesNext: o.yesNext,
+          noNext: o.noNext,
+          condition: o.condition
+            ? { stepId: o.condition.stepId, answer: o.condition.answer }
+            : undefined,
+        })),
       }
     }
     case 'End': {
@@ -411,8 +424,36 @@ async function readFileAsUint8(uri: string): Promise<Uint8Array> {
   const base64 = await FileSystem.readAsStringAsync(uri, {
     encoding: FileSystem.EncodingType.Base64,
   })
-  const buf = Buffer.from(base64, 'base64')
-  return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength)
+  return base64ToUint8Array(base64)
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const sanitized = base64.replace(/[^A-Za-z0-9+/=]/g, '')
+  const bytes: number[] = []
+
+  for (let i = 0; i < sanitized.length; i += 4) {
+    const chunk = sanitized.slice(i, i + 4)
+    if (chunk.length < 4) break
+
+    const enc1 = BASE64_ALPHABET.indexOf(chunk[0])
+    const enc2 = BASE64_ALPHABET.indexOf(chunk[1])
+    const enc3 = BASE64_ALPHABET.indexOf(chunk[2])
+    const enc4 = BASE64_ALPHABET.indexOf(chunk[3])
+
+    if (enc1 < 0 || enc2 < 0 || enc3 < 0 || enc4 < 0) continue
+
+    bytes.push((enc1 << 2) | (enc2 >> 4))
+
+    if (enc3 !== 64) {
+      bytes.push(((enc2 & 15) << 4) | (enc3 >> 2))
+    }
+
+    if (enc4 !== 64) {
+      bytes.push(((enc3 & 3) << 6) | enc4)
+    }
+  }
+
+  return new Uint8Array(bytes)
 }
 
 /**

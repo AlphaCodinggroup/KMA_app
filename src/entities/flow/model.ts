@@ -16,9 +16,17 @@ export interface Field {
   label: string
 }
 
+export interface OptionCondition {
+  stepId: string
+  answer: string
+}
+
 export interface SelectOption {
   label: string
-  next: string
+  next?: string
+  yesNext?: string
+  noNext?: string
+  condition?: OptionCondition
 }
 
 // --------------------
@@ -32,6 +40,7 @@ export interface QuestionStep {
   noNext?: string
   barrierId?: string
   image?: string
+  checkPreviousNos?: string[]
 }
 
 export interface FormStep {

@@ -68,6 +68,14 @@ function mapSelectOption(dto: SelectOptionDTO): SelectOption {
   return {
     label: dto.label,
     next: dto.next,
+    yesNext: dto.yes_next,
+    noNext: dto.no_next,
+    condition: dto.condition
+      ? {
+          stepId: dto.condition.step_id,
+          answer: dto.condition.answer,
+        }
+      : undefined,
   }
 }
 
@@ -83,6 +91,7 @@ function mapQuestion(dto: QuestionStepDTO): QuestionStep {
     noNext: dto.no_next,
     barrierId: dto.barrier_id,
     image: dto.image,
+    checkPreviousNos: dto.check_previous_nos,
   }
 }
 

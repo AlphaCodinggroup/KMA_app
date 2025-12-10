@@ -1,9 +1,7 @@
 import { useState, memo } from 'react'
 import { View, Text, TouchableOpacity } from 'react-native'
-import type { QuestionStep } from '@shared/validation/steps.schema'
+import type { QuestionStep, SelectOption } from '@shared/validation/steps.schema'
 import { styles } from './styles/questionCard.styles'
-
-type SelectOption = { label: string; next: string }
 
 type Props = {
   step: QuestionStep

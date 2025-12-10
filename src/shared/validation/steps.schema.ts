@@ -34,6 +34,7 @@ export const QuestionStepSchema = z.object({
   text: z.string(),
   yesNext: z.string().optional(),
   noNext: z.string().optional(),
+  checkPreviousNos: z.array(z.string()).optional(),
   image: z.string().optional(),
   barrierId: z.string().optional(),
 })
@@ -43,7 +44,15 @@ export type QuestionStep = z.infer<typeof QuestionStepSchema>
 
 export const SelectOptionSchema = z.object({
   label: z.string(),
-  next: z.string(),
+  next: z.string().optional(),
+  yesNext: z.string().optional(),
+  noNext: z.string().optional(),
+  condition: z
+    .object({
+      stepId: z.string(),
+      answer: z.string(),
+    })
+    .optional(),
 })
 export type SelectOption = z.infer<typeof SelectOptionSchema>
 
