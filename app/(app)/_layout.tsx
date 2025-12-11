@@ -59,9 +59,9 @@ const AppLayout: React.FC = () => {
         hitSlop={12}
         accessibilityRole="button"
         accessibilityLabel="Open profile"
-        style={{ paddingRight: RFValue(8), paddingLeft: RFValue(4) }}
+        style={{ paddingRight: RFValue(8), paddingLeft: RFValue(4), marginRight:RFValue(12)}}
       >
-        <Icon name="person" color={AppColors.Primary} size={RFValue(22)} />
+        <Icon name="person" color={AppColors.Primary} size={RFValue(18)} />
       </TouchableOpacity>
     ),
     [router],
