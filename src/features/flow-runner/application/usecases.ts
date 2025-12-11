@@ -54,6 +54,8 @@ type AuditSubmissionOutboxPayload = {
   submissionId: string
 }
 
+type SubmitResult = 'success' | 'retry' | 'drop'
+
 /**
  * Campos que el backend considera numéricos opcionales:
  * - Si los mandamos, tienen que ser number
@@ -150,24 +152,8 @@ export async function finalizeSubmission(params: {
     version: params.version ?? '',
   })
 
-  let shouldTriggerSync = false
-
-  try {
-    if (params.online === true) {
-      shouldTriggerSync = true
-    } else {
-      const onlineNow = await isOnlineOnce()
-      shouldTriggerSync = onlineNow
-    }
-  } catch (err) {
-    if (__DEV__) {
-      console.warn('[finalizeSubmission] isOnlineOnce failed, skipping immediate sync', err)
-    }
-  }
-
-  if (shouldTriggerSync) {
-    triggerOutboxSync()
-  }
+  // Siempre disparamos sync: si está offline, el SyncService reintentará con backoff.
+  triggerOutboxSync()
 
   return true
 }
@@ -183,22 +169,23 @@ export async function finalizeSubmission(params: {
  *   4) POST /audits con { id, flow_id, project_id, facility_id, answers:[...] }
  * - Si sale bien:
  *   - Muestra toast de éxito con el título.
- *   - Devuelve `true`.
+ *   - Devuelve 'success'.
  * - Si falla:
- *   - Devuelve `false` (para que el SyncService reintente).
+ *   - Devuelve:
+ *     - 'retry' en offline/red/5xx.
+ *     - 'drop' en 4xx no recuperables.
  */
 export async function submitAuditOnlineFromSnapshot(
   snapshot: SubmissionSnapshot,
-): Promise<boolean> {
+): Promise<SubmitResult> {
   // Antes de hacer cualquier request, chequeamos conectividad real
   const online = await isOnlineOnce()
   if (!online) {
     if (__DEV__) {
       console.log('[submitAuditOnlineFromSnapshot] skipped: offline')
     }
-    // Devolvemos false para que el SyncService lo marque como "retry"
-    // y vuelva a intentarlo más adelante cuando haya conexión.
-    return false
+    // Devolvemos retry para que el SyncService vuelva a intentarlo más adelante cuando haya conexión.
+    return 'retry'
   }
 
   try {
@@ -271,10 +258,20 @@ export async function submitAuditOnlineFromSnapshot(
     // Éxito → toast de auditoría creada
     showAuditCreatedToast(snapshot.title)
 
-    return true
+    return 'success'
   } catch (err) {
-    console.warn('[submitAuditOnlineFromSnapshot] error:', err)
-    return false
+    const status = extractStatus(err)
+    const recoverable = isRecoverableStatus(status)
+
+    if (!recoverable) {
+      if (__DEV__) {
+        console.warn('[submitAuditOnlineFromSnapshot] drop (4xx)', status, err)
+      }
+      return 'drop'
+    }
+
+    console.warn('[submitAuditOnlineFromSnapshot] retryable error:', err)
+    return 'retry'
   }
 }
 
@@ -456,6 +453,21 @@ function base64ToUint8Array(base64: string): Uint8Array {
   }
 
   return new Uint8Array(bytes)
+}
+
+function extractStatus(err: unknown): number | undefined {
+  const maybe = err as { response?: { status?: number } }
+  return maybe?.response?.status
+}
+
+function isRecoverableStatus(status?: number): boolean {
+  if (typeof status !== 'number') return true
+  if (status === 429) return true
+  if (status === 401 || status === 403) return true
+  if (status === 408) return true
+  if (status >= 500) return true
+  // 4xx no recuperables: drop
+  return false
 }
 
 /**

@@ -70,22 +70,29 @@ async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 
   }
 
   try {
-    const ok = await submitAuditOnlineFromSnapshot(snapshot)
+    const result = await submitAuditOnlineFromSnapshot(snapshot)
 
-    if (!ok) {
-      // Error de red / 5xx / etc → reintenta con backoff
-      return 'retry'
+    if (result === 'success') {
+      // Envío OK → limpiamos datos y archivos locales
+      await cleanupSubmissionFiles(snapshot)
+      await sqliteSubmissionRepo.delete(submissionId)
+
+      if (__DEV__) {
+        console.log('[SyncService] AUDIT_SUBMISSION synced & cleaned', submissionId)
+      }
+
+      return 'success'
     }
 
-    // Envío OK → limpiamos datos y archivos locales
-    await cleanupSubmissionFiles(snapshot)
-    await sqliteSubmissionRepo.delete(submissionId)
-
-    if (__DEV__) {
-      console.log('[SyncService] AUDIT_SUBMISSION synced & cleaned', submissionId)
+    if (result === 'drop') {
+      if (__DEV__) {
+        console.warn('[SyncService] AUDIT_SUBMISSION drop (4xx)', submissionId)
+      }
+      return 'drop'
     }
 
-    return 'success'
+    // retry
+    return 'retry'
   } catch (err) {
     if (__DEV__) {
       console.warn('[SyncService] AUDIT_SUBMISSION error, retry', err)
@@ -157,9 +164,8 @@ export async function bootstrapApp(): Promise<void> {
       dispatch: createOutboxDispatcher(),
     })
 
-    const queueOutboxSync = () => {
-      sync.queue()
-    }
+    const queueOutboxSync = () => sync.queue()
+    const forceOutboxSync = () => sync.queue({ resetBackoff: true })
 
     registerOutboxSyncTrigger(queueOutboxSync)
 
@@ -189,7 +195,7 @@ export async function bootstrapApp(): Promise<void> {
 
     const handleAppStateChange = (state: AppStateStatus) => {
       if (state === 'active') {
-        queueOutboxSync()
+        forceOutboxSync()
         queueCatalogSync()
         queueFlowsSync()
       }
@@ -204,7 +210,7 @@ export async function bootstrapApp(): Promise<void> {
       const online = isConnected && isInternetReachable
 
       if (online) {
-        queueOutboxSync()
+        forceOutboxSync()
         queueCatalogSync()
         queueFlowsSync()
       }
@@ -212,10 +218,10 @@ export async function bootstrapApp(): Promise<void> {
 
     const unsubscribeSession = subscribe(e => {
       if (e.type === 'login') {
-        queueOutboxSync()
+        forceOutboxSync()
       }
       if (e.type === 'refresh') {
-        queueOutboxSync()
+        forceOutboxSync()
         queueCatalogSync()
         queueFlowsSync()
       }
