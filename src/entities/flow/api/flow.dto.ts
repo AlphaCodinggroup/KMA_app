@@ -11,6 +11,8 @@ export const StepFieldDtoSchema = z.object({
   id: z.string(),
   type: z.enum(['text', 'number', 'photo', 'button']),
   label: z.string(),
+  unit: z.string().optional(),
+  placeholder: z.string().optional(),
 })
 export type StepFieldDTO = z.infer<typeof StepFieldDtoSchema>
 

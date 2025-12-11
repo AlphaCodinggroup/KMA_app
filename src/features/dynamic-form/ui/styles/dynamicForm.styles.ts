@@ -8,6 +8,21 @@ export const styles = StyleSheet.create({
   formFields: { gap: RFValue(12) },
   inputBlock: { gap: RFValue(6) },
   label: { color: AppColors.MutedText, fontSize: setResponsiveSize({ size: 12 }) },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: AppColors.Background,
+    borderColor: AppColors.Border,
+    borderWidth: RFValue(1),
+    borderRadius: RFValue(10),
+    paddingHorizontal: RFValue(10),
+  },
+  textInputWithUnit: {
+    flex: 1,
+    paddingVertical: RFValue(10),
+    paddingRight: RFValue(4),
+    fontSize: setResponsiveSize({ size: 10 }),
+  },
   textInput: {
     backgroundColor: AppColors.Background,
     borderColor: AppColors.Border,
@@ -15,6 +30,16 @@ export const styles = StyleSheet.create({
     borderRadius: RFValue(10),
     paddingHorizontal: RFValue(12),
     paddingVertical: RFValue(10),
+    fontSize: setResponsiveSize({ size: 10 }),
+  },
+  unitBadge: {
+    paddingVertical: RFValue(8),
+    paddingHorizontal: RFValue(10),
+    borderLeftWidth: RFValue(1),
+    borderColor: AppColors.Border,
+  },
+  unitText: {
+    color: AppColors.MutedText,
     fontSize: setResponsiveSize({ size: 10 }),
   },
   photoRow: { flexDirection: 'row', alignItems: 'center', gap: RFValue(12) },

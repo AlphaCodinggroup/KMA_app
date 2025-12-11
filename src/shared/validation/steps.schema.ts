@@ -12,6 +12,8 @@ export const FormFieldSchema = z.object({
   id: z.string(),
   type: FieldTypeSchema,
   label: z.string(),
+  unit: z.string().optional(),
+  placeholder: z.string().optional(),
 })
 export type FormField = z.infer<typeof FormFieldSchema>
 

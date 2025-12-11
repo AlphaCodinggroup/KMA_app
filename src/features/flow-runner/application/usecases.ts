@@ -316,6 +316,8 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
           id: f.id,
           type: f.type,
           label: f.label,
+          unit: f.unit,
+          placeholder: f.placeholder,
         })),
         image: step.image,
       }

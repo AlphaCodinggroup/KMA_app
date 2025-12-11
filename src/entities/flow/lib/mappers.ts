@@ -61,6 +61,8 @@ function mapField(dto: StepFieldDTO): Field {
     id: dto.id,
     type: dto.type,
     label: dto.label,
+    unit: dto.unit,
+    placeholder: dto.placeholder,
   }
 }
 

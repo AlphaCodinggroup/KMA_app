@@ -14,6 +14,8 @@ export interface Field {
   id: string
   type: FieldType
   label: string
+  unit?: string
+  placeholder?: string
 }
 
 export interface OptionCondition {

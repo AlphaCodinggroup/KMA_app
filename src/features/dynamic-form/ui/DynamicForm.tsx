@@ -74,13 +74,30 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
       render={({ field: rhf }) => (
         <View style={styles.inputBlock}>
           <Text style={styles.label}>{field.label}</Text>
-          <TextInput
-            value={(rhf.value as string) ?? ''}
-            onChangeText={rhf.onChange}
-            onBlur={rhf.onBlur}
-            style={styles.textInput}
-            returnKeyType="done"
-          />
+          {field.unit ? (
+            <View style={styles.inputRow}>
+              <TextInput
+                value={(rhf.value as string) ?? ''}
+                onChangeText={rhf.onChange}
+                onBlur={rhf.onBlur}
+                style={styles.textInputWithUnit}
+                returnKeyType="done"
+                placeholder={field.placeholder}
+              />
+              <View style={styles.unitBadge}>
+                <Text style={styles.unitText}>{field.unit}</Text>
+              </View>
+            </View>
+          ) : (
+            <TextInput
+              value={(rhf.value as string) ?? ''}
+              onChangeText={rhf.onChange}
+              onBlur={rhf.onBlur}
+              style={styles.textInput}
+              returnKeyType="done"
+              placeholder={field.placeholder}
+            />
+          )}
         </View>
       )}
     />
@@ -94,14 +111,32 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
       render={({ field: rhf }) => (
         <View style={styles.inputBlock}>
           <Text style={styles.label}>{field.label}</Text>
-          <TextInput
-            value={(rhf.value as string) ?? ''}
-            onChangeText={rhf.onChange}
-            onBlur={rhf.onBlur}
-            keyboardType="numeric"
-            style={styles.textInput}
-            returnKeyType="done"
-          />
+          {field.unit ? (
+            <View style={styles.inputRow}>
+              <TextInput
+                value={(rhf.value as string) ?? ''}
+                onChangeText={rhf.onChange}
+                onBlur={rhf.onBlur}
+                keyboardType="numeric"
+                style={styles.textInputWithUnit}
+                returnKeyType="done"
+                placeholder={field.placeholder}
+              />
+              <View style={styles.unitBadge}>
+                <Text style={styles.unitText}>{field.unit}</Text>
+              </View>
+            </View>
+          ) : (
+            <TextInput
+              value={(rhf.value as string) ?? ''}
+              onChangeText={rhf.onChange}
+              onBlur={rhf.onBlur}
+              keyboardType="numeric"
+              style={styles.textInput}
+              returnKeyType="done"
+              placeholder={field.placeholder}
+            />
+          )}
         </View>
       )}
     />
