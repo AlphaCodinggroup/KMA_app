@@ -27,21 +27,14 @@ export type FacilityGeoDTO = z.infer<typeof FacilityGeoDtoSchema>
 /** Ítem de facility según el backend (snake_case) */
 export const FacilityItemDtoSchema = z.object({
   facility_id: z.string(),
-  project_id: z.string(),
-  name: z.string(),
-
-  // opcionales según documentación
+  project_id: z.string().optional(),
+  name: z.string().optional(),
   address: z.string().optional(),
   city: z.string().optional(),
   geo: FacilityGeoDtoSchema.optional(),
   notes: z.string().optional(),
-
   status: FacilityStatusDtoSchema.optional(),
-
-  // la doc muestra que puede ser [] (listado) o null (create/update)
   user_ids: z.array(z.string()).nullable().optional(),
-
-  // metadatos opcionales (la API suele incluirlos en ejemplos)
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
   created_by: z.string().optional(),

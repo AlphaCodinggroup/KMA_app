@@ -1,106 +1,100 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react'
-import { View, Text, ScrollView, Alert } from 'react-native'
+import { View, Text, ScrollView, Alert, Platform } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useFocusEffect } from '@react-navigation/native'
 import NetInfo from '@react-native-community/netinfo'
-import type { FlowDetail, Step, QuestionStep, FormStep } from '@shared/validation/steps.schema'
+
+import type {
+  FlowDetail,
+  Step,
+  QuestionStep,
+  FormStep,
+  SelectOption,
+} from '@shared/validation/steps.schema'
 import type { SubmissionAnswer } from '@entities/submission/model'
 import { QuestionCard } from '@features/question'
 import { DynamicForm } from '@features/dynamic-form'
 import { pickOrCapturePhoto } from '@features/camera'
-import { styles } from './styles/flowRunner.styles'
+import Loader from '@shared/ui/loader/Loader'
+
 import { finalizeSubmission, persistDraft } from '../application/usecases'
 import EndView from './EndView'
 import StepIllustration from './StepIllustration'
-import Loader from '@shared/ui/loader/Loader'
+import {
+  END_ID,
+  mapById,
+  parseStepsParam,
+  resolveInitialStepId,
+  toVirtualQuestion,
+} from '../lib/helpers'
+import { styles } from './styles/flowRunner.styles'
 
-// --------------------
-// Helpers
-// --------------------
-function mapById(steps: Step[]): Record<string, Step> {
-  return steps.reduce<Record<string, Step>>((acc, s) => {
-    acc[s.id] = s
-    return acc
-  }, {})
+export type FlowRunnerRouteParams = {
+  flowId: string
+  title: string
+  version: string
+  steps?: string | string[]
+  projectId: string
+  facilityId: string
 }
 
-function isValidStepsPayload(v: unknown): v is Step[] {
-  return (
-    Array.isArray(v) &&
-    v.every(
-      s => s && typeof s === 'object' && typeof s.id === 'string' && typeof s.type === 'string',
-    )
-  )
-}
+export type SelectStep = Extract<Step, { type: 'Select' }>
 
 const FlowRunnerScreen: React.FC = () => {
   const router = useRouter()
+
   const {
     flowId,
     title,
     steps: rawSteps,
-    description,
+    version,
     projectId,
     facilityId,
-  } = useLocalSearchParams<{
-    flowId: string
-    title: string
-    steps?: string | string[]
-    description: string
-    projectId: string
-    facilityId: string
-  }>()
+  } = useLocalSearchParams<FlowRunnerRouteParams>()
 
   const [detail, setDetail] = useState<FlowDetail | null>(null)
-  const [currentId, setCurrentId] = useState<string | null>(null)
+  const [visibleIds, setVisibleIds] = useState<string[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [online, setOnline] = useState<boolean>(true)
   const [zoomed, setZoomed] = useState<boolean>(false)
   const [submitting, setSubmitting] = useState<boolean>(false)
 
+  const scrollRef = useRef<ScrollView>(null)
+
   // answersRef va acumulando todas las respuestas/valores/fotos del flujo
   const answersRef = useRef<Record<string, SubmissionAnswer>>({})
 
-  // Estado de red (para feedback/decisiones de envío)
+  // --------------------
+  // Estado de red
+  // --------------------
   useFocusEffect(
     useCallback(() => {
-      const sub = NetInfo.addEventListener(s => setOnline(!!s.isConnected))
-      return () => sub && sub()
+      const subscription = NetInfo.addEventListener(state => {
+        setOnline(!!state.isConnected)
+      })
+
+      return () => {
+        subscription && subscription()
+      }
     }, []),
   )
 
-  // Boot a partir de params.steps (JSON string)
-  const boot = useCallback(async () => {
+  const boot = useCallback(() => {
     setLoading(true)
+
     try {
-      const stepsStr = Array.isArray(rawSteps) ? rawSteps[0] : rawSteps
-      if (!stepsStr) throw new Error('Missing steps payload in navigation params')
+      const steps = parseStepsParam(rawSteps)
 
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(stepsStr)
-      } catch (e) {
-        throw new Error(`Invalid steps JSON in navigation params, ${e}`)
-      }
-
-      if (!isValidStepsPayload(parsed)) {
-        throw new Error('Steps payload does not match expected shape')
-      }
-
-      const steps = parsed as Step[]
-      // Construimos el FlowDetail local (no dependemos de GET en esta pantalla)
       const data: FlowDetail = {
         flowId,
         title,
         steps,
-        description,
       }
 
       setDetail(data)
 
-      // Paso inicial = primera Question encontrada si existe; si no, primer step o END
-      const firstQ = data.steps.find(s => s.type === 'Question')
-      setCurrentId(firstQ?.id ?? data.steps[0]?.id ?? null)
+      const firstId = resolveInitialStepId(steps)
+      setVisibleIds(firstId ? [firstId] : [])
     } catch (err) {
       console.warn('[FlowRunnerScreen.boot] error reading steps from params', err)
       Alert.alert('Error', 'The flow could not be loaded from the provided steps.')
@@ -108,7 +102,7 @@ const FlowRunnerScreen: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }, [description, flowId, rawSteps, router, title])
+  }, [flowId, rawSteps, router, title])
 
   useFocusEffect(
     useCallback(() => {
@@ -116,47 +110,151 @@ const FlowRunnerScreen: React.FC = () => {
     }, [boot]),
   )
 
-  const stepsById = useMemo(() => (detail ? mapById(detail.steps) : {}), [detail])
+  const stepsById = useMemo<Record<string, Step>>(
+    () => (detail ? mapById(detail.steps) : {}),
+    [detail],
+  )
 
-  const goToNext = useCallback(
-    (next?: string) => {
-      let target: string | null = null
-
-      if (!next) {
-        target = stepsById.END ? 'END' : null
-      } else if (next === 'END') {
-        target = 'END'
-      } else {
-        target = stepsById[next] ? next : stepsById.END ? 'END' : null
-      }
-
-      setCurrentId(target)
+  const resolveNextId = useCallback(
+    (next?: string | null): string | null => {
+      if (!next) return stepsById[END_ID] ? END_ID : null
+      if (next === END_ID) return END_ID
+      return stepsById[next] ? next : stepsById[END_ID] ? END_ID : null
     },
     [stepsById],
   )
 
+  const scrollToEnd = useCallback(() => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated: true })
+    })
+  }, [])
+
+  const sliceAfter = useCallback((stepId: string) => {
+    setVisibleIds(prev => {
+      const idx = prev.indexOf(stepId)
+      if (idx === -1) return prev
+      return prev.slice(0, idx + 1)
+    })
+  }, [])
+
+  const appendNext = useCallback(
+    (nextId: string | null) => {
+      if (!nextId) return
+
+      setVisibleIds(prev => {
+        if (prev[prev.length - 1] === nextId) {
+          return prev
+        }
+        const next = [...prev, nextId]
+        return next
+      })
+
+      scrollToEnd()
+    },
+    [scrollToEnd],
+  )
+
+  const getNormalizedQuestionAnswer = useCallback((stepId: string): string | null => {
+    const stored = answersRef.current[stepId]
+    if (!stored || stored.type !== 'Question') return null
+
+    const value = stored.answer
+    if (value === null) return null
+
+    return String(value).toUpperCase()
+  }, [])
+
+  const resolveQuestionNext = useCallback(
+    (step: QuestionStep, answeredYes: boolean): string | null => {
+      const defaultNext = answeredYes
+        ? step.yesNext ?? step.noNext ?? null
+        : step.noNext ?? step.yesNext ?? null
+
+      if (!Array.isArray(step.checkPreviousNos) || step.checkPreviousNos.length === 0) {
+        return defaultNext
+      }
+
+      const answers = step.checkPreviousNos.map(id => getNormalizedQuestionAnswer(id))
+
+      const hasNo = answers.some(ans => ans === 'NO')
+      const allYes = step.checkPreviousNos.length > 0 && answers.every(ans => ans === 'YES')
+
+      if (hasNo) return step.noNext ?? step.yesNext ?? defaultNext
+      if (allYes) return step.yesNext ?? step.noNext ?? defaultNext
+
+      // Si falta info, preferimos el camino defensivo (noNext) para no saltar validaciones.
+      return step.noNext ?? step.yesNext ?? defaultNext
+    },
+    [getNormalizedQuestionAnswer],
+  )
+
+  const resolveOptionNext = useCallback(
+    (option: SelectOption): string | null => {
+      if (option.condition) {
+        const expected = String(option.condition.answer ?? '').toUpperCase()
+        const actual = getNormalizedQuestionAnswer(option.condition.stepId) ?? ''
+        const matches = actual === expected
+
+        if (matches) {
+          return option.yesNext ?? option.next ?? option.noNext ?? null
+        }
+        return option.noNext ?? option.next ?? option.yesNext ?? null
+      }
+
+      return option.next ?? option.yesNext ?? option.noNext ?? null
+    },
+    [getNormalizedQuestionAnswer],
+  )
+
+  /**
+   * Persistimos el estado completo de la auditoría:
+   * - flowId / title
+   * - answers acumuladas
+   * - projectId / facilityId / version (contexto para el envío)
+   */
+  const persistAll = useCallback(async () => {
+    if (!detail) return
+
+    await persistDraft({
+      flowId: detail.flowId,
+      title: detail.title,
+      answers: answersRef.current,
+      projectId,
+      facilityId,
+      version,
+    })
+  }, [detail, facilityId, projectId, version])
+
+  /**
+   * Helper general para:
+   *  persistir
+   *  cortar steps posteriores si se re-edita
+   *  resolver y agregar el siguiente step
+   */
+  const advanceFrom = useCallback(
+    async (currentStepId: string, rawNext?: string | null) => {
+      await persistAll()
+      sliceAfter(currentStepId)
+
+      const next = resolveNextId(rawNext)
+      appendNext(next)
+    },
+    [appendNext, persistAll, resolveNextId, sliceAfter],
+  )
+
   const onSkip = useCallback(
     async (step: QuestionStep) => {
-      // Guardamos answer: null en el JSON
       answersRef.current[step.id] = {
         type: 'Question',
         answer: null,
         option: null,
       }
 
-      if (detail) {
-        await persistDraft({
-          flowId: detail.flowId,
-          title: detail.title,
-          answers: answersRef.current,
-        })
-      }
-
-      // Elegimos el próximo paso posible: yesNext > noNext > END/auto
-      const next = step.yesNext ?? step.noNext
-      goToNext(next)
+      const rawNext = step.yesNext ?? step.noNext ?? null
+      await advanceFrom(step.id, rawNext)
     },
-    [detail, goToNext],
+    [advanceFrom],
   )
 
   const onAnswer = useCallback(
@@ -167,146 +265,147 @@ const FlowRunnerScreen: React.FC = () => {
         ...(extra?.option ? { option: extra.option } : {}),
       }
 
-      if (detail) {
-        await persistDraft({
-          flowId: detail.flowId,
-          title: detail.title,
-          answers: answersRef.current,
-        })
-      }
-
-      goToNext(yes ? step.yesNext : step.noNext)
+      const rawNext = resolveQuestionNext(step, yes)
+      await advanceFrom(step.id, rawNext ?? null)
     },
-    [detail, goToNext],
+    [advanceFrom, resolveQuestionNext],
   )
 
   const onSubmitForm = useCallback(
     async (step: FormStep, values: Record<string, unknown>) => {
-      answersRef.current[step.id] = { type: 'Form', values }
-
-      if (detail) {
-        await persistDraft({
-          flowId: detail.flowId,
-          title: detail.title,
-          answers: answersRef.current,
-        })
+      answersRef.current[step.id] = {
+        type: 'Form',
+        values,
       }
 
-      goToNext(step.next)
+      await advanceFrom(step.id, step.next ?? null)
     },
-    [detail, goToNext],
+    [advanceFrom],
   )
 
-  // Handler para pasos de tipo "Select" reutilizando QuestionCard
   const onSelectOption = useCallback(
-    async (stepId: string, payload: { label: string; next: string }) => {
-      // Persistimos como "Question" con answer null + option seleccionada
+    async (stepId: string, option: SelectOption) => {
       answersRef.current[stepId] = {
         type: 'Question',
         answer: null,
-        option: payload.label,
+        option: option.label,
       }
 
-      if (detail) {
-        await persistDraft({
-          flowId: detail.flowId,
-          title: detail.title,
-          answers: answersRef.current,
-        })
-      }
-
-      goToNext(payload.next)
+      const rawNext = resolveOptionNext(option)
+      await advanceFrom(stepId, rawNext ?? null)
     },
-    [detail, goToNext],
+    [advanceFrom, resolveOptionNext],
   )
 
-  /**
-   * onFinish:
-   * - Si está offline => se encola para sync posterior (finalizeSubmission se encarga).
-   * - Si está online => sube fotos a S3 (PUT presignadas), luego POST /audits al backend.
-   *
-   * Navegación:
-   * - Si hay historial volvemos atrás.
-   * - Si no, mandamos al selector.
-   */
   const onFinish = useCallback(async () => {
-    if (!detail) return
-    if (submitting) return
+    if (!detail || submitting) return
 
     try {
       setSubmitting(true)
 
-      await finalizeSubmission({
+      const ok = await finalizeSubmission({
         flowId: detail.flowId,
         title: detail.title,
         answers: answersRef.current,
         online,
         projectId,
         facilityId,
+        version,
       })
 
-      return router.replace({
-        pathname: '/(app)/selector',
-        params: { facilityId, projectId },
-      })
+      if (ok) {
+        router.replace({
+          pathname: '/(app)/selector',
+          params: { facilityId, projectId },
+        })
+      } else {
+        // finalizeSubmission ya registra logs y/o toasts;
+        // acá solo informamos que no se pudo completar.
+        Alert.alert('Error', 'We were unable to complete the submission.')
+      }
     } catch (err) {
-      console.warn('[FlowRunnerScreen.onFinish] finalizeSubmission error', err)
-      Alert.alert('Error', 'We were unable to complete the shipment.')
+      console.log('[FlowRunnerScreen.onFinish] finalizeSubmission error', err)
+      Alert.alert('Error', 'We were unable to complete the submission.')
     } finally {
       setSubmitting(false)
     }
-  }, [detail, facilityId, online, projectId, router, submitting])
+  }, [detail, facilityId, online, projectId, router, submitting, version])
 
-  // Loading state inicial / fallback si no hay steps
-  if (loading || !detail || !currentId) return <Loader loading={loading} />
+  const renderSelectStep = useCallback(
+    (step: SelectStep) => {
+      const virtualQuestion = toVirtualQuestion(step)
 
-  const current = stepsById[currentId]
+      return (
+        <QuestionCard
+          step={virtualQuestion}
+          onYes={() => {}}
+          onNo={() => {}}
+          onSkip={() => onSkip(virtualQuestion)}
+          {...(step.title ? { selectTitle: step.title } : {})}
+          {...(step.text ? { selectText: step.text } : {})}
+          selectOptions={step.options}
+          onSelectOption={opt => onSelectOption(step.id, opt)}
+        />
+      )
+    },
+    [onSelectOption, onSkip],
+  )
+
+  if (loading || !detail) return <Loader loading={loading} />
 
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
         <Text style={styles.title}>{detail.title}</Text>
-        <Text style={styles.subtitle}>{detail.description}</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} scrollEnabled={!zoomed}>
-        {current && <StepIllustration stepId={current.id} onZoomChange={setZoomed} />}
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.content}
+        scrollEnabled={!zoomed}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        automaticallyAdjustKeyboardInsets
+      >
+        {visibleIds.map(id => {
+          const step = stepsById[id]
+          if (!step && id === END_ID) {
+            return (
+              <View key={id} style={styles.containerComponents}>
+                <EndView onFinish={onFinish} loading={submitting} />
+              </View>
+            )
+          }
 
-        {current && current.type === 'Question' && (
-          <QuestionCard
-            step={current}
-            onYes={opt => onAnswer(current, true, opt)}
-            onNo={opt => onAnswer(current, false, opt)}
-            onSkip={onSkip}
-          />
-        )}
+          if (!step) return null
 
-        {current && current.type === 'Form' && (
-          <DynamicForm
-            step={current}
-            onSubmit={values => onSubmitForm(current, values)}
-            capturePhoto={pickOrCapturePhoto}
-          />
-        )}
+          return (
+            <View key={id} style={styles.containerComponents}>
+              {step.image && <StepIllustration image={step.image} onZoomChange={setZoomed} />}
 
-        {current && current.type === 'Select' && (
-          <QuestionCard
-            step={{
-              id: current.id,
-              type: 'Question',
-              text: current.title ?? current.text ?? '',
-            }}
-            onYes={() => {}}
-            onNo={() => {}}
-            onSkip={onSkip}
-            {...(current.title ? { selectTitle: current.title } : {})}
-            {...(current.text ? { selectText: current.text } : {})}
-            selectOptions={current.options}
-            onSelectOption={opt => onSelectOption(current.id, opt)}
-          />
-        )}
+              {step.type === 'Question' && (
+                <QuestionCard
+                  step={step}
+                  onYes={opt => onAnswer(step, true, opt)}
+                  onNo={opt => onAnswer(step, false, opt)}
+                  onSkip={() => onSkip(step)}
+                />
+              )}
 
-        {current && current.type === 'End' && <EndView onFinish={onFinish} loading={submitting} />}
+              {step.type === 'Form' && (
+                <DynamicForm
+                  step={step as FormStep}
+                  onSubmit={values => onSubmitForm(step as FormStep, values)}
+                  capturePhoto={pickOrCapturePhoto}
+                />
+              )}
+
+              {step.type === 'Select' && renderSelectStep(step as SelectStep)}
+
+              {step.type === 'End' && <EndView onFinish={onFinish} loading={submitting} />}
+            </View>
+          )
+        })}
       </ScrollView>
     </View>
   )

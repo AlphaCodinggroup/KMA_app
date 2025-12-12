@@ -14,11 +14,21 @@ export interface Field {
   id: string
   type: FieldType
   label: string
+  unit?: string
+  placeholder?: string
+}
+
+export interface OptionCondition {
+  stepId: string
+  answer: string
 }
 
 export interface SelectOption {
   label: string
-  next: string
+  next?: string
+  yesNext?: string
+  noNext?: string
+  condition?: OptionCondition
 }
 
 // --------------------
@@ -31,6 +41,8 @@ export interface QuestionStep {
   yesNext?: string
   noNext?: string
   barrierId?: string
+  image?: string
+  checkPreviousNos?: string[]
 }
 
 export interface FormStep {
@@ -40,6 +52,7 @@ export interface FormStep {
   next?: string
   barrierId?: string
   fields: Field[]
+  image?: string
 }
 
 // "Select" puede venir con `text` o con `title` según el flujo
@@ -49,11 +62,13 @@ export interface SelectStep {
   text?: string
   title?: string
   options: SelectOption[]
+  image?: string
 }
 
 export interface EndStep {
   id: string // suele ser "END"
   type: 'End'
+  image?: string
 }
 
 export type Step = QuestionStep | FormStep | SelectStep | EndStep
@@ -85,6 +100,8 @@ export interface FlowSummary {
   stepsCount?: number
   flowType?: string
   isActive?: boolean
+  createdAt?: string // ISO
+  updatedAt?: string // ISO
 }
 
 /** Payload mínimo que espera el Runner (según requerimiento del cliente) */

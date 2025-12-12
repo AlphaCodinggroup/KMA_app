@@ -1,34 +1,56 @@
-import React, { useMemo } from 'react'
-import { View } from 'react-native'
-import type { ImageSourcePropType } from 'react-native'
-import { flowStepImagesByNumber } from './flowStepImages'
+import React, { useEffect, useMemo, useState } from 'react'
+import { View, type ImageSourcePropType } from 'react-native'
 import { styles } from './styles/stepIllustration.styles'
 import ZoomableImage from '@shared/ui/ZoomableImage/ZoomableImage'
+import { resolveFlowImageUri } from '@shared/lib/imageCache'
 
 type Props = {
-  stepId: string
+  image?: string
   onZoomChange: (z: boolean) => void
 }
 
-function extractTwoDigits(id: string): string | null {
-  // Extrae la primera secuencia de dígitos del id (Q07, F12, Q8 => 07,12,08)
-  const m = id.match(/(\d{1,2})/)
-  if (!m) return null
-  return m[1].padStart(2, '0')
-}
+const StepIllustration: React.FC<Props> = ({ image, onZoomChange }) => {
+  const [resolvedUri, setResolvedUri] = useState<string | undefined>(image)
 
-const StepIllustration: React.FC<Props> = ({ stepId, onZoomChange }) => {
-  const img: ImageSourcePropType | undefined = useMemo(() => {
-    const key = extractTwoDigits(stepId)
-    if (!key) return undefined
-    return flowStepImagesByNumber[key]
-  }, [stepId])
+  useEffect(() => {
+    let cancelled = false
 
-  if (!img) return null
+    if (!image) {
+      setResolvedUri(undefined)
+      return
+    }
+
+    // Comportamiento optimista: primero usamos la URL remota
+    setResolvedUri(image)
+    ;(async () => {
+      try {
+        const uri = await resolveFlowImageUri(image)
+        if (!cancelled) {
+          setResolvedUri(uri)
+        }
+      } catch (e) {
+        if (__DEV__) {
+          console.warn('[StepIllustration] resolveFlowImageUri failed', e)
+        }
+        // Si falla, quedamos con la URL remota, sin romper nada.
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [image])
+
+  const source: ImageSourcePropType | undefined = useMemo(() => {
+    if (!resolvedUri) return undefined
+    return { uri: resolvedUri }
+  }, [resolvedUri])
+
+  if (!source) return null
 
   return (
     <View style={styles.wrapper} accessibilityIgnoresInvertColors>
-      <ZoomableImage source={img} onZoomChange={onZoomChange} />
+      <ZoomableImage source={source} onZoomChange={onZoomChange} />
     </View>
   )
 }

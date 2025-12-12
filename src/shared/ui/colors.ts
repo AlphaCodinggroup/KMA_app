@@ -9,4 +9,10 @@ export enum AppColors {
   IconMuted = '#9AA0A6',
   SurfaceAlt = '#F8FAFC',
   Ripple = 'rgba(0,0,0,0.08)',
+  BorderBlue = '#3b82f6',
+
+  // Toast / estados
+  SuccessLight = '#DCFCE7',
+  InfoLight = '#DBEAFE',
+  ErrorLight = '#FEE2E2',
 }

@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react'
 import { Stack } from 'expo-router'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { bootstrapApp, cleanupBootstrap } from '@processes/bootstrap'
+import AppToastProvider from '@shared/ui/toast/AppToast'
 
 const RootLayout: React.FC = () => {
   const [ready, setReady] = useState(false)
@@ -16,6 +17,7 @@ const RootLayout: React.FC = () => {
         if (mounted) setReady(true)
       }
     })()
+
     return () => {
       mounted = false
       cleanupBootstrap()
@@ -26,10 +28,12 @@ const RootLayout: React.FC = () => {
 
   return (
     <GestureHandlerRootView>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(app)" />
-      </Stack>
+      <AppToastProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(app)" />
+        </Stack>
+      </AppToastProvider>
     </GestureHandlerRootView>
   )
 }

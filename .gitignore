@@ -4,6 +4,7 @@
 node_modules/
 package-lock.json
 Podfile.lock
+pnpm-lock.yaml
 
 # Expo
 .expo/
@@ -35,6 +36,7 @@ yarn-error.*
 # local env files
 .env*.local
 .env
+AGENTS.md
 
 # typescript
 *.tsbuildinfo

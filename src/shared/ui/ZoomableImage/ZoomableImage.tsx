@@ -1,5 +1,13 @@
-import React, { useMemo, useState, useCallback } from 'react'
-import { Image, ImageSourcePropType, LayoutChangeEvent, StyleSheet, View } from 'react-native'
+import React, { useMemo, useState, useCallback, useEffect } from 'react'
+import {
+  Image,
+  type ImageSourcePropType,
+  type LayoutChangeEvent,
+  View,
+  Dimensions,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
   useSharedValue,
@@ -15,7 +23,7 @@ type Props = {
   maxScale?: number
   doubleTapScale?: number
   onZoomChange?: (isZoomed: boolean) => void
-  style?: any
+  style?: StyleProp<ViewStyle>
 }
 
 const AnimatedImage = Animated.createAnimatedComponent(Image)
@@ -34,15 +42,47 @@ const ZoomableImage: React.FC<Props> = ({
   onZoomChange,
   style,
 }) => {
-  // Valores "JS" solo para calcular aspectRatio; no se usan en worklets
+  // Intentamos obtener tamaño "natural" (assets locales)
   const asset = useMemo(() => getAssetSize(source), [source])
+
+  // Para imágenes remotas / file://, resolvemos w/h asincrónicamente
+  const [remoteSize, setRemoteSize] = useState<{ w: number; h: number } | null>(null)
+
+  useEffect(() => {
+    const uri: string | undefined = (source as any)?.uri
+    if (!uri) {
+      setRemoteSize(null)
+      return
+    }
+
+    let mounted = true
+    Image.getSize(
+      uri,
+      (w, h) => {
+        if (mounted) setRemoteSize({ w, h })
+      },
+      () => {
+        if (mounted) setRemoteSize(null)
+      },
+    )
+    return () => {
+      mounted = false
+    }
+  }, [source])
+
+  // Aspect ratio preferido: style.aspectRatio > tamaño remoto > asset > fallback 16/9
   const aspectRatio = useMemo(() => {
-    if (style?.aspectRatio) return Number(style.aspectRatio)
+    const aspectFromStyle = (style as any)?.aspectRatio
+    if (aspectFromStyle) return Number(aspectFromStyle)
+    if (remoteSize) return remoteSize.w / remoteSize.h
     if (asset) return asset.w / asset.h
     return 16 / 9
-  }, [asset, style])
+  }, [asset, remoteSize, style])
 
-  // SharedValues para que los worklets tengan acceso
+  // Tamaño efectivo que se dibuja (tras aplicar límite 25% pantalla)
+  const [displaySize, setDisplaySize] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
+
+  // SharedValues para worklets (usamos el tamaño efectivo mostrado)
   const boxWsv = useSharedValue(0)
   const boxHsv = useSharedValue(0)
   const contentWsv = useSharedValue(0)
@@ -57,18 +97,45 @@ const ZoomableImage: React.FC<Props> = ({
 
   const notifyZoom = useCallback(
     (val: boolean) => {
-      onZoomChange && onZoomChange(val)
+      if (onZoomChange) onZoomChange(val)
     },
     [onZoomChange],
   )
 
+  // Si cambia la imagen, reseteamos estado de zoom/posición
+  useEffect(() => {
+    scale.value = 1
+    savedScale.value = 1
+    translateX.value = 0
+    translateY.value = 0
+    startX.value = 0
+    startY.value = 0
+    runOnJS(notifyZoom)(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source])
+
   const onLayout = (e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout
-    // Actualizamos SharedValues (accesibles en worklets)
-    boxWsv.value = width
-    boxHsv.value = height
-    contentWsv.value = width
-    contentHsv.value = width / aspectRatio // alto “base” cuando scale=1 (contain horizontal)
+    const { width: containerW } = e.nativeEvent.layout
+    if (!containerW || containerW <= 0) return
+
+    // Ajuste: la imagen debe ocupar como mucho el 25% de la pantalla
+    const screenH = Dimensions.get('window').height
+    const maxDisplayH = screenH * 0.25
+
+    // Altura "natural" si ocupáramos el ancho completo
+    const baseH = containerW / aspectRatio
+
+    // Si baseH excede 25% pantalla, recortamos altura y ajustamos ancho
+    const displayH = Math.min(baseH, maxDisplayH)
+    const displayW = baseH <= maxDisplayH ? containerW : displayH * aspectRatio
+
+    setDisplaySize({ w: displayW, h: displayH })
+
+    // Estas dimensiones gobiernan pinch/pan/clamp (tamaño real renderizado)
+    boxWsv.value = displayW
+    boxHsv.value = displayH
+    contentWsv.value = displayW
+    contentHsv.value = displayH
   }
 
   // PINCH
@@ -92,7 +159,6 @@ const ZoomableImage: React.FC<Props> = ({
             translateY.value = withTiming(0)
             runOnJS(notifyZoom)(false)
           } else {
-            // clamp offsets con datos del box y contenido (todo en worklet)
             const overflowW = Math.max(0, contentWsv.value * scale.value - boxWsv.value)
             const overflowH = Math.max(0, contentHsv.value * scale.value - boxHsv.value)
             const maxX = overflowW / 2
@@ -102,7 +168,18 @@ const ZoomableImage: React.FC<Props> = ({
             runOnJS(notifyZoom)(true)
           }
         }),
-    [maxScale],
+    [
+      maxScale,
+      notifyZoom,
+      boxWsv,
+      boxHsv,
+      contentWsv,
+      contentHsv,
+      scale,
+      savedScale,
+      translateX,
+      translateY,
+    ],
   )
 
   // PAN
@@ -140,7 +217,7 @@ const ZoomableImage: React.FC<Props> = ({
             translateY.value = withTiming(clamp(translateY.value, -maxY, maxY))
           }
         }),
-    [],
+    [boxWsv, boxHsv, contentWsv, contentHsv, scale, startX, startY, translateX, translateY],
   )
 
   // DOUBLE TAP (zoom centrado en el toque)
@@ -180,10 +257,23 @@ const ZoomableImage: React.FC<Props> = ({
             runOnJS(notifyZoom)(true)
           }
         }),
-    [doubleTapScale],
+    [
+      doubleTapScale,
+      notifyZoom,
+      boxWsv,
+      boxHsv,
+      contentWsv,
+      contentHsv,
+      scale,
+      translateX,
+      translateY,
+    ],
   )
 
-  const composed = Gesture.Simultaneous(pinch, pan, doubleTap)
+  const composed = useMemo(
+    () => Gesture.Simultaneous(pinch, pan, doubleTap),
+    [pinch, pan, doubleTap],
+  )
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -197,7 +287,7 @@ const ZoomableImage: React.FC<Props> = ({
 
   return (
     <View
-      style={[styles.container, style]}
+      style={[styles.container, { alignItems: 'center' }, style]}
       onLayout={onLayout}
       accessible
       accessibilityLabel="Imagen zoomable"
@@ -205,7 +295,7 @@ const ZoomableImage: React.FC<Props> = ({
       <GestureDetector gesture={composed}>
         <AnimatedImage
           source={source}
-          style={[styles.image, { aspectRatio }, animatedStyle]}
+          style={[styles.image, { width: displaySize.w, height: displaySize.h }, animatedStyle]}
           resizeMode="contain"
         />
       </GestureDetector>

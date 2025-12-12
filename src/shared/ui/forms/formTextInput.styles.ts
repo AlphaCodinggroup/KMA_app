@@ -11,6 +11,7 @@ export const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: setResponsiveSize({ size: 12 }),
   },
+  inputContainer: { position: 'relative', justifyContent: 'center' },
   input: {
     borderWidth: RFValue(1),
     borderColor: AppColors.Border,
@@ -18,10 +19,23 @@ export const styles = StyleSheet.create({
     padding: RFValue(12),
     fontSize: setResponsiveSize({ size: 12 }),
   },
+  inputWithToggle: { paddingRight: RFValue(48) },
+
   inputError: { borderColor: AppColors.Error, fontSize: setResponsiveSize({ size: 10 }) },
   error: {
     marginTop: RFValue(6),
     color: AppColors.Error,
     fontSize: setResponsiveSize({ size: 10 }),
+  },
+  toggleBtn: {
+    position: 'absolute',
+    right: RFValue(12),
+    height: '100%',
+    justifyContent: 'center',
+  },
+  toggleText: {
+    color: AppColors.Primary,
+    fontSize: setResponsiveSize({ size: 12 }),
+    fontWeight: '600',
   },
 })

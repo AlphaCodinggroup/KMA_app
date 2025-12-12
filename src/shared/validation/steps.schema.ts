@@ -12,6 +12,8 @@ export const FormFieldSchema = z.object({
   id: z.string(),
   type: FieldTypeSchema,
   label: z.string(),
+  unit: z.string().optional(),
+  placeholder: z.string().optional(),
 })
 export type FormField = z.infer<typeof FormFieldSchema>
 
@@ -20,9 +22,9 @@ export const FormStepSchema = z.object({
   type: z.literal('Form'),
   title: z.string(),
   next: z.string().optional(),
-  // barrierId no se usaba en UI; si en el futuro hace falta, descomentar:
-  // barrierId: z.string().optional(),
+  barrierId: z.string().optional(),
   fields: z.array(FormFieldSchema).min(1),
+  image: z.string().optional(),
 })
 export type FormStep = z.infer<typeof FormStepSchema>
 
@@ -34,7 +36,9 @@ export const QuestionStepSchema = z.object({
   text: z.string(),
   yesNext: z.string().optional(),
   noNext: z.string().optional(),
-  // barrierId: z.string().optional(), // disponible en dominio pero omitido en FlowDetail actual
+  checkPreviousNos: z.array(z.string()).optional(),
+  image: z.string().optional(),
+  barrierId: z.string().optional(),
 })
 export type QuestionStep = z.infer<typeof QuestionStepSchema>
 
@@ -42,7 +46,15 @@ export type QuestionStep = z.infer<typeof QuestionStepSchema>
 
 export const SelectOptionSchema = z.object({
   label: z.string(),
-  next: z.string(),
+  next: z.string().optional(),
+  yesNext: z.string().optional(),
+  noNext: z.string().optional(),
+  condition: z
+    .object({
+      stepId: z.string(),
+      answer: z.string(),
+    })
+    .optional(),
 })
 export type SelectOption = z.infer<typeof SelectOptionSchema>
 
@@ -52,6 +64,7 @@ export const SelectStepSchema = z.object({
   title: z.string().optional(),
   text: z.string().optional(),
   options: z.array(SelectOptionSchema).min(1),
+  image: z.string().optional(),
 })
 export type SelectStep = z.infer<typeof SelectStepSchema>
 
@@ -60,6 +73,7 @@ export type SelectStep = z.infer<typeof SelectStepSchema>
 export const EndStepSchema = z.object({
   id: z.string(),
   type: z.literal('End'),
+  image: z.string().optional(),
 })
 export type EndStep = z.infer<typeof EndStepSchema>
 
@@ -77,10 +91,18 @@ export type Step = z.infer<typeof StepSchema>
 
 /* ------------------------------ FlowDetail ------------------------------- */
 
+/**
+ * FlowDetail se usa en dos mundos:
+ *  - cache / repos: generalmente viene con version
+ *  - runner (params de navegación): muchas veces solo manda flowId/title/steps
+ *
+ * Por eso version se marca opcional: los repos la normalizan con `normalizeVersion`,
+ * y el runner no se rompe si no la tiene.
+ */
 export const FlowDetailSchema = z.object({
   flowId: z.string(),
   title: z.string(),
-  description: z.string(),
+  version: z.string().optional(),
   steps: z.array(StepSchema).min(1),
 })
 export type FlowDetail = z.infer<typeof FlowDetailSchema>

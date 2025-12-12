@@ -21,17 +21,19 @@ function buildUrl(path: string): string {
 
 /**
  * Mapea a FlowSummary desde Flow de dominio.
- * Incluye metadatos útiles para la UI actual (flowType, isActive, stepsCount).
+ * Incluye metadatos útiles para la UI actual (flowType, isActive, stepsCount, timestamps).
  */
 function toSummary(f: Flow): FlowSummary {
   return {
     id: f.flowId,
     title: f.title,
     version: String(f.version),
-    description: f.description,
+    description: f.description ?? '',
     stepsCount: f.steps.length,
-    flowType: f.flowType,
-    isActive: f.isActive,
+    flowType: f.flowType ?? '',
+    isActive: f.isActive ?? true,
+    createdAt: f.createdAt ?? '',
+    updatedAt: f.updatedAt ?? '',
   }
 }
 
@@ -56,15 +58,19 @@ export class HttpFlowRepo implements FlowRepo {
     let flows = mapFlowsResponseDto(dto)
 
     // Filtros/paginación client-side
+    const anyQuery = query as any
+
     //    - Filtrado por primera letra del flowType
-    if ((query as any)?.flowTypeStartsWith) {
-      const letter = String((query as any).flowTypeStartsWith).toUpperCase()
+    if (anyQuery?.flowTypeStartsWith) {
+      const letter = String(anyQuery.flowTypeStartsWith).toUpperCase()
       flows = flows.filter(f => (f.flowType?.[0]?.toUpperCase() ?? '') === letter)
     }
 
+    //    - offset / limit
     if (typeof query?.offset === 'number' || typeof query?.limit === 'number') {
       const start = query?.offset ?? 0
-      const end = query?.limit ? start + query.limit : undefined
+      const limit = query?.limit
+      const end = typeof limit === 'number' ? start + limit : undefined
       flows = flows.slice(start, end)
     }
 

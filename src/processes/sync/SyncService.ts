@@ -19,6 +19,8 @@ export type SyncServiceOpts = {
 export class SyncService {
   private running = false
   private queued = false
+  private readonly retryAttempts = new Map<string, number>()
+  private readonly retryCooldowns = new Map<string, number>()
 
   private readonly outbox: OutboxRepo
   private readonly dispatch: Dispatcher
@@ -37,7 +39,12 @@ export class SyncService {
   }
 
   /** Cola una corrida segura. */
-  queue() {
+  queue(opts?: { resetBackoff?: boolean }) {
+    if (opts?.resetBackoff) {
+      this.retryAttempts.clear()
+      this.retryCooldowns.clear()
+    }
+
     if (this.running) {
       this.queued = true
       return
@@ -70,25 +77,46 @@ export class SyncService {
 
     //  Procesamos uno a uno
     for (const item of items) {
+      const attempt = this.retryAttempts.get(item.id) ?? 0
+      const cooldownUntil = this.retryCooldowns.get(item.id)
+      if (cooldownUntil && cooldownUntil > Date.now()) {
+        // Ya hay un backoff programado: saltamos este item en esta pasada.
+        continue
+      }
+
       try {
         const result = await this.dispatch(item)
-        if (result === 'success') {
+
+        if (result === 'success' || result === 'drop') {
           await this.outbox.markSuccess(item.id)
-        } else if (result === 'drop') {
-          await this.outbox.markFailure(item.id, 'dropped')
+          this.retryAttempts.delete(item.id)
+          this.retryCooldowns.delete(item.id)
         } else {
-          // retry: backoff básico
-          await this.delay(this.retryBaseDelayMs)
-          this.queued = true // reintentar en próxima corrida
+          await this.handleRetry(item.id, attempt, 'retry')
         }
       } catch (e) {
-        await this.outbox.markFailure(item.id, 'exception')
-        this.queued = true // reintentar lote siguiente
+        await this.handleRetry(item.id, attempt, 'exception')
       }
     }
   }
 
-  private delay(ms: number) {
-    return new Promise(res => setTimeout(res, ms))
+  private async handleRetry(id: string, attempt: number, reason?: string) {
+    const nextAttempt = attempt + 1
+    this.retryAttempts.set(id, nextAttempt)
+    const delayMs = this.computeBackoffDelay(attempt)
+    const wakeAt = Date.now() + delayMs
+    this.retryCooldowns.set(id, wakeAt)
+
+    await this.outbox.markFailure(id, reason ?? 'retry')
+
+    // Reprogramamos una corrida cuando pase el backoff.
+    setTimeout(() => this.queue(), delayMs)
+  }
+
+  private computeBackoffDelay(attempt: number): number {
+    const cappedAttempt = Math.min(attempt, this.retryMaxAttempts)
+    const jitter = Math.floor(Math.random() * this.retryBaseDelayMs)
+    const expo = Math.pow(2, cappedAttempt)
+    return this.retryBaseDelayMs * expo + jitter
   }
 }

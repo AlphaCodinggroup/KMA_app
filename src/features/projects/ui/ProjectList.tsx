@@ -2,15 +2,11 @@ import React, { memo, useCallback } from 'react'
 import type { StyleProp, ViewStyle } from 'react-native'
 import EntityList from '@shared/ui/list/EntityList'
 import ProjectCard from './ProjectCard'
-
-export interface ProjectListItem {
-  id: string
-  name: string
-}
+import type { Project } from '@entities/project/model'
 
 export interface ProjectListProps {
-  items: ReadonlyArray<ProjectListItem>
-  onPressItem: (item: ProjectListItem) => void
+  items: ReadonlyArray<Project>
+  onPressItem: (item: Project) => void
   contentContainerStyle?: StyleProp<ViewStyle>
   testID?: string
   refreshing?: boolean
@@ -25,12 +21,12 @@ const ProjectList: React.FC<ProjectListProps> = ({
   refreshing = false,
   onRefresh,
 }) => {
-  const keyExtractor = useCallback((item: ProjectListItem) => item.id, [])
+  const keyExtractor = useCallback((item: Project) => item.id, [])
 
   const renderItem = useCallback(
-    (item: ProjectListItem) => {
+    (item: Project) => {
       const baseProps = {
-        title: item.name,
+        title: item.name ?? '',
         onPress: () => onPressItem(item),
       }
       return <ProjectCard {...baseProps} />
@@ -39,7 +35,7 @@ const ProjectList: React.FC<ProjectListProps> = ({
   )
 
   return (
-    <EntityList<ProjectListItem>
+    <EntityList<Project>
       items={items}
       renderItem={renderItem}
       keyExtractor={keyExtractor}

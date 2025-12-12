@@ -11,12 +11,23 @@ export const StepFieldDtoSchema = z.object({
   id: z.string(),
   type: z.enum(['text', 'number', 'photo', 'button']),
   label: z.string(),
+  unit: z.string().optional(),
+  placeholder: z.string().optional(),
 })
 export type StepFieldDTO = z.infer<typeof StepFieldDtoSchema>
 
+export const OptionConditionDtoSchema = z.object({
+  step_id: z.string(),
+  answer: z.string(),
+})
+export type OptionConditionDTO = z.infer<typeof OptionConditionDtoSchema>
+
 export const SelectOptionDtoSchema = z.object({
   label: z.string(),
-  next: z.string(),
+  next: z.string().optional(),
+  yes_next: z.string().optional(),
+  no_next: z.string().optional(),
+  condition: OptionConditionDtoSchema.optional(),
 })
 export type SelectOptionDTO = z.infer<typeof SelectOptionDtoSchema>
 
@@ -28,6 +39,8 @@ export const QuestionStepDtoSchema = z.object({
   yes_next: z.string().optional(),
   no_next: z.string().optional(),
   barrier_id: z.string().optional(),
+  image: z.string().optional(),
+  check_previous_nos: z.array(z.string()).optional(),
 })
 export type QuestionStepDTO = z.infer<typeof QuestionStepDtoSchema>
 
@@ -38,6 +51,7 @@ export const FormStepDtoSchema = z.object({
   next: z.string().optional(),
   barrier_id: z.string().optional(),
   fields: z.array(StepFieldDtoSchema),
+  image: z.string().optional(),
 })
 export type FormStepDTO = z.infer<typeof FormStepDtoSchema>
 
@@ -48,12 +62,14 @@ export const SelectStepDtoSchema = z.object({
   text: z.string().optional(),
   title: z.string().optional(),
   options: z.array(SelectOptionDtoSchema),
+  image: z.string().optional(),
 })
 export type SelectStepDTO = z.infer<typeof SelectStepDtoSchema>
 
 export const EndStepDtoSchema = z.object({
   id: z.string(),
   type: z.literal('End'),
+  image: z.string().optional(),
 })
 export type EndStepDTO = z.infer<typeof EndStepDtoSchema>
 

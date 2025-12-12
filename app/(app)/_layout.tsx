@@ -1,13 +1,26 @@
-import { AppColors } from '@shared/ui/colors'
-import Icon from '@shared/ui/icons/Icon'
-import { Stack, useRouter } from 'expo-router'
-import { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import { TouchableOpacity } from 'react-native'
 import { RFValue } from 'react-native-responsive-fontsize'
+import { Stack, useRouter } from 'expo-router'
+
+import { AppColors } from '@shared/ui/colors'
+import Icon from '@shared/ui/icons/Icon'
 import AuthGuard from '@processes/auth-guard'
+import ConfirmModal from '@shared/ui/modal/ConfirmModal'
 
 const AppLayout: React.FC = () => {
   const router = useRouter()
+
+  const [exitAuditModalVisible, setExitAuditModalVisible] = useState<boolean>(false)
+
+  const openExitModal = useCallback(() => setExitAuditModalVisible(true), [])
+
+  const closeExitModal = useCallback(() => setExitAuditModalVisible(false), [])
+
+  const handleConfirmExitAudit = useCallback(() => {
+    setExitAuditModalVisible(false)
+    router.back()
+  }, [router])
 
   const BackButton = useCallback(
     () => (
@@ -15,7 +28,7 @@ const AppLayout: React.FC = () => {
         onPress={() => router.back()}
         hitSlop={12}
         accessibilityRole="button"
-        accessibilityLabel="Go back"
+        accessibilityLabel="Volver"
         style={{ paddingRight: RFValue(8), paddingLeft: RFValue(4) }}
       >
         <Icon name="chevronLeft" color={AppColors.Primary} size={RFValue(22)} />
@@ -24,45 +37,102 @@ const AppLayout: React.FC = () => {
     [router],
   )
 
+  const ConfirmExitBackButton = useCallback(
+    () => (
+      <TouchableOpacity
+        onPress={openExitModal}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Salir de la auditoría"
+        style={{ paddingRight: RFValue(8), paddingLeft: RFValue(4) }}
+      >
+        <Icon name="chevronLeft" color={AppColors.Primary} size={RFValue(22)} />
+      </TouchableOpacity>
+    ),
+    [openExitModal],
+  )
+
+  const ProfileButton = useCallback(
+    () => (
+      <TouchableOpacity
+        onPress={() => router.push('/(app)/profile')}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Open profile"
+        style={{ paddingRight: RFValue(8), paddingLeft: RFValue(4), marginRight:RFValue(12)}}
+      >
+        <Icon name="person" color={AppColors.Primary} size={RFValue(18)} />
+      </TouchableOpacity>
+    ),
+    [router],
+  )
+
   return (
     <AuthGuard>
-      <Stack
-        screenOptions={{
-          headerShown: true,
-          gestureEnabled: true,
-          headerStyle: { backgroundColor: AppColors.Background },
-          headerTitleStyle: { fontWeight: 'bold', fontSize: RFValue(16) },
-        }}
-      >
-        <Stack.Screen
-          name="projects"
-          options={{ title: 'Select Project', headerBackVisible: false }}
-        />
-        <Stack.Screen
-          name="facilities"
-          options={{
-            title: 'Select Facility',
-            headerLeft: BackButton,
-            headerBackVisible: false,
+      <>
+        <Stack
+          screenOptions={{
+            headerShown: true,
+            gestureEnabled: true,
+            headerStyle: { backgroundColor: AppColors.Background },
+            headerTitleStyle: { fontWeight: 'bold', fontSize: RFValue(16) },
           }}
+        >
+          <Stack.Screen
+            name="projects"
+            options={{ title: 'Select Project', headerBackVisible: false, headerRight: ProfileButton }}
+          />
+
+          <Stack.Screen
+            name="facilities"
+            options={{
+              title: 'Select Facility',
+              headerLeft: BackButton,
+              headerBackVisible: false,
+              headerRight: ProfileButton,
+            }}
+          />
+
+          <Stack.Screen
+            name="selector"
+            options={{
+              title: 'Select Flow',
+              headerLeft: BackButton,
+              headerBackVisible: false,
+              headerRight: ProfileButton,
+            }}
+          />
+
+          <Stack.Screen
+            name="profile"
+            options={{
+              title: 'Profile',
+              headerLeft: BackButton,
+              headerBackVisible: false,
+            }}
+          />
+
+          <Stack.Screen
+            name="flow/[flowId]"
+            options={{
+              title: 'Audit',
+              headerLeft: ConfirmExitBackButton,
+              headerBackVisible: false,
+            }}
+          />
+        </Stack>
+
+        <ConfirmModal
+          visible={exitAuditModalVisible}
+          title="Do you want to exit the audit?"
+          message="If you go back, you will lose all your progress."
+          cancelLabel="Stay here"
+          confirmLabel="Exit and lose everything"
+          onCancel={closeExitModal}
+          onConfirm={handleConfirmExitAudit}
+          destructive
         />
-        <Stack.Screen
-          name="selector"
-          options={{
-            title: 'Select Flow',
-            headerLeft: BackButton,
-            headerBackVisible: false,
-          }}
-        />
-        <Stack.Screen
-          name="flow/[flowId]"
-          options={{
-            title: 'Audit',
-            headerLeft: BackButton,
-            headerBackVisible: false,
-          }}
-        />
-      </Stack>
+      </>
     </AuthGuard>
   )
 }

@@ -13,14 +13,14 @@ export interface GeoPoint {
 
 export interface Facility {
   id: FacilityId
-  projectId: ProjectId
-  name: string
+  projectId?: ProjectId
+  name?: string
   address?: string
   city?: string
   geo?: GeoPoint
   notes?: string
-  status: FacilityStatus
-  userIds: string[]
+  status?: FacilityStatus
+  userIds?: string[]
   createdAt?: string
   updatedAt?: string
   createdBy?: string

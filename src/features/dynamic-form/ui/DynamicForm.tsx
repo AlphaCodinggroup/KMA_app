@@ -1,5 +1,5 @@
-import React, { memo, useMemo } from 'react'
-import { View, Text, TextInput, TouchableOpacity } from 'react-native'
+import React, { memo, useCallback, useMemo } from 'react'
+import { View, Text, TextInput, TouchableOpacity, Keyboard } from 'react-native'
 import { Controller, useForm } from 'react-hook-form'
 import type { FormField, FormStep } from '@shared/validation/steps.schema'
 import { styles } from './styles/dynamicForm.styles'
@@ -64,6 +64,7 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
   }, [photoFieldIds.length, watchedPhotoValues])
 
   const isSubmitDisabled = !canSubmit
+  const submitError = !canSubmit ? 'You must upload at least one photo to continue.' : ''
 
   const renderTextField = (field: Field) => (
     <Controller
@@ -73,13 +74,30 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
       render={({ field: rhf }) => (
         <View style={styles.inputBlock}>
           <Text style={styles.label}>{field.label}</Text>
-          <TextInput
-            value={(rhf.value as string) ?? ''}
-            onChangeText={rhf.onChange}
-            onBlur={rhf.onBlur}
-            placeholder={field.label}
-            style={styles.textInput}
-          />
+          {field.unit ? (
+            <View style={styles.inputRow}>
+              <TextInput
+                value={(rhf.value as string) ?? ''}
+                onChangeText={rhf.onChange}
+                onBlur={rhf.onBlur}
+                style={styles.textInputWithUnit}
+                returnKeyType="done"
+                placeholder={field.placeholder}
+              />
+              <View style={styles.unitBadge}>
+                <Text style={styles.unitText}>{field.unit}</Text>
+              </View>
+            </View>
+          ) : (
+            <TextInput
+              value={(rhf.value as string) ?? ''}
+              onChangeText={rhf.onChange}
+              onBlur={rhf.onBlur}
+              style={styles.textInput}
+              returnKeyType="done"
+              placeholder={field.placeholder}
+            />
+          )}
         </View>
       )}
     />
@@ -93,14 +111,32 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
       render={({ field: rhf }) => (
         <View style={styles.inputBlock}>
           <Text style={styles.label}>{field.label}</Text>
-          <TextInput
-            value={(rhf.value as string) ?? ''}
-            onChangeText={rhf.onChange}
-            onBlur={rhf.onBlur}
-            placeholder={field.label}
-            keyboardType="numeric"
-            style={styles.textInput}
-          />
+          {field.unit ? (
+            <View style={styles.inputRow}>
+              <TextInput
+                value={(rhf.value as string) ?? ''}
+                onChangeText={rhf.onChange}
+                onBlur={rhf.onBlur}
+                keyboardType="numeric"
+                style={styles.textInputWithUnit}
+                returnKeyType="done"
+                placeholder={field.placeholder}
+              />
+              <View style={styles.unitBadge}>
+                <Text style={styles.unitText}>{field.unit}</Text>
+              </View>
+            </View>
+          ) : (
+            <TextInput
+              value={(rhf.value as string) ?? ''}
+              onChangeText={rhf.onChange}
+              onBlur={rhf.onBlur}
+              keyboardType="numeric"
+              style={styles.textInput}
+              returnKeyType="done"
+              placeholder={field.placeholder}
+            />
+          )}
         </View>
       )}
     />
@@ -132,16 +168,21 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
           rhf.onChange(next)
         }
 
+        const shouldShowError = !!submitError && list.length === 0
+
         return (
-          <PhotoField
-            label={field.label}
-            value={list}
-            onAdd={onAdd}
-            onRemoveAt={onRemoveAt}
-            addButtonText="Add another photo"
-            removeButtonText="Remove"
-            testID={`photo-field-${field.id}`}
-          />
+          <View style={styles.inputBlock}>
+            <PhotoField
+              label={field.label}
+              value={list}
+              onAdd={onAdd}
+              onRemoveAt={onRemoveAt}
+              addButtonText="Add another photo"
+              removeButtonText="Remove"
+              testID={`photo-field-${field.id}`}
+            />
+            {shouldShowError && <Text style={styles.errorText}>{submitError}</Text>}
+          </View>
         )
       }}
     />
@@ -175,13 +216,21 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
     }
   }
 
+  const handleNextPress = useCallback(
+    () =>
+      handleSubmit(values => {
+        Keyboard.dismiss()
+        onSubmit(values)
+      })(),
+    [handleSubmit, onSubmit],
+  )
+
   return (
     <View style={styles.container}>
-      {!!step.title && <Text style={styles.title}>{step.title}</Text>}
       <View style={styles.formFields}>{step.fields.map(renderField)}</View>
 
       <TouchableOpacity
-        onPress={handleSubmit(values => onSubmit(values))}
+        onPress={handleNextPress}
         style={[styles.button, styles.primaryBtn, isSubmitDisabled && styles.btnDisabled]}
         disabled={isSubmitDisabled}
         accessibilityRole="button"

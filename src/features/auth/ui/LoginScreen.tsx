@@ -1,61 +1,37 @@
-import { useCallback, useRef, useState } from 'react'
+import React from 'react'
 import { View, Text, KeyboardAvoidingView, Platform } from 'react-native'
-import { useRouter } from 'expo-router'
-import { useForm } from 'react-hook-form'
-import { z } from 'zod'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { FormTextInput } from '@shared/ui/forms/FormTextInput'
-import { styles } from './login.styles'
 import PrimaryButton from '@shared/ui/buttons/PrimaryButton'
-import { loginUseCase } from '@features/auth/application/usecases'
-import { saveSession } from '@shared/session/session'
-import { normalizeAuthError } from '../lib/utils'
-
-// Cuando activemos backend real, movemos el schema a model/
-const LoginSchema = z.object({
-  username: z
-    .string()
-    .min(1, 'The user is mandatory.')
-    .min(3, 'Minimum 3 characters.')
-    .max(30, 'Maximum 30 characters.'),
-  password: z.string().min(6, 'Minimum 6 characters.'),
-})
-
-type LoginForm = z.infer<typeof LoginSchema>
+import Loader from '@shared/ui/loader/Loader'
+import { styles } from './login.styles'
+import { useLogin } from '@features/auth/application/useLogin'
 
 const LoginScreen: React.FC = () => {
-  const router = useRouter()
-  const [submitting, setSubmitting] = useState<boolean>(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
-  const pwdRef = useRef(null)
-
   const {
     control,
     handleSubmit,
-    formState: { isValid },
-  } = useForm<LoginForm>({
-    resolver: zodResolver(LoginSchema),
-    mode: 'onChange',
-    defaultValues: { username: '', password: '' },
-  })
+    formState,
+    passwordRef,
+    submitting,
+    submitError,
+    checkingSession,
+    onSubmit,
+  } = useLogin()
 
-  const onSubmit = useCallback(
-    async (data: LoginForm) => {
-      if (submitting) return
-      setSubmitting(true)
-      setSubmitError(null)
-      try {
-        const tokens = await loginUseCase(data.username.trim(), data.password)
-        await saveSession(tokens)
-        router.replace('/(app)/projects')
-      } catch (e) {
-        setSubmitError(normalizeAuthError(e))
-      } finally {
-        setSubmitting(false)
-      }
-    },
-    [router, submitting],
-  )
+  // Si estamos chequeando sesión (refreshToken + getValidToken),
+  // no mostramos el formulario para evitar el “flicker” del login.
+  if (checkingSession) {
+    return (
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.select({ ios: 'padding', android: undefined })}
+      >
+        <Loader loading text="Checking your session..." />
+      </KeyboardAvoidingView>
+    )
+  }
+
+  const { isValid } = formState
 
   return (
     <KeyboardAvoidingView
@@ -70,13 +46,13 @@ const LoginScreen: React.FC = () => {
           control={control}
           name="username"
           label="User"
-          placeholder="your-username"
+          placeholder="Your username"
           keyboardType="default"
           autoCapitalize="none"
           autoCorrect={false}
           textContentType="username"
           returnKeyType="next"
-          onSubmitEditing={() => pwdRef.current?.focus?.()}
+          onSubmitEditing={() => passwordRef.current?.focus?.()}
         />
 
         <FormTextInput
@@ -86,7 +62,7 @@ const LoginScreen: React.FC = () => {
           placeholder="••••••••"
           secureTextEntry
           textContentType="password"
-          ref={pwdRef}
+          ref={passwordRef}
           returnKeyType="done"
           onSubmitEditing={handleSubmit(onSubmit)}
         />
@@ -102,7 +78,7 @@ const LoginScreen: React.FC = () => {
         {submitError && <Text style={styles.errorText}>{submitError}</Text>}
       </View>
 
-      <Text style={styles.footerText}>v1.0.1</Text>
+      <Text style={styles.footerText}>v1.0.5</Text>
     </KeyboardAvoidingView>
   )
 }

@@ -2,7 +2,8 @@ import axios, { AxiosHeaders } from 'axios'
 import type { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios'
 import { Env } from '@shared/config/env'
 import { clearSession, getValidToken } from '@shared/session/session'
-
+import { isOnlineOnce } from '@shared/lib/network'
+import { showAuthExpiredToast } from '@shared/ui/toast/AppToast'
 /**
  * http.ts
  *
@@ -44,14 +45,12 @@ function expoBackoffDelay(attempt: number, baseMs: number): number {
 const RETRIED = Symbol('retried')
 const RETRIED_401 = Symbol('retried401')
 
+// Flag para no spamear el toast de sesión expirada
+let authExpiredToastShown = false
+
 // ------------------- Refresh con cola (una sola renovación) -------------------
 let refreshPromise: Promise<string | null> | null = null
 
-/**
- * Dispara (o reutiliza) un refresh/validación de token usando getValidToken().
- * - Debe resolver con un access token válido (string no vacío) o null si no pudo obtenerlo.
- * - Evita múltiples refresh concurrentes.
- */
 function scheduleRefresh(): Promise<string | null> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
@@ -61,7 +60,6 @@ function scheduleRefresh(): Promise<string | null> {
       } catch {
         return null
       } finally {
-        // liberar la promesa una vez resuelta/rechazada
         refreshPromise = null
       }
     })()
@@ -82,22 +80,10 @@ http.interceptors.request.use(async config => {
     if (token) {
       const headers = new AxiosHeaders(config.headers)
       headers.set('Authorization', `Bearer ${token}`)
-
-      // Idempotency-Key:
-      // Para operaciones críticas tipo "crear auditoría" podríamos setear
-      // un header único estable por auditoría para evitar duplicados en
-      // reintentos. Lo dejamos opcional/acotado al caller porque depende
-      // del flujo (flowId + startedAt, etc).
-      //
-      // if (!headers.has('Idempotency-Key')) {
-      //   headers.set('Idempotency-Key', someDeterministicKey)
-      // }
-
       config.headers = headers
     }
   } catch {
-    // Si falla la lectura/refresh del token acá, dejamos que el request siga
-    // sin Authorization. El backend devolverá 401 y lo manejamos abajo.
+    // Si falla, dejamos que el backend responda 401 y se maneje abajo.
   }
   return config
 })
@@ -136,9 +122,7 @@ function isUploadsPresignRequest(cfg?: AxiosRequestConfig) {
   return url.endsWith('/uploads') && method === 'post'
 }
 
-// --- Interceptor de respuesta:
-// 401 -> intentamos refresh con cola y reintentamos 1 vez
-// 429 / 5xx -> retry con backoff exponencial
+// --- Interceptor de respuesta
 http.interceptors.response.use(
   res => res,
   async (error: AxiosError) => {
@@ -152,32 +136,42 @@ http.interceptors.response.use(
     if (status === 401 && config && !config[RETRIED_401]) {
       config[RETRIED_401] = true
 
-      // Si ya hay un refresh ejecutándose, lo esperamos; si no, lo iniciamos.
       const newToken = await scheduleRefresh()
 
       if (newToken) {
-        // Reintentar el request original con el token renovado
         const headers = new AxiosHeaders(config.headers)
         headers.set('Authorization', `Bearer ${newToken}`)
         config.headers = headers
         return http.request(config)
       }
 
-      // Sin token renovado -> sesión inválida. Limpiamos sesión y rechazamos.
+      // No se pudo renovar el token → limpiamos sesión y avisamos al usuario
       try {
         await clearSession()
       } catch {
         // ignore
       }
+
+      if (!authExpiredToastShown) {
+        authExpiredToastShown = true
+        showAuthExpiredToast()
+        // Pequeña ventana para evitar spamear toasts si llegan varios 401 seguidos
+        setTimeout(() => {
+          authExpiredToastShown = false
+        }, 3000)
+      }
+
       return Promise.reject(error)
     }
 
     // ------------------------- Retry/backoff 429 y 5xx ----------------------
-    // Kill-switch por ruta: /uploads (POST) no se reintenta jamás
     if (config && !isUploadsPresignRequest(config)) {
-      const retryable = isRetryableStatus(status) || isTimeout(error) || isNetworkError(error)
+      const retryableBase = isRetryableStatus(status) || isTimeout(error) || isNetworkError(error)
 
-      if (retryable) {
+      if (retryableBase) {
+        const online = await isOnlineOnce()
+        if (!online) return Promise.reject(error)
+
         const { maxAttempts, baseDelayMs } = getSafeRetryParams()
         const attempt = Number(config[RETRIED] ?? 0)
 
@@ -195,25 +189,13 @@ http.interceptors.response.use(
   },
 )
 
-// --- Helper genérico para requests tipados (azúcar sintáctico)
+// --- Helper genérico para requests tipados
 export async function request<T = unknown>(cfg: AxiosRequestConfig): Promise<T> {
   const { data } = await http.request<T>(cfg)
   return data
 }
 
-/**
- * putPresignedBinary
- *
- * Sube un binario (ej. foto) a una URL presignada de S3.
- *
- * - Usa axios directo SIN interceptores de Authorization.
- *
- * - Content-Type debe coincidir con el tipo real (image/png, image/jpeg, etc.).
- *
- * - Reintenta sólo en errores temporales (429 / 5xx). Un 403 normalmente
- *   significa URL expirada o firma inválida, y en ese caso NO sirve reintentar
- *   con la misma URL (hay que pedir nuevas presigned URLs al backend).
- */
+// ------------------------ putPresignedBinary ------------------------
 export interface PutPresignedBinaryArgs {
   url: string
   data: Blob | ArrayBuffer | Uint8Array
@@ -232,8 +214,6 @@ export async function putPresignedBinary({
   const baseDelayMs = Env.retry.baseDelayMs
   let attempt = 0
 
-  // bucle de retry controlado
-  // Nota: no usamos la instancia `http` porque esa mete interceptores de auth.
   for (;;) {
     try {
       await axios.put(url, data, {
@@ -242,15 +222,10 @@ export async function putPresignedBinary({
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
       })
-      // S3 responde 200 OK vacío si salió bien.
       return
     } catch (err: any) {
       const status: number | undefined = err?.response?.status
 
-      // Condiciones de retry:
-      // - 403 => URL expirada / firma inválida / reuso de URL -> NO reintentar con la misma URL.
-      // - 400 => probablemente Content-Type incorrecto o archivo corrupto -> NO sirve retry ciego.
-      // - 429 o 5xx => transitorio, sí reintentar.
       const retryable =
         status === 429 || (typeof status === 'number' && status >= 500 && status !== 501) || !status
 

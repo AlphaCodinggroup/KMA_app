@@ -1,35 +1,45 @@
 import React, { memo } from 'react'
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native'
-import { styles } from './styles/letterFilter.styles'
+import { styles } from './letterFilter.styles'
+import type { LetterKey } from '@shared/lib/alphaFilter'
 
 type LetterFilterProps = {
   letters: string[]
-  selected: string | 'ALL'
-  onSelect: (letter: string | 'ALL') => void
+  selected: LetterKey
+  onSelect: (letter: LetterKey) => void
+  label?: string
+  allLabel?: string
 }
 
-const LetterFilter: React.FC<LetterFilterProps> = ({ letters, selected, onSelect }) => {
+const LetterFilter: React.FC<LetterFilterProps> = ({
+  letters,
+  selected,
+  onSelect,
+  label = 'Filter by letter:',
+  allLabel = 'All',
+}) => {
   return (
     <View style={styles.container} accessibilityRole="menu" accessible>
-      <Text style={styles.label}>Filter by letter:</Text>
+      <Text style={styles.label}>{label}</Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.lettersRow}
       >
         <Chip
-          label="All"
+          label={allLabel}
           active={selected === 'ALL'}
           onPress={() => onSelect('ALL')}
           accessibilityLabel="Show all"
         />
-        {letters.map(l => (
+
+        {letters.map(letter => (
           <Chip
-            key={l}
-            label={l}
-            active={selected === l}
-            onPress={() => onSelect(l)}
-            accessibilityLabel={`Filter by letter ${l}`}
+            key={letter}
+            label={letter}
+            active={selected === letter}
+            onPress={() => onSelect(letter)}
+            accessibilityLabel={`Filter by letter ${letter}`}
           />
         ))}
       </ScrollView>

@@ -21,9 +21,9 @@ const FlowCard: React.FC<FlowCardProps> = ({
   const baseProps = {
     title: title,
     chevron: true,
-    version: version ?? '',
-    steps: stepsCount,
-    description: description,
+    // version: version ?? '',
+    // steps: stepsCount,
+    // description: description,
     onPress: onPress,
   }
   return <ListItemCard {...baseProps} {...(testID ? { testID } : {})} />

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, ProjectStatus } from '@entities/project/model'
-import type { ListProjectsParams } from '@entities/project/ports'
-import { createHttpProjectRepo } from '@features/projects/data/project.repo.http'
+import type { ListProjectsParams, ProjectRepo } from '@entities/project/ports'
+import { createOfflineFirstProjectRepo } from '@features/projects/data/project.repo.offline'
 
 /**
  * Opciones de listado (dominio)
@@ -15,11 +15,24 @@ export type UseProjectsOptions = {
 }
 
 /**
+ * Singleton simple para el ProjectRepo.
+ * Evita crear nuevas instancias del repo en cada uso del hook.
+ */
+let projectRepoInstance: ProjectRepo | null = null
+
+const getProjectRepo = (): ProjectRepo => {
+  if (!projectRepoInstance) {
+    projectRepoInstance = createOfflineFirstProjectRepo()
+  }
+  return projectRepoInstance
+}
+
+/**
  * Hook para consumir proyectos desde la API con paginación por cursor.
  * - Soporta cancelación (AbortController) para evitar race conditions.
+ * - Usa un ProjectRepo offline-first (HTTP + SQLite).
  */
 export function useProjects(opts: UseProjectsOptions = {}) {
-  const repoRef = useRef(createHttpProjectRepo())
   const [items, setItems] = useState<Project[]>([])
   const [cursor, setCursor] = useState<string | undefined>(undefined)
 
@@ -40,8 +53,13 @@ export function useProjects(opts: UseProjectsOptions = {}) {
     }
   }, [opts.status, opts.search, opts.limit, opts.sortBy, opts.sortOrder])
 
+  /**
+   * fetchPage:
+   * - NO depende de `cursor` en su closure para evitar disparar el efecto inicial 2 veces.
+   * - El cursor se pasa explícitamente como argumento cuando se quiere paginar.
+   */
   const fetchPage = useCallback(
-    async ({ reset }: { reset: boolean }) => {
+    async ({ reset, cursorOverride }: { reset: boolean; cursorOverride?: string }) => {
       // Cancelar request previo (si lo hubiera)
       abortRef.current?.abort()
       const controller = new AbortController()
@@ -49,27 +67,32 @@ export function useProjects(opts: UseProjectsOptions = {}) {
 
       const params: ListProjectsParams = {
         ...baseParams,
-        cursor: reset ? undefined : cursor,
+        cursor: reset ? undefined : cursorOverride,
       }
 
       try {
         setError(null)
+
         if (reset) {
+          // Para primera carga y refresh:
+          // - En la primera carga `loading` ya está en true por defecto.
+          // - En refresh, típicamente mostrarás indicador de `refreshing`.
           setRefreshing(true)
-        } else if (cursor) {
+        } else if (cursorOverride) {
           setLoadingMore(true)
         } else {
           setLoading(true)
         }
 
-        const page = await repoRef.current.list({
+        const repo = getProjectRepo()
+        const page = await repo.list({
           ...params,
           signal: controller.signal,
         })
 
         setCursor(page.nextCursor)
         setItems(prev => (reset ? page.items : prev.concat(page.items)))
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (controller.signal.aborted) return
         setError(e instanceof Error ? e : new Error('Unknown error'))
       } finally {
@@ -78,21 +101,24 @@ export function useProjects(opts: UseProjectsOptions = {}) {
         setRefreshing(false)
       }
     },
-    [baseParams, cursor],
+    [baseParams],
   )
 
   // Primera carga + cambios de filtros/orden → resetear y recargar
   useEffect(() => {
-    fetchPage({ reset: true })
+    fetchPage({ reset: true, cursorOverride: undefined })
     // cleanup: abortar si el componente se desmonta
     return () => abortRef.current?.abort()
   }, [fetchPage])
 
-  const refresh = useCallback(() => fetchPage({ reset: true }), [fetchPage])
+  const refresh = useCallback(
+    () => fetchPage({ reset: true, cursorOverride: undefined }),
+    [fetchPage],
+  )
 
   const loadMore = useCallback(() => {
     if (!cursor) return
-    fetchPage({ reset: false })
+    fetchPage({ reset: false, cursorOverride: cursor })
   }, [cursor, fetchPage])
 
   const hasNextPage = Boolean(cursor)
@@ -114,8 +140,6 @@ export function useProjects(opts: UseProjectsOptions = {}) {
  * Hook para obtener un proyecto por ID.
  */
 export function useProjectById(projectId: string | null | undefined) {
-  const repoRef = useRef(createHttpProjectRepo())
-
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<Error | null>(null)
@@ -137,9 +161,11 @@ export function useProjectById(projectId: string | null | undefined) {
       try {
         setLoading(true)
         setError(null)
-        const p = await repoRef.current.getById(projectId, { signal: controller.signal })
+
+        const repo = getProjectRepo()
+        const p = await repo.getById(projectId, { signal: controller.signal })
         setProject(p)
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (controller.signal.aborted) return
         setError(e instanceof Error ? e : new Error('Unknown error'))
       } finally {

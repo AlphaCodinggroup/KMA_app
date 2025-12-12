@@ -94,18 +94,44 @@ export async function run(
   return { changes: res.changes, lastInsertRowId: (res as any).lastInsertRowId }
 }
 
-/** Ejecuta un bloque en transacción IMMEDIATE. */
+/**
+ * Cola global de transacciones
+ */
+let txChain: Promise<void> = Promise.resolve()
+
+/** Ejecuta un bloque en transacción IMMEDIATE, serializando todas las transacciones. */
 export async function withTransaction<T>(
   fn: (db: SQLite.SQLiteDatabase) => Promise<T>,
 ): Promise<T> {
   const db = await getDb()
-  await db.execAsync('BEGIN IMMEDIATE;')
-  try {
-    const result = await fn(db)
-    await db.execAsync('COMMIT;')
-    return result
-  } catch (e) {
-    await db.execAsync('ROLLBACK;')
-    throw e
+
+  let result!: T
+  let error: unknown
+  let hasError = false
+
+  // Encadenamos esta transacción a la anterior para que nunca haya dos BEGIN al mismo tiempo
+  txChain = txChain.then(async () => {
+    await db.execAsync('BEGIN IMMEDIATE;')
+    try {
+      result = await fn(db)
+      await db.execAsync('COMMIT;')
+    } catch (e) {
+      hasError = true
+      error = e
+      try {
+        await db.execAsync('ROLLBACK;')
+      } catch {
+        // ignoramos errores de rollback
+      }
+    }
+  })
+
+  // Esperamos a que se ejecute nuestra transacción dentro de la cola
+  await txChain
+
+  if (hasError) {
+    throw error
   }
+
+  return result
 }
