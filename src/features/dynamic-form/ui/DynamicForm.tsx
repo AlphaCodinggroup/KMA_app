@@ -108,37 +108,45 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
       key={field.id}
       control={control}
       name={field.id}
-      render={({ field: rhf }) => (
-        <View style={styles.inputBlock}>
-          <Text style={styles.label}>{field.label}</Text>
-          {field.unit ? (
-            <View style={styles.inputRow}>
+      render={({ field: rhf }) => {
+        // Normalizar coma a punto para decimales (teclado iOS español muestra coma)
+        const handleNumericChange = (text: string) => {
+          const normalized = text.replace(/,/g, '.')
+          rhf.onChange(normalized)
+        }
+
+        return (
+          <View style={styles.inputBlock}>
+            <Text style={styles.label}>{field.label}</Text>
+            {field.unit ? (
+              <View style={styles.inputRow}>
+                <TextInput
+                  value={(rhf.value as string) ?? ''}
+                  onChangeText={handleNumericChange}
+                  onBlur={rhf.onBlur}
+                  keyboardType="numeric"
+                  style={styles.textInputWithUnit}
+                  returnKeyType="done"
+                  placeholder={field.placeholder}
+                />
+                <View style={styles.unitBadge}>
+                  <Text style={styles.unitText}>{field.unit}</Text>
+                </View>
+              </View>
+            ) : (
               <TextInput
                 value={(rhf.value as string) ?? ''}
-                onChangeText={rhf.onChange}
+                onChangeText={handleNumericChange}
                 onBlur={rhf.onBlur}
                 keyboardType="numeric"
-                style={styles.textInputWithUnit}
+                style={styles.textInput}
                 returnKeyType="done"
                 placeholder={field.placeholder}
               />
-              <View style={styles.unitBadge}>
-                <Text style={styles.unitText}>{field.unit}</Text>
-              </View>
-            </View>
-          ) : (
-            <TextInput
-              value={(rhf.value as string) ?? ''}
-              onChangeText={rhf.onChange}
-              onBlur={rhf.onBlur}
-              keyboardType="numeric"
-              style={styles.textInput}
-              returnKeyType="done"
-              placeholder={field.placeholder}
-            />
-          )}
-        </View>
-      )}
+            )}
+          </View>
+        )
+      }}
     />
   )
 

@@ -551,7 +551,9 @@ function buildAnswersForApi(params: {
             delete outValues[key]
             continue
           }
-          const numVal = Number(trimmed)
+          // Normalizar separador decimal: coma → punto 
+          const normalized = trimmed.replace(/,/g, '.')
+          const numVal = Number(normalized)
           if (Number.isNaN(numVal)) {
             delete outValues[key]
             continue
