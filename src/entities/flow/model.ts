@@ -29,6 +29,29 @@ export interface SelectOption {
   yesNext?: string
   noNext?: string
   condition?: OptionCondition
+  barrierId?: string
+}
+
+export type ConditionType = 'Question' | 'Select'
+
+export interface QuestionCondition {
+  type: 'Question'
+  stepId: string
+  answer: boolean
+}
+
+export interface SelectCondition {
+  type: 'Select'
+  stepId: string
+  selectedOption: string
+}
+
+export type StepCondition = QuestionCondition | SelectCondition
+
+export interface ConditionalNext {
+  conditions: StepCondition[]
+  next: string
+  matchAny?: boolean
 }
 
 // --------------------
@@ -40,6 +63,8 @@ export interface QuestionStep {
   text: string
   yesNext?: string
   noNext?: string
+  conditionalYesNext?: ConditionalNext[]
+  conditionalNoNext?: ConditionalNext[]
   barrierId?: string
   image?: string
   checkPreviousNos?: string[]
@@ -53,6 +78,7 @@ export interface FormStep {
   barrierId?: string
   fields: Field[]
   image?: string
+  metadata?: Record<string, unknown>
 }
 
 // "Select" puede venir con `text` o con `title` según el flujo
@@ -114,3 +140,7 @@ export const isQuestionStep = (s: Step): s is QuestionStep => s.type === 'Questi
 export const isFormStep = (s: Step): s is FormStep => s.type === 'Form'
 export const isSelectStep = (s: Step): s is SelectStep => s.type === 'Select'
 export const isEndStep = (s: Step): s is EndStep => s.type === 'End'
+
+export const isQuestionCondition = (c: StepCondition): c is QuestionCondition =>
+  c.type === 'Question'
+export const isSelectCondition = (c: StepCondition): c is SelectCondition => c.type === 'Select'

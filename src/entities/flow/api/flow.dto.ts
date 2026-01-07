@@ -28,8 +28,34 @@ export const SelectOptionDtoSchema = z.object({
   yes_next: z.string().optional(),
   no_next: z.string().optional(),
   condition: OptionConditionDtoSchema.optional(),
+  barrier_id: z.string().optional(),
 })
 export type SelectOptionDTO = z.infer<typeof SelectOptionDtoSchema>
+
+export const QuestionConditionDtoSchema = z.object({
+  type: z.literal('Question').optional(),
+  step_id: z.string(),
+  answer: z.union([z.boolean(), z.string()]),
+})
+
+export const SelectConditionDtoSchema = z.object({
+  type: z.literal('Select').optional(),
+  step_id: z.string(),
+  selected_option: z.string(),
+})
+
+export const StepConditionDtoSchema = z.union([
+  QuestionConditionDtoSchema,
+  SelectConditionDtoSchema,
+])
+export type StepConditionDTO = z.infer<typeof StepConditionDtoSchema>
+
+export const ConditionalNextDtoSchema = z.object({
+  conditions: z.array(StepConditionDtoSchema),
+  next: z.string(),
+  match_any: z.boolean().optional(),
+})
+export type ConditionalNextDTO = z.infer<typeof ConditionalNextDtoSchema>
 
 // ---- Variantes de Step
 export const QuestionStepDtoSchema = z.object({
@@ -41,17 +67,24 @@ export const QuestionStepDtoSchema = z.object({
   barrier_id: z.string().optional(),
   image: z.string().optional(),
   check_previous_nos: z.array(z.string()).optional(),
+  conditional_yes_next: z
+    .union([ConditionalNextDtoSchema, z.array(ConditionalNextDtoSchema)])
+    .optional(),
+  conditional_no_next: z
+    .union([ConditionalNextDtoSchema, z.array(ConditionalNextDtoSchema)])
+    .optional(),
 })
 export type QuestionStepDTO = z.infer<typeof QuestionStepDtoSchema>
 
 export const FormStepDtoSchema = z.object({
   id: z.string(),
   type: z.literal('Form'),
-  title: z.string(),
+  title: z.string().optional(),
   next: z.string().optional(),
   barrier_id: z.string().optional(),
   fields: z.array(StepFieldDtoSchema),
   image: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 export type FormStepDTO = z.infer<typeof FormStepDtoSchema>
 

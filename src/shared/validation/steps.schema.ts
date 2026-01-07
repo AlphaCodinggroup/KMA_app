@@ -25,10 +25,36 @@ export const FormStepSchema = z.object({
   barrierId: z.string().optional(),
   fields: z.array(FormFieldSchema).min(1),
   image: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 export type FormStep = z.infer<typeof FormStepSchema>
 
 /* ------------------------------- Question -------------------------------- */
+
+export const QuestionConditionSchema = z.object({
+  type: z.literal('Question'),
+  stepId: z.string(),
+  answer: z.boolean(),
+})
+
+export const SelectConditionSchema = z.object({
+  type: z.literal('Select'),
+  stepId: z.string(),
+  selectedOption: z.string(),
+})
+
+export const StepConditionSchema = z.discriminatedUnion('type', [
+  QuestionConditionSchema,
+  SelectConditionSchema,
+])
+export type StepCondition = z.infer<typeof StepConditionSchema>
+
+export const ConditionalNextSchema = z.object({
+  conditions: z.array(StepConditionSchema),
+  next: z.string(),
+  matchAny: z.boolean().optional(),
+})
+export type ConditionalNext = z.infer<typeof ConditionalNextSchema>
 
 export const QuestionStepSchema = z.object({
   id: z.string(),
@@ -39,6 +65,8 @@ export const QuestionStepSchema = z.object({
   checkPreviousNos: z.array(z.string()).optional(),
   image: z.string().optional(),
   barrierId: z.string().optional(),
+  conditionalYesNext: z.array(ConditionalNextSchema).optional(),
+  conditionalNoNext: z.array(ConditionalNextSchema).optional(),
 })
 export type QuestionStep = z.infer<typeof QuestionStepSchema>
 
@@ -49,6 +77,7 @@ export const SelectOptionSchema = z.object({
   next: z.string().optional(),
   yesNext: z.string().optional(),
   noNext: z.string().optional(),
+  barrierId: z.string().optional(),
   condition: z
     .object({
       stepId: z.string(),

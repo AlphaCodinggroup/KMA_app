@@ -8,6 +8,8 @@ import type {
   EndStepDTO,
   StepFieldDTO,
   SelectOptionDTO,
+  StepConditionDTO,
+  ConditionalNextDTO,
 } from '@entities/flow/api/flow.dto'
 import type {
   Flow,
@@ -18,6 +20,8 @@ import type {
   EndStep,
   Field,
   SelectOption,
+  StepCondition,
+  ConditionalNext,
 } from '@entities/flow/model'
 
 /**
@@ -72,6 +76,7 @@ function mapSelectOption(dto: SelectOptionDTO): SelectOption {
     next: dto.next,
     yesNext: dto.yes_next,
     noNext: dto.no_next,
+    barrierId: dto.barrier_id,
     condition: dto.condition
       ? {
           stepId: dto.condition.step_id,
@@ -79,6 +84,50 @@ function mapSelectOption(dto: SelectOptionDTO): SelectOption {
         }
       : undefined,
   }
+}
+
+function mapStepCondition(dto: StepConditionDTO): StepCondition {
+  if ('selected_option' in dto) {
+    return {
+      type: 'Select',
+      stepId: dto.step_id,
+      selectedOption: dto.selected_option,
+    }
+  }
+
+  // Normalizar answer a boolean
+  let finalAns = false
+  const raw = (dto as any).answer
+
+  if (typeof raw === 'boolean') {
+    finalAns = raw
+  } else if (typeof raw === 'string') {
+    finalAns = raw.toUpperCase() === 'YES'
+  }
+
+  return {
+    type: 'Question',
+    stepId: dto.step_id,
+    answer: finalAns,
+  }
+}
+
+function mapConditionalNext(dto: ConditionalNextDTO): ConditionalNext {
+  return {
+    conditions: dto.conditions.map(mapStepCondition),
+    next: dto.next,
+    matchAny: dto.match_any,
+  }
+}
+
+function normalizeConditionalNext(
+  input?: ConditionalNextDTO | ConditionalNextDTO[],
+): ConditionalNext[] | undefined {
+  if (!input) return undefined
+  if (Array.isArray(input)) {
+    return input.map(mapConditionalNext)
+  }
+  return [mapConditionalNext(input)]
 }
 
 // --------------------
@@ -94,6 +143,8 @@ function mapQuestion(dto: QuestionStepDTO): QuestionStep {
     barrierId: dto.barrier_id,
     image: dto.image,
     checkPreviousNos: dto.check_previous_nos,
+    conditionalYesNext: normalizeConditionalNext(dto.conditional_yes_next),
+    conditionalNoNext: normalizeConditionalNext(dto.conditional_no_next),
   }
 }
 
@@ -101,11 +152,12 @@ function mapForm(dto: FormStepDTO): FormStep {
   return {
     id: dto.id,
     type: 'Form',
-    title: dto.title,
+    title: dto.title ?? '',
     next: dto.next,
     barrierId: dto.barrier_id,
     fields: dto.fields.map(mapField),
     image: dto.image,
+    metadata: dto.metadata,
   }
 }
 

@@ -10,7 +10,10 @@ import type {
   QuestionStep,
   FormStep,
   SelectOption,
+  SelectStep,
+  ConditionalNext,
 } from '@shared/validation/steps.schema'
+import { isQuestionCondition, isSelectCondition } from '@entities/flow/model'
 import type { SubmissionAnswer } from '@entities/submission/model'
 import { QuestionCard } from '@features/question'
 import { DynamicForm } from '@features/dynamic-form'
@@ -167,9 +170,41 @@ const FlowRunnerScreen: React.FC = () => {
 
   const resolveQuestionNext = useCallback(
     (step: QuestionStep, answeredYes: boolean): string | null => {
+      // Condicionales complejos
+      const rules = answeredYes ? step.conditionalYesNext : step.conditionalNoNext
+
+      if (rules && rules.length > 0) {
+        // Función interna para evaluar una condición individual
+        const check = (c: any): boolean => {
+          const stored = answersRef.current[c.stepId]
+          if (!stored) return false
+
+          // Caso 1: Condición de Pregunta anterior (YES/NO)
+          if (isQuestionCondition(c)) {
+            const val = stored.answer // 'YES' | 'NO'
+            const expected = c.answer ? 'YES' : 'NO'
+            return val === expected
+          }
+
+          // Condición de Select anterior (Opción elegida)
+          if (isSelectCondition(c)) {
+            const val = stored.option // Label guardado
+            return val === c.selectedOption
+          }
+          return false
+        }
+
+        for (const rule of rules) {
+          // Si matchAny=true es un OR, si no es un AND (default)
+          const pass = rule.matchAny ? rule.conditions.some(check) : rule.conditions.every(check)
+
+          if (pass) return rule.next
+        }
+      }
+
       const defaultNext = answeredYes
-        ? step.yesNext ?? step.noNext ?? null
-        : step.noNext ?? step.yesNext ?? null
+        ? (step.yesNext ?? step.noNext ?? null)
+        : (step.noNext ?? step.yesNext ?? null)
 
       if (!Array.isArray(step.checkPreviousNos) || step.checkPreviousNos.length === 0) {
         return defaultNext
