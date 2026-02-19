@@ -1,5 +1,4 @@
 import type { ExpoConfig, ConfigContext } from '@expo/config'
-import 'dotenv/config'
 import { z } from 'zod'
 
 const BuildEnvSchema = z.object({
@@ -18,8 +17,8 @@ const BuildEnvSchema = z.object({
 export default ({ config }: ConfigContext): ExpoConfig => {
   const parsed = BuildEnvSchema.safeParse(process.env)
   if (!parsed.success) {
-    const issues = parsed.error.issues.map(i => `- ${i.path.join('.')}: ${i.message}`).join('')
-    throw new Error(`[ENV] Variables de build inválidas en .env${issues}`)
+    const issues = parsed.error.issues.map(i => `- ${i.path.join('.')}: ${i.message}`).join('\n')
+    throw new Error(`[ENV] Variables de build inválidas en .env\n${issues}`)
   }
 
   const env = parsed.data
