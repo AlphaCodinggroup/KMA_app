@@ -10,8 +10,6 @@ import type {
   QuestionStep,
   FormStep,
   SelectOption,
-  SelectStep,
-  ConditionalNext,
 } from '@shared/validation/steps.schema'
 import { isQuestionCondition, isSelectCondition } from '@entities/flow/model'
 import type { SubmissionAnswer } from '@entities/submission/model'
@@ -77,7 +75,7 @@ const FlowRunnerScreen: React.FC = () => {
       })
 
       return () => {
-        subscription && subscription()
+        subscription?.()
       }
     }, []),
   )
@@ -416,7 +414,11 @@ const FlowRunnerScreen: React.FC = () => {
 
           return (
             <View key={id} style={styles.containerComponents}>
-              {step.image && <StepIllustration image={step.image} onZoomChange={setZoomed} />}
+              <StepIllustration
+                onZoomChange={setZoomed}
+                {...(typeof step.image === 'string' ? { image: step.image } : {})}
+                {...(Array.isArray(step.images) ? { images: step.images } : {})}
+              />
 
               {step.type === 'Question' && (
                 <QuestionCard

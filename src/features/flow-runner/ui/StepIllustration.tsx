@@ -1,56 +1,73 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { View, type ImageSourcePropType } from 'react-native'
+import { View } from 'react-native'
 import { styles } from './styles/stepIllustration.styles'
 import ZoomableImage from '@shared/ui/ZoomableImage/ZoomableImage'
 import { resolveFlowImageUri } from '@shared/lib/imageCache'
+import { resolveStepImageUrls } from '@shared/lib/flowStepImages'
 
 type Props = {
   image?: string
+  images?: string[]
   onZoomChange: (z: boolean) => void
 }
 
-const StepIllustration: React.FC<Props> = ({ image, onZoomChange }) => {
-  const [resolvedUri, setResolvedUri] = useState<string | undefined>(image)
+const StepIllustration: React.FC<Props> = ({ image, images, onZoomChange }) => {
+  const preferredImages = useMemo(
+    () =>
+      resolveStepImageUrls({
+        ...(typeof image === 'string' ? { image } : {}),
+        ...(Array.isArray(images) ? { images } : {}),
+      }),
+    [image, images],
+  )
+  const [resolvedUris, setResolvedUris] = useState<string[]>(preferredImages)
 
   useEffect(() => {
     let cancelled = false
 
-    if (!image) {
-      setResolvedUri(undefined)
+    if (preferredImages.length === 0) {
+      setResolvedUris([])
       return
     }
 
-    // Comportamiento optimista: primero usamos la URL remota
-    setResolvedUri(image)
+    // Comportamiento optimista: primero usamos las URLs remotas
+    setResolvedUris(preferredImages)
     ;(async () => {
-      try {
-        const uri = await resolveFlowImageUri(image)
-        if (!cancelled) {
-          setResolvedUri(uri)
-        }
-      } catch (e) {
-        if (__DEV__) {
-          console.warn('[StepIllustration] resolveFlowImageUri failed', e)
-        }
-        // Si falla, quedamos con la URL remota, sin romper nada.
+      const uris = await Promise.all(
+        preferredImages.map(async currentImage => {
+          try {
+            return (await resolveFlowImageUri(currentImage)) ?? currentImage
+          } catch (e) {
+            if (__DEV__) {
+              console.warn('[StepIllustration] resolveFlowImageUri failed', e)
+            }
+            return currentImage
+          }
+        }),
+      )
+
+      if (!cancelled) {
+        setResolvedUris(uris)
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [image])
+  }, [preferredImages])
 
-  const source: ImageSourcePropType | undefined = useMemo(() => {
-    if (!resolvedUri) return undefined
-    return { uri: resolvedUri }
-  }, [resolvedUri])
-
-  if (!source) return null
+  if (resolvedUris.length === 0) return null
 
   return (
     <View style={styles.wrapper} accessibilityIgnoresInvertColors>
-      <ZoomableImage source={source} onZoomChange={onZoomChange} />
+      {resolvedUris.map((uri, index) => (
+        <ZoomableImage
+          key={`${uri}-${index}`}
+          source={{ uri }}
+          onZoomChange={onZoomChange}
+          style={index < resolvedUris.length - 1 ? styles.imageSpacing : undefined}
+        />
+      ))}
     </View>
   )
 }

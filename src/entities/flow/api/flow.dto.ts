@@ -57,15 +57,19 @@ export const ConditionalNextDtoSchema = z.object({
 })
 export type ConditionalNextDTO = z.infer<typeof ConditionalNextDtoSchema>
 
+const StepMediaDtoSchema = z.object({
+  image: z.string().optional(),
+  images: z.array(z.string()).optional(),
+})
+
 // ---- Variantes de Step
-export const QuestionStepDtoSchema = z.object({
+export const QuestionStepDtoSchema = StepMediaDtoSchema.extend({
   id: z.string(),
   type: z.literal('Question'),
   text: z.string(),
   yes_next: z.string().optional(),
   no_next: z.string().optional(),
   barrier_id: z.string().optional(),
-  image: z.string().optional(),
   check_previous_nos: z.array(z.string()).optional(),
   conditional_yes_next: z
     .union([ConditionalNextDtoSchema, z.array(ConditionalNextDtoSchema)])
@@ -76,33 +80,30 @@ export const QuestionStepDtoSchema = z.object({
 })
 export type QuestionStepDTO = z.infer<typeof QuestionStepDtoSchema>
 
-export const FormStepDtoSchema = z.object({
+export const FormStepDtoSchema = StepMediaDtoSchema.extend({
   id: z.string(),
   type: z.literal('Form'),
   title: z.string().optional(),
   next: z.string().optional(),
   barrier_id: z.string().optional(),
   fields: z.array(StepFieldDtoSchema),
-  image: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 export type FormStepDTO = z.infer<typeof FormStepDtoSchema>
 
 // "Select" puede venir con `text` o con `title` (según el flujo)
-export const SelectStepDtoSchema = z.object({
+export const SelectStepDtoSchema = StepMediaDtoSchema.extend({
   id: z.string(),
   type: z.literal('Select'),
   text: z.string().optional(),
   title: z.string().optional(),
   options: z.array(SelectOptionDtoSchema),
-  image: z.string().optional(),
 })
 export type SelectStepDTO = z.infer<typeof SelectStepDtoSchema>
 
-export const EndStepDtoSchema = z.object({
+export const EndStepDtoSchema = StepMediaDtoSchema.extend({
   id: z.string(),
   type: z.literal('End'),
-  image: z.string().optional(),
 })
 export type EndStepDTO = z.infer<typeof EndStepDtoSchema>
 
@@ -121,7 +122,7 @@ export const FlowItemDtoSchema = z.object({
   description: z.string().optional(),
   steps: z.array(StepDtoSchema),
   flow_type: z.string().optional(),
-  version: z.number(),
+  version: z.union([z.number(), z.string()]),
   is_active: z.boolean().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),

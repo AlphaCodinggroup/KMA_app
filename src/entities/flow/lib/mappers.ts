@@ -34,6 +34,23 @@ import type {
 // --------------------
 // Helpers
 // --------------------
+function normalizeStepImage(value: string | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+function normalizeStepImages(values: string[] | undefined): string[] | undefined {
+  if (!Array.isArray(values)) return undefined
+
+  const normalized = values
+    .map(normalizeStepImage)
+    .filter((value): value is string => value !== undefined)
+
+  return normalized.length > 0 ? normalized : undefined
+}
+
 /**
  * Normaliza la versión a un número “sano” (>0).
  * Admite formatos tipo "1", "1.0", "v1", etc.
@@ -141,7 +158,8 @@ function mapQuestion(dto: QuestionStepDTO): QuestionStep {
     yesNext: dto.yes_next,
     noNext: dto.no_next,
     barrierId: dto.barrier_id,
-    image: dto.image,
+    image: normalizeStepImage(dto.image),
+    images: normalizeStepImages(dto.images),
     checkPreviousNos: dto.check_previous_nos,
     conditionalYesNext: normalizeConditionalNext(dto.conditional_yes_next),
     conditionalNoNext: normalizeConditionalNext(dto.conditional_no_next),
@@ -156,7 +174,8 @@ function mapForm(dto: FormStepDTO): FormStep {
     next: dto.next,
     barrierId: dto.barrier_id,
     fields: dto.fields.map(mapField),
-    image: dto.image,
+    image: normalizeStepImage(dto.image),
+    images: normalizeStepImages(dto.images),
     metadata: dto.metadata,
   }
 }
@@ -168,7 +187,8 @@ function mapSelect(dto: SelectStepDTO): SelectStep {
     text: dto.text,
     title: dto.title,
     options: dto.options.map(mapSelectOption),
-    image: dto.image,
+    image: normalizeStepImage(dto.image),
+    images: normalizeStepImages(dto.images),
   }
 }
 
@@ -176,7 +196,8 @@ function mapEnd(dto: EndStepDTO): EndStep {
   return {
     id: dto.id,
     type: 'End',
-    image: dto.image,
+    image: normalizeStepImage(dto.image),
+    images: normalizeStepImages(dto.images),
   }
 }
 

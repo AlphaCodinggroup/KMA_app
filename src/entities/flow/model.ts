@@ -57,7 +57,12 @@ export interface ConditionalNext {
 // --------------------
 // Variantes de Step
 // --------------------
-export interface QuestionStep {
+export interface StepMedia {
+  image?: string
+  images?: string[]
+}
+
+export interface QuestionStep extends StepMedia {
   id: string
   type: 'Question'
   text: string
@@ -66,35 +71,31 @@ export interface QuestionStep {
   conditionalYesNext?: ConditionalNext[]
   conditionalNoNext?: ConditionalNext[]
   barrierId?: string
-  image?: string
   checkPreviousNos?: string[]
 }
 
-export interface FormStep {
+export interface FormStep extends StepMedia {
   id: string
   type: 'Form'
   title: string
   next?: string
   barrierId?: string
   fields: Field[]
-  image?: string
   metadata?: Record<string, unknown>
 }
 
 // "Select" puede venir con `text` o con `title` según el flujo
-export interface SelectStep {
+export interface SelectStep extends StepMedia {
   id: string
   type: 'Select'
   text?: string
   title?: string
   options: SelectOption[]
-  image?: string
 }
 
-export interface EndStep {
+export interface EndStep extends StepMedia {
   id: string // suele ser "END"
   type: 'End'
-  image?: string
 }
 
 export type Step = QuestionStep | FormStep | SelectStep | EndStep

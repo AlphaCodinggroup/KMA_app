@@ -98,4 +98,5 @@ export const toVirtualQuestion = (s: SelectStep): QuestionStep => ({
   type: 'Question',
   text: s.title ?? s.text ?? '',
   image: s.image,
+  images: s.images,
 })

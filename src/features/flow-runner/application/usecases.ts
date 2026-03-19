@@ -299,6 +299,7 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
         noNext: step.noNext,
         barrierId: step.barrierId,
         image: step.image,
+        images: step.images,
         checkPreviousNos: step.checkPreviousNos,
       }
     }
@@ -317,6 +318,7 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
           placeholder: f.placeholder,
         })),
         image: step.image,
+        images: step.images,
       }
     }
     case 'Select': {
@@ -326,6 +328,7 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
         title: step.title,
         text: step.text,
         image: step.image,
+        images: step.images,
         options: step.options.map(o => ({
           label: o.label,
           next: o.next,
@@ -341,6 +344,8 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
       return {
         id: step.id,
         type: 'End',
+        image: step.image,
+        images: step.images,
       }
     }
     default: {
@@ -551,7 +556,7 @@ function buildAnswersForApi(params: {
             delete outValues[key]
             continue
           }
-          // Normalizar separador decimal: coma → punto 
+          // Normalizar separador decimal: coma → punto
           const normalized = trimmed.replace(/,/g, '.')
           const numVal = Number(normalized)
           if (Number.isNaN(numVal)) {

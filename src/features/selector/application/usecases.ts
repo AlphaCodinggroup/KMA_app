@@ -1,6 +1,7 @@
 import type { FlowSummary, Flow } from '@entities/flow/model'
 import type { FlowRepo } from '@entities/flow/ports'
 import { createOfflineFirstFlowRepo } from '../data/flow.repo.offline'
+import { resolveStepImageUrls } from '@shared/lib/flowStepImages'
 import { resolveFlowImageUri } from '@shared/lib/imageCache'
 
 /**
@@ -60,7 +61,7 @@ export async function loadAllFlowsWithSteps(): Promise<Flow[]> {
   const flows = await fetchAllFlowsOnce()
 
   // Fire-and-forget: precarga de imágenes sin bloquear la UI
-  void precacheFlowImages(flows).catch(err => {
+  precacheFlowImages(flows).catch(err => {
     if (__DEV__) {
       // eslint-disable-next-line no-console
       console.warn('[loadAllFlowsWithSteps] precacheFlowImages failed', err)
@@ -103,19 +104,13 @@ export async function coldSyncAllFlows(): Promise<void> {
 
 /**
  * Extrae todas las URLs de imagen de los steps de un flow.
- * Usa solo la propiedad `image` que ya está en el dominio.
+ * Prioriza `images` y, si no hay valores válidos, cae a `image`.
  */
 function extractFlowImageUrls(flow: Flow): string[] {
   const urls: string[] = []
 
-  for (const step of flow.steps as any[]) {
-    const maybeUrl = step?.image
-    if (typeof maybeUrl !== 'string') continue
-
-    const trimmed = maybeUrl.trim()
-    if (!trimmed) continue
-
-    urls.push(trimmed)
+  for (const step of flow.steps) {
+    urls.push(...resolveStepImageUrls(step))
   }
 
   return urls

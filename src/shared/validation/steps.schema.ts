@@ -17,14 +17,18 @@ export const FormFieldSchema = z.object({
 })
 export type FormField = z.infer<typeof FormFieldSchema>
 
-export const FormStepSchema = z.object({
+const StepMediaSchema = z.object({
+  image: z.string().optional(),
+  images: z.array(z.string()).optional(),
+})
+
+export const FormStepSchema = StepMediaSchema.extend({
   id: z.string(),
   type: z.literal('Form'),
   title: z.string(),
   next: z.string().optional(),
   barrierId: z.string().optional(),
   fields: z.array(FormFieldSchema).min(1),
-  image: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 export type FormStep = z.infer<typeof FormStepSchema>
@@ -56,14 +60,13 @@ export const ConditionalNextSchema = z.object({
 })
 export type ConditionalNext = z.infer<typeof ConditionalNextSchema>
 
-export const QuestionStepSchema = z.object({
+export const QuestionStepSchema = StepMediaSchema.extend({
   id: z.string(),
   type: z.literal('Question'),
   text: z.string(),
   yesNext: z.string().optional(),
   noNext: z.string().optional(),
   checkPreviousNos: z.array(z.string()).optional(),
-  image: z.string().optional(),
   barrierId: z.string().optional(),
   conditionalYesNext: z.array(ConditionalNextSchema).optional(),
   conditionalNoNext: z.array(ConditionalNextSchema).optional(),
@@ -87,22 +90,20 @@ export const SelectOptionSchema = z.object({
 })
 export type SelectOption = z.infer<typeof SelectOptionSchema>
 
-export const SelectStepSchema = z.object({
+export const SelectStepSchema = StepMediaSchema.extend({
   id: z.string(),
   type: z.literal('Select'),
   title: z.string().optional(),
   text: z.string().optional(),
   options: z.array(SelectOptionSchema).min(1),
-  image: z.string().optional(),
 })
 export type SelectStep = z.infer<typeof SelectStepSchema>
 
 /* ---------------------------------- End ---------------------------------- */
 
-export const EndStepSchema = z.object({
+export const EndStepSchema = StepMediaSchema.extend({
   id: z.string(),
   type: z.literal('End'),
-  image: z.string().optional(),
 })
 export type EndStep = z.infer<typeof EndStepSchema>
 
