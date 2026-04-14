@@ -1,6 +1,6 @@
 import * as FileSystem from 'expo-file-system'
 import type { FlowDetail } from '@shared/validation/steps.schema'
-import type { Flow, Step } from '@entities/flow/model'
+import type { Flow, Step, StepCondition, ConditionalNext } from '@entities/flow/model'
 import type { SubmissionAnswer, SubmissionDraft } from '@entities/submission/model'
 import type { SubmissionRepo, SubmissionSnapshot } from '@entities/submission/ports'
 import type { FlowRepo } from '@entities/flow/ports'
@@ -22,6 +22,15 @@ type PhotoToUpload = {
   localUri: string
   uploadName: string
   mimeType: string
+}
+
+type DraftPhotoValue = {
+  uri?: string
+  localUri?: string
+  name?: string
+  fileName?: string
+  filename?: string
+  type?: string
 }
 
 type AuditAnswerForApi =
@@ -284,7 +293,32 @@ function mapToFlowDetail(flow: Flow): FlowDetail {
   return {
     flowId: flow.flowId,
     title: flow.title,
+    version: String(flow.version),
     steps: flow.steps.map(mapStepToDetail),
+  }
+}
+
+function mapStepConditionToDetail(condition: StepCondition) {
+  if (condition.type === 'Question') {
+    return {
+      type: 'Question' as const,
+      stepId: condition.stepId,
+      answer: condition.answer,
+    }
+  }
+
+  return {
+    type: 'Select' as const,
+    stepId: condition.stepId,
+    selectedOption: condition.selectedOption,
+  }
+}
+
+function mapConditionalNextToDetail(conditional: ConditionalNext) {
+  return {
+    conditions: conditional.conditions.map(mapStepConditionToDetail),
+    next: conditional.next,
+    ...(typeof conditional.matchAny === 'boolean' ? { matchAny: conditional.matchAny } : {}),
   }
 }
 
@@ -295,12 +329,18 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
         id: step.id,
         type: 'Question',
         text: step.text,
-        yesNext: step.yesNext,
-        noNext: step.noNext,
-        barrierId: step.barrierId,
-        image: step.image,
-        images: step.images,
-        checkPreviousNos: step.checkPreviousNos,
+        ...(step.yesNext ? { yesNext: step.yesNext } : {}),
+        ...(step.noNext ? { noNext: step.noNext } : {}),
+        ...(step.barrierId ? { barrierId: step.barrierId } : {}),
+        ...(step.image ? { image: step.image } : {}),
+        ...(step.images ? { images: step.images } : {}),
+        ...(step.checkPreviousNos ? { checkPreviousNos: step.checkPreviousNos } : {}),
+        ...(step.conditionalYesNext
+          ? { conditionalYesNext: step.conditionalYesNext.map(mapConditionalNextToDetail) }
+          : {}),
+        ...(step.conditionalNoNext
+          ? { conditionalNoNext: step.conditionalNoNext.map(mapConditionalNextToDetail) }
+          : {}),
       }
     }
     case 'Form': {
@@ -308,35 +348,37 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
         id: step.id,
         type: 'Form',
         title: step.title,
-        next: step.next,
-        barrierId: step.barrierId,
+        ...(step.next ? { next: step.next } : {}),
+        ...(step.barrierId ? { barrierId: step.barrierId } : {}),
         fields: step.fields.map(f => ({
           id: f.id,
           type: f.type,
           label: f.label,
-          unit: f.unit,
-          placeholder: f.placeholder,
+          ...(f.unit ? { unit: f.unit } : {}),
+          ...(f.placeholder ? { placeholder: f.placeholder } : {}),
         })),
-        image: step.image,
-        images: step.images,
+        ...(step.image ? { image: step.image } : {}),
+        ...(step.images ? { images: step.images } : {}),
+        ...(step.metadata ? { metadata: step.metadata } : {}),
       }
     }
     case 'Select': {
       return {
         id: step.id,
         type: 'Select',
-        title: step.title,
-        text: step.text,
-        image: step.image,
-        images: step.images,
+        ...(step.title ? { title: step.title } : {}),
+        ...(step.text ? { text: step.text } : {}),
+        ...(step.image ? { image: step.image } : {}),
+        ...(step.images ? { images: step.images } : {}),
         options: step.options.map(o => ({
           label: o.label,
-          next: o.next,
-          yesNext: o.yesNext,
-          noNext: o.noNext,
-          condition: o.condition
-            ? { stepId: o.condition.stepId, answer: o.condition.answer }
-            : undefined,
+          ...(o.next ? { next: o.next } : {}),
+          ...(o.yesNext ? { yesNext: o.yesNext } : {}),
+          ...(o.noNext ? { noNext: o.noNext } : {}),
+          ...(o.barrierId ? { barrierId: o.barrierId } : {}),
+          ...(o.condition
+            ? { condition: { stepId: o.condition.stepId, answer: o.condition.answer } }
+            : {}),
         })),
       }
     }
@@ -344,8 +386,8 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
       return {
         id: step.id,
         type: 'End',
-        image: step.image,
-        images: step.images,
+        ...(step.image ? { image: step.image } : {}),
+        ...(step.images ? { images: step.images } : {}),
       }
     }
     default: {
@@ -366,6 +408,11 @@ function extractPhotoArray(values: Record<string, unknown>): unknown[] {
   return []
 }
 
+function asDraftPhotoValue(value: unknown): DraftPhotoValue | null {
+  if (!value || typeof value !== 'object') return null
+  return value as DraftPhotoValue
+}
+
 /**
  * Recorre todas las respuestas y junta las fotos locales (file://...) que haya que subir.
  */
@@ -380,14 +427,15 @@ function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): PhotoToU
     const photos = extractPhotoArray(vals)
 
     photos.forEach((p, idx: number) => {
-      const localUri: string =
-        (typeof p === 'string' ? p : (p as any)?.uri || (p as any)?.localUri || '') ?? ''
+      const photoValue = asDraftPhotoValue(p)
+      const localUri =
+        (typeof p === 'string' ? p : photoValue?.uri || photoValue?.localUri || '') ?? ''
       if (!localUri || !localUri.startsWith('file')) return
 
       const rawName: string | undefined =
         (typeof p === 'string'
           ? undefined
-          : (p as any).name || (p as any).fileName || (p as any).filename) ??
+          : photoValue?.name || photoValue?.fileName || photoValue?.filename) ??
         localUri.split('/').pop() ??
         `photo_${idx}.jpg`
 
@@ -396,7 +444,7 @@ function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): PhotoToU
       const uploadName = `${stepId}_${idx}_${nowTs}.${ext}`
 
       const mimeType: string =
-        (typeof p === 'string' ? undefined : (p as any).type) || guessMimeFromExt(ext || 'jpg')
+        (typeof p === 'string' ? undefined : photoValue?.type) || guessMimeFromExt(ext || 'jpg')
 
       out.push({
         stepId,

@@ -1,6 +1,8 @@
+import type { QuestionAnswerValue } from '@shared/lib/questionAnswers'
+
 export type QuestionAnswer = {
   type: 'Question'
-  answer: 'YES' | 'NO' | null
+  answer: QuestionAnswerValue | null
   option?: string | null
 }
 export type FormAnswer = { type: 'Form'; values: Record<string, unknown> }

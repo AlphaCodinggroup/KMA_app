@@ -5,6 +5,8 @@
  * - Incluye helpers de type guards para facilitar el renderizado condicional en UI.
  */
 
+import type { QuestionAnswerValue } from '@shared/lib/questionAnswers'
+
 // --------------------
 // Fields de formularios
 // --------------------
@@ -20,7 +22,7 @@ export interface Field {
 
 export interface OptionCondition {
   stepId: string
-  answer: string
+  answer: QuestionConditionAnswer
 }
 
 export interface SelectOption {
@@ -34,10 +36,12 @@ export interface SelectOption {
 
 export type ConditionType = 'Question' | 'Select'
 
+export type QuestionConditionAnswer = QuestionAnswerValue
+
 export interface QuestionCondition {
   type: 'Question'
   stepId: string
-  answer: boolean
+  answer: QuestionConditionAnswer
 }
 
 export interface SelectCondition {

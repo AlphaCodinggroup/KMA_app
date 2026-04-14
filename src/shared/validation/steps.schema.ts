@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { QUESTION_ANSWER_VALUES, normalizeQuestionAnswerValue } from '@shared/lib/questionAnswers'
 
 /**
  * Tipos de campo permitidos en formularios dinámicos.
@@ -22,13 +23,21 @@ const StepMediaSchema = z.object({
   images: z.array(z.string()).optional(),
 })
 
+export const QuestionAnswerValueSchema = z.preprocess(
+  value => normalizeQuestionAnswerValue(value) ?? value,
+  z.enum(QUESTION_ANSWER_VALUES),
+)
+export type QuestionAnswerValue = z.infer<typeof QuestionAnswerValueSchema>
+
 export const FormStepSchema = StepMediaSchema.extend({
   id: z.string(),
   type: z.literal('Form'),
   title: z.string(),
   next: z.string().optional(),
   barrierId: z.string().optional(),
-  fields: z.array(FormFieldSchema).min(1),
+  // Algunos payloads legacy/remotos pueden llegar sin fields.
+  // Los aceptamos como [] para no romper selector ni runner.
+  fields: z.preprocess(value => value ?? [], z.array(FormFieldSchema)),
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 export type FormStep = z.infer<typeof FormStepSchema>
@@ -38,7 +47,7 @@ export type FormStep = z.infer<typeof FormStepSchema>
 export const QuestionConditionSchema = z.object({
   type: z.literal('Question'),
   stepId: z.string(),
-  answer: z.boolean(),
+  answer: QuestionAnswerValueSchema,
 })
 
 export const SelectConditionSchema = z.object({
@@ -84,7 +93,7 @@ export const SelectOptionSchema = z.object({
   condition: z
     .object({
       stepId: z.string(),
-      answer: z.string(),
+      answer: QuestionAnswerValueSchema,
     })
     .optional(),
 })

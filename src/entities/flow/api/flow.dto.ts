@@ -86,7 +86,9 @@ export const FormStepDtoSchema = StepMediaDtoSchema.extend({
   title: z.string().optional(),
   next: z.string().optional(),
   barrier_id: z.string().optional(),
-  fields: z.array(StepFieldDtoSchema),
+  // Algunos flows remotos están enviando Form sin `fields`.
+  // Lo normalizamos a [] para no invalidar todo el catálogo.
+  fields: z.preprocess(value => value ?? [], z.array(StepFieldDtoSchema)),
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 export type FormStepDTO = z.infer<typeof FormStepDtoSchema>

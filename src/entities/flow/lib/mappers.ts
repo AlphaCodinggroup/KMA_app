@@ -22,7 +22,9 @@ import type {
   SelectOption,
   StepCondition,
   ConditionalNext,
+  QuestionConditionAnswer,
 } from '@entities/flow/model'
+import { normalizeQuestionAnswerValue } from '@shared/lib/questionAnswers'
 
 /**
  * Mapeadores DTO → Dominio (camelCase)
@@ -87,6 +89,14 @@ function mapField(dto: StepFieldDTO): Field {
   }
 }
 
+function normalizeQuestionConditionAnswer(raw: unknown): QuestionConditionAnswer {
+  const normalized = normalizeQuestionAnswerValue(raw)
+  if (normalized) return normalized
+
+  // Fallback legacy: cualquier valor no reconocido se trataba efectivamente como NO.
+  return 'NO'
+}
+
 function mapSelectOption(dto: SelectOptionDTO): SelectOption {
   return {
     label: dto.label,
@@ -97,7 +107,7 @@ function mapSelectOption(dto: SelectOptionDTO): SelectOption {
     condition: dto.condition
       ? {
           stepId: dto.condition.step_id,
-          answer: dto.condition.answer,
+          answer: normalizeQuestionConditionAnswer(dto.condition.answer),
         }
       : undefined,
   }
@@ -112,20 +122,10 @@ function mapStepCondition(dto: StepConditionDTO): StepCondition {
     }
   }
 
-  // Normalizar answer a boolean
-  let finalAns = false
-  const raw = (dto as any).answer
-
-  if (typeof raw === 'boolean') {
-    finalAns = raw
-  } else if (typeof raw === 'string') {
-    finalAns = raw.toUpperCase() === 'YES'
-  }
-
   return {
     type: 'Question',
     stepId: dto.step_id,
-    answer: finalAns,
+    answer: normalizeQuestionConditionAnswer(dto.answer),
   }
 }
 
@@ -249,4 +249,5 @@ export const __test_only__ = {
   mapEnd,
   mapField,
   mapSelectOption,
+  normalizeQuestionConditionAnswer,
 }
