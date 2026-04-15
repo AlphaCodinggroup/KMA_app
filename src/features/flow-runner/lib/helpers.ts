@@ -74,18 +74,15 @@ export function parseStepsParam(rawSteps: string | string[] | undefined): Step[]
 }
 
 /**
- * Determina el id del primer paso visible siguiendo la prioridad:
- * 1) Primera Question, 2) primer step, 3) paso END si existe.
+ * Determina el id del primer paso visible.
+ * Confía en el orden enviado por el backend: steps[0] es el punto de entrada.
+ * Si el array está vacío, busca el paso END como fallback.
  */
 export function resolveInitialStepId(steps: Step[]): string | null {
-  // Primera Question si existe
-  const firstQuestion = steps.find(s => s.type === 'Question')
-  if (firstQuestion) return firstQuestion.id
-
-  // Primer step cualquiera
+  // Primer step del array (el backend define el orden correcto)
   if (steps[0]) return steps[0].id
 
-  // Fallback al END si existe
+  // Fallback al END si existe (flujo vacío o malformado)
   const endStep = steps.find(s => s.id === END_ID)
   return endStep ? END_ID : null
 }
@@ -101,4 +98,5 @@ export const toVirtualQuestion = (s: SelectStep): QuestionStep => ({
   type: 'Question',
   text: s.title ?? s.text ?? '',
   image: s.image,
+  images: s.images,
 })

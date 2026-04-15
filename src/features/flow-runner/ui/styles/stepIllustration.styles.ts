@@ -9,4 +9,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  imageSpacing: {
+    marginBottom: RFValue(12),
+  },
 })

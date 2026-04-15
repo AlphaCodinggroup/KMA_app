@@ -1,13 +1,16 @@
-import { useState, memo } from 'react'
+import { useEffect, useState, memo } from 'react'
 import { View, Text, TouchableOpacity } from 'react-native'
 import type { QuestionStep, SelectOption } from '@shared/validation/steps.schema'
+import type { QuestionAnswerValue } from '@shared/lib/questionAnswers'
 import { styles } from './styles/questionCard.styles'
 
 type Props = {
   step: QuestionStep
   onYes: (payload?: { option?: string }) => void
   onNo: (payload?: { option?: string }) => void
-  onSkip: (step: QuestionStep) => void
+  onUnsure: (payload?: { option?: string }) => void
+  selectedDecision?: QuestionAnswerValue | null
+  selectedOption?: string | null
   questionOptions?: string[]
   selectTitle?: string
   selectText?: string
@@ -17,24 +20,34 @@ type Props = {
 
 /**
  * Presentacional:
- * - Modo Question: muestra texto de pregunta, (questionOptions) y botones YES/NO + SKIP.
+ * - Modo Question: muestra texto de pregunta, (questionOptions) y botones YES/NO/UNSURE.
  */
 function QuestionCardBase({
   step,
   onYes,
   onNo,
-  onSkip,
+  onUnsure,
+  selectedDecision,
+  selectedOption,
   questionOptions,
   selectTitle,
   selectText,
   selectOptions,
   onSelectOption,
 }: Props) {
-  const [selected, setSelected] = useState<string | null>(null)
-  const [decision, setDecision] = useState<'YES' | 'NO' | null>(null)
+  const [selected, setSelected] = useState<string | null>(selectedOption ?? null)
+  const [decision, setDecision] = useState<QuestionAnswerValue | null>(selectedDecision ?? null)
 
   const isSelectMode = Array.isArray(selectOptions) && selectOptions.length > 0
   const hasQuestionOptions = Array.isArray(questionOptions) && questionOptions.length > 0
+
+  useEffect(() => {
+    setSelected(selectedOption ?? null)
+  }, [selectedOption, step.id])
+
+  useEffect(() => {
+    setDecision(selectedDecision ?? null)
+  }, [selectedDecision, step.id])
 
   return (
     <View style={styles.container}>
@@ -114,10 +127,18 @@ function QuestionCardBase({
 
           <View>
             <TouchableOpacity
-              onPress={() => onSkip(step)}
-              style={[styles.button, styles.btnNo, decision === null && styles.selectedBtnStyle]}
+              onPress={() => {
+                setDecision('UNSURE')
+                onUnsure(selected ? { option: selected } : undefined)
+              }}
+              style={[
+                styles.button,
+                styles.btnNo,
+                decision === 'UNSURE' && styles.selectedBtnStyle,
+              ]}
               accessibilityRole="button"
-              accessibilityLabel="Next"
+              accessibilityLabel="Unsure - pending review"
+              accessibilityState={{ selected: decision === 'UNSURE' }}
             >
               <Text style={styles.btnText}>UNSURE - PENDING REVIEW</Text>
             </TouchableOpacity>

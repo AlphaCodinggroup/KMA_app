@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { QUESTION_ANSWER_VALUES, normalizeQuestionAnswerValue } from '@shared/lib/questionAnswers'
 
 /**
  * Tipos de campo permitidos en formularios dinámicos.
@@ -17,28 +18,67 @@ export const FormFieldSchema = z.object({
 })
 export type FormField = z.infer<typeof FormFieldSchema>
 
-export const FormStepSchema = z.object({
+const StepMediaSchema = z.object({
+  image: z.string().optional(),
+  images: z.array(z.string()).optional(),
+})
+
+export const QuestionAnswerValueSchema = z.preprocess(
+  value => normalizeQuestionAnswerValue(value) ?? value,
+  z.enum(QUESTION_ANSWER_VALUES),
+)
+export type QuestionAnswerValue = z.infer<typeof QuestionAnswerValueSchema>
+
+export const FormStepSchema = StepMediaSchema.extend({
   id: z.string(),
   type: z.literal('Form'),
   title: z.string(),
   next: z.string().optional(),
   barrierId: z.string().optional(),
-  fields: z.array(FormFieldSchema).min(1),
-  image: z.string().optional(),
+  // Algunos payloads legacy/remotos pueden llegar sin fields.
+  // Los aceptamos como [] para no romper selector ni runner.
+  fields: z.preprocess(value => value ?? [], z.array(FormFieldSchema)),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 export type FormStep = z.infer<typeof FormStepSchema>
 
 /* ------------------------------- Question -------------------------------- */
 
-export const QuestionStepSchema = z.object({
+export const QuestionConditionSchema = z.object({
+  type: z.literal('Question'),
+  stepId: z.string(),
+  answer: QuestionAnswerValueSchema,
+})
+
+export const SelectConditionSchema = z.object({
+  type: z.literal('Select'),
+  stepId: z.string(),
+  selectedOption: z.string(),
+})
+
+export const StepConditionSchema = z.discriminatedUnion('type', [
+  QuestionConditionSchema,
+  SelectConditionSchema,
+])
+export type StepCondition = z.infer<typeof StepConditionSchema>
+
+export const ConditionalNextSchema = z.object({
+  conditions: z.array(StepConditionSchema),
+  next: z.string(),
+  matchAny: z.boolean().optional(),
+})
+export type ConditionalNext = z.infer<typeof ConditionalNextSchema>
+
+export const QuestionStepSchema = StepMediaSchema.extend({
   id: z.string(),
   type: z.literal('Question'),
   text: z.string(),
   yesNext: z.string().optional(),
   noNext: z.string().optional(),
   checkPreviousNos: z.array(z.string()).optional(),
-  image: z.string().optional(),
   barrierId: z.string().optional(),
+  conditionalYesNext: z.array(ConditionalNextSchema).optional(),
+  conditionalNoNext: z.array(ConditionalNextSchema).optional(),
 })
 export type QuestionStep = z.infer<typeof QuestionStepSchema>
 
@@ -49,31 +89,30 @@ export const SelectOptionSchema = z.object({
   next: z.string().optional(),
   yesNext: z.string().optional(),
   noNext: z.string().optional(),
+  barrierId: z.string().optional(),
   condition: z
     .object({
       stepId: z.string(),
-      answer: z.string(),
+      answer: QuestionAnswerValueSchema,
     })
     .optional(),
 })
 export type SelectOption = z.infer<typeof SelectOptionSchema>
 
-export const SelectStepSchema = z.object({
+export const SelectStepSchema = StepMediaSchema.extend({
   id: z.string(),
   type: z.literal('Select'),
   title: z.string().optional(),
   text: z.string().optional(),
   options: z.array(SelectOptionSchema).min(1),
-  image: z.string().optional(),
 })
 export type SelectStep = z.infer<typeof SelectStepSchema>
 
 /* ---------------------------------- End ---------------------------------- */
 
-export const EndStepSchema = z.object({
+export const EndStepSchema = StepMediaSchema.extend({
   id: z.string(),
   type: z.literal('End'),
-  image: z.string().optional(),
 })
 export type EndStep = z.infer<typeof EndStepSchema>
 

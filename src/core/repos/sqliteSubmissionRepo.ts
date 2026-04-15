@@ -5,7 +5,13 @@ import type {
   SaveDraftInput,
   SubmissionSnapshot,
 } from '@entities/submission/ports'
-import type { SubmissionDraft, SubmissionAnswer, FormAnswer } from '@entities/submission/model'
+import type {
+  SubmissionDraft,
+  SubmissionAnswer,
+  FormAnswer,
+  QuestionAnswer,
+} from '@entities/submission/model'
+import { normalizeQuestionAnswerValue } from '@shared/lib/questionAnswers'
 
 const STEP_ID_ALL = 'ALL'
 
@@ -33,13 +39,50 @@ type SubmissionPayloadV1 =
       version?: string | null
     }
 
+type LocalPhotoLike = {
+  uri?: string
+  localUri?: string
+}
+
+function normalizeLegacyDraftAnswers(
+  answers: Record<string, SubmissionAnswer> | null | undefined,
+): Record<string, SubmissionAnswer> {
+  const normalizedAnswers = answers ?? {}
+  const out: Record<string, SubmissionAnswer> = {}
+
+  for (const [stepId, answer] of Object.entries(normalizedAnswers)) {
+    if (!answer || answer.type !== 'Question') {
+      out[stepId] = answer
+      continue
+    }
+
+    const normalizedQuestionAnswer = normalizeQuestionAnswerValue(answer.answer)
+
+    // Legacy compat:
+    // - antes "UNSURE" se persistía como { type: 'Question', answer: null, option: null }
+    // - los Select legacy usan answer:null pero con option poblada
+    const shouldUpgradeLegacyUnsure =
+      normalizedQuestionAnswer === null &&
+      (answer.option === null || typeof answer.option === 'undefined')
+
+    const nextQuestionAnswer: QuestionAnswer = {
+      ...answer,
+      answer: shouldUpgradeLegacyUnsure ? 'UNSURE' : normalizedQuestionAnswer,
+    }
+
+    out[stepId] = nextQuestionAnswer
+  }
+
+  return out
+}
+
 function parsePayload(row: SubmissionRow): {
   draft: SubmissionDraft
   projectId?: string
   facilityId?: string
   version?: string
 } {
-  let raw: any
+  let raw: unknown
   try {
     raw = row.payload_json ? JSON.parse(row.payload_json) : null
   } catch {
@@ -75,10 +118,15 @@ function parsePayload(row: SubmissionRow): {
     flowId: draft.flowId,
     title: draft.title,
     createdAt,
-    answers: draft.answers ?? {},
+    answers: normalizeLegacyDraftAnswers(draft.answers),
   }
 
   return { draft, projectId, facilityId, version }
+}
+
+function asLocalPhotoLike(value: unknown): LocalPhotoLike | null {
+  if (!value || typeof value !== 'object') return null
+  return value as LocalPhotoLike
 }
 
 /**
@@ -105,7 +153,8 @@ function hasDraftFiles(draft: SubmissionDraft): boolean {
     const hasLocal = maybePhotos.some(p => {
       if (typeof p === 'string') return p.startsWith('file://')
       if (p && typeof p === 'object') {
-        const uri = (p as any).uri || (p as any).localUri
+        const photo = asLocalPhotoLike(p)
+        const uri = photo?.uri || photo?.localUri
         return typeof uri === 'string' && uri.startsWith('file://')
       }
       return false

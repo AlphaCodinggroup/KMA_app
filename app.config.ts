@@ -1,6 +1,22 @@
 import type { ExpoConfig, ConfigContext } from '@expo/config'
-import 'dotenv/config'
 import { z } from 'zod'
+import * as fs from 'fs'
+import * as path from 'path'
+
+// Carga explícita del .env para cuando se invoca desde subprocesos (eas submit, etc.)
+const envPath = path.resolve(__dirname, '.env')
+if (fs.existsSync(envPath)) {
+  for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed && !trimmed.startsWith('#')) {
+      const eqIndex = trimmed.indexOf('=')
+      if (eqIndex > 0) {
+        const key = trimmed.substring(0, eqIndex).trim()
+        if (!process.env[key]) process.env[key] = trimmed.substring(eqIndex + 1).trim()
+      }
+    }
+  }
+}
 
 const BuildEnvSchema = z.object({
   EXPO_PUBLIC_API_BASE_URL: z.string().url({ message: 'URL inválida para API BASE' }),
@@ -18,8 +34,8 @@ const BuildEnvSchema = z.object({
 export default ({ config }: ConfigContext): ExpoConfig => {
   const parsed = BuildEnvSchema.safeParse(process.env)
   if (!parsed.success) {
-    const issues = parsed.error.issues.map(i => `- ${i.path.join('.')}: ${i.message}`).join('')
-    throw new Error(`[ENV] Variables de build inválidas en .env${issues}`)
+    const issues = parsed.error.issues.map(i => `- ${i.path.join('.')}: ${i.message}`).join('\n')
+    throw new Error(`[ENV] Variables de build inválidas en .env\n${issues}`)
   }
 
   const env = parsed.data
@@ -30,7 +46,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     name: 'KMA_app',
     slug: 'kma_app',
     scheme: 'kma',
-    version: '1.0.5',
+    version: '1.0.7',
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',

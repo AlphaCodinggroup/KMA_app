@@ -78,7 +78,7 @@ const LoginScreen: React.FC = () => {
         {submitError && <Text style={styles.errorText}>{submitError}</Text>}
       </View>
 
-      <Text style={styles.footerText}>v1.0.5</Text>
+      <Text style={styles.footerText}>v1.0.7</Text>
     </KeyboardAvoidingView>
   )
 }

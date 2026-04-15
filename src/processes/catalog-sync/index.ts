@@ -67,6 +67,18 @@ export async function syncProjectsCatalog(): Promise<void> {
     }
 
     await sqliteProjectRepo.replaceAll(all)
+
+    const facilitiesFromProjects: Facility[] = all.flatMap(project =>
+      (project.facilities ?? []).map(facility => ({
+        id: facility.id,
+        projectId: project.id,
+        name: facility.name,
+      })),
+    )
+
+    if (facilitiesFromProjects.length > 0) {
+      await sqliteFacilityRepo.upsertMany(facilitiesFromProjects)
+    }
   } catch (err) {
     if (__DEV__) {
       console.warn('[catalog-sync] syncProjectsCatalog failed', err)

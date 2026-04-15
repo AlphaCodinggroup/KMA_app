@@ -61,7 +61,7 @@ export const sqliteProjectRepo = {
             // Guardamos status exactamente como en dominio: 'ACTIVE' | 'ARCHIVED'
             p.status ?? null,
             JSON.stringify(p.userIds ?? []),
-            JSON.stringify(p.facilityIds ?? []),
+            JSON.stringify(getFacilityIds(p)),
             p.createdAt ?? null,
             p.updatedAt ?? null,
             p.createdBy ?? null,
@@ -73,12 +73,15 @@ export const sqliteProjectRepo = {
 
   /**
    * Reemplaza todo el contenido de la tabla `projects` por la lista indicada.
-   * Útil si en algún momento queremos hacer un "cold sync" completo.
+   * Conserva los proyectos vigentes y elimina sólo los que ya no vienen
+   * del backend, para no vaciar caches relacionadas por cascada.
    */
   async replaceAll(projects: Project[]): Promise<void> {
     await withTransaction(async () => {
-      await run('DELETE FROM projects')
-      if (!projects.length) return
+      if (!projects.length) {
+        await run('DELETE FROM projects')
+        return
+      }
 
       for (const p of projects) {
         await run(
@@ -104,13 +107,17 @@ export const sqliteProjectRepo = {
             p.description ?? null,
             p.status ?? null,
             JSON.stringify(p.userIds ?? []),
-            JSON.stringify(p.facilityIds ?? []),
+            JSON.stringify(getFacilityIds(p)),
             p.createdAt ?? null,
             p.updatedAt ?? null,
             p.createdBy ?? null,
           ],
         )
       }
+
+      const placeholders = projects.map(() => '?').join(', ')
+      const projectIds = projects.map(project => project.id)
+      await run(`DELETE FROM projects WHERE id NOT IN (${placeholders})`, projectIds)
     })
   },
 
@@ -233,4 +240,13 @@ function parseIdArray(json: string | null): string[] {
     // Si está corrupto, preferimos devolver [] antes que romper la app.
     return []
   }
+}
+
+function getFacilityIds(project: Project): string[] {
+  const fromIds = project.facilityIds?.filter((id): id is string => typeof id === 'string') ?? []
+  if (fromIds.length > 0) return fromIds
+
+  return (project.facilities ?? [])
+    .map(facility => facility?.id)
+    .filter((id): id is string => typeof id === 'string')
 }

@@ -4,7 +4,7 @@ import * as FileSystem from 'expo-file-system'
 
 import { initDatabase } from '@shared/storage/db'
 import { registerBackgroundSync, unregisterBackgroundSync } from '@shared/workers/background'
-import { initSession, subscribe } from '@shared/session/session'
+import { getSnapshot, initSession, subscribe } from '@shared/session/session'
 
 import { SyncService, type OutboxRepo, type OutboxItem } from '@processes/sync/SyncService'
 import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
@@ -164,12 +164,22 @@ export async function bootstrapApp(): Promise<void> {
       dispatch: createOutboxDispatcher(),
     })
 
-    const queueOutboxSync = () => sync.queue()
-    const forceOutboxSync = () => sync.queue({ resetBackoff: true })
+    const hasAuthenticatedSession = () => Boolean(getSnapshot().refreshToken)
+
+    const queueOutboxSync = () => {
+      if (!hasAuthenticatedSession()) return
+      sync.queue()
+    }
+
+    const forceOutboxSync = () => {
+      if (!hasAuthenticatedSession()) return
+      sync.queue({ resetBackoff: true })
+    }
 
     registerOutboxSyncTrigger(queueOutboxSync)
 
     const queueCatalogSync = () => {
+      if (!hasAuthenticatedSession()) return
       syncAllCatalogs().catch(err => {
         if (__DEV__) {
           console.warn('[bootstrap] syncAllCatalogs failed', err)
@@ -179,6 +189,7 @@ export async function bootstrapApp(): Promise<void> {
 
     let flowsSyncInProgress = false
     const queueFlowsSync = () => {
+      if (!hasAuthenticatedSession()) return
       if (flowsSyncInProgress) return
       flowsSyncInProgress = true
 
@@ -219,6 +230,8 @@ export async function bootstrapApp(): Promise<void> {
     const unsubscribeSession = subscribe(e => {
       if (e.type === 'login') {
         forceOutboxSync()
+        queueCatalogSync()
+        queueFlowsSync()
       }
       if (e.type === 'refresh') {
         forceOutboxSync()
@@ -239,8 +252,10 @@ export async function bootstrapApp(): Promise<void> {
       unregisterBackgroundSync().catch(() => void 0)
     }
 
-    // Disparo inicial al boot: solo outbox.
+    // Disparo inicial al boot sólo si ya existe sesión persistida.
     queueOutboxSync()
+    queueCatalogSync()
+    queueFlowsSync()
   })()
 
   return _bootPromise

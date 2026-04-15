@@ -8,6 +8,8 @@ import type {
   EndStepDTO,
   StepFieldDTO,
   SelectOptionDTO,
+  StepConditionDTO,
+  ConditionalNextDTO,
 } from '@entities/flow/api/flow.dto'
 import type {
   Flow,
@@ -18,7 +20,11 @@ import type {
   EndStep,
   Field,
   SelectOption,
+  StepCondition,
+  ConditionalNext,
+  QuestionConditionAnswer,
 } from '@entities/flow/model'
+import { normalizeQuestionAnswerValue } from '@shared/lib/questionAnswers'
 
 /**
  * Mapeadores DTO → Dominio (camelCase)
@@ -30,6 +36,23 @@ import type {
 // --------------------
 // Helpers
 // --------------------
+function normalizeStepImage(value: string | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+function normalizeStepImages(values: string[] | undefined): string[] | undefined {
+  if (!Array.isArray(values)) return undefined
+
+  const normalized = values
+    .map(normalizeStepImage)
+    .filter((value): value is string => value !== undefined)
+
+  return normalized.length > 0 ? normalized : undefined
+}
+
 /**
  * Normaliza la versión a un número “sano” (>0).
  * Admite formatos tipo "1", "1.0", "v1", etc.
@@ -66,19 +89,62 @@ function mapField(dto: StepFieldDTO): Field {
   }
 }
 
+function normalizeQuestionConditionAnswer(raw: unknown): QuestionConditionAnswer {
+  const normalized = normalizeQuestionAnswerValue(raw)
+  if (normalized) return normalized
+
+  // Fallback legacy: cualquier valor no reconocido se trataba efectivamente como NO.
+  return 'NO'
+}
+
 function mapSelectOption(dto: SelectOptionDTO): SelectOption {
   return {
     label: dto.label,
     next: dto.next,
     yesNext: dto.yes_next,
     noNext: dto.no_next,
+    barrierId: dto.barrier_id,
     condition: dto.condition
       ? {
           stepId: dto.condition.step_id,
-          answer: dto.condition.answer,
+          answer: normalizeQuestionConditionAnswer(dto.condition.answer),
         }
       : undefined,
   }
+}
+
+function mapStepCondition(dto: StepConditionDTO): StepCondition {
+  if ('selected_option' in dto) {
+    return {
+      type: 'Select',
+      stepId: dto.step_id,
+      selectedOption: dto.selected_option,
+    }
+  }
+
+  return {
+    type: 'Question',
+    stepId: dto.step_id,
+    answer: normalizeQuestionConditionAnswer(dto.answer),
+  }
+}
+
+function mapConditionalNext(dto: ConditionalNextDTO): ConditionalNext {
+  return {
+    conditions: dto.conditions.map(mapStepCondition),
+    next: dto.next,
+    matchAny: dto.match_any,
+  }
+}
+
+function normalizeConditionalNext(
+  input?: ConditionalNextDTO | ConditionalNextDTO[],
+): ConditionalNext[] | undefined {
+  if (!input) return undefined
+  if (Array.isArray(input)) {
+    return input.map(mapConditionalNext)
+  }
+  return [mapConditionalNext(input)]
 }
 
 // --------------------
@@ -92,8 +158,11 @@ function mapQuestion(dto: QuestionStepDTO): QuestionStep {
     yesNext: dto.yes_next,
     noNext: dto.no_next,
     barrierId: dto.barrier_id,
-    image: dto.image,
+    image: normalizeStepImage(dto.image),
+    images: normalizeStepImages(dto.images),
     checkPreviousNos: dto.check_previous_nos,
+    conditionalYesNext: normalizeConditionalNext(dto.conditional_yes_next),
+    conditionalNoNext: normalizeConditionalNext(dto.conditional_no_next),
   }
 }
 
@@ -101,11 +170,13 @@ function mapForm(dto: FormStepDTO): FormStep {
   return {
     id: dto.id,
     type: 'Form',
-    title: dto.title,
+    title: dto.title ?? '',
     next: dto.next,
     barrierId: dto.barrier_id,
     fields: dto.fields.map(mapField),
-    image: dto.image,
+    image: normalizeStepImage(dto.image),
+    images: normalizeStepImages(dto.images),
+    metadata: dto.metadata,
   }
 }
 
@@ -116,7 +187,8 @@ function mapSelect(dto: SelectStepDTO): SelectStep {
     text: dto.text,
     title: dto.title,
     options: dto.options.map(mapSelectOption),
-    image: dto.image,
+    image: normalizeStepImage(dto.image),
+    images: normalizeStepImages(dto.images),
   }
 }
 
@@ -124,7 +196,8 @@ function mapEnd(dto: EndStepDTO): EndStep {
   return {
     id: dto.id,
     type: 'End',
-    image: dto.image,
+    image: normalizeStepImage(dto.image),
+    images: normalizeStepImages(dto.images),
   }
 }
 
@@ -176,4 +249,5 @@ export const __test_only__ = {
   mapEnd,
   mapField,
   mapSelectOption,
+  normalizeQuestionConditionAnswer,
 }

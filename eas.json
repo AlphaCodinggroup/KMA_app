@@ -46,6 +46,11 @@
         "EAS_PROJECT_ID": "1b6bf518-a922-462a-814e-460280053abf"
       },
       "autoIncrement": true
+    },
+    "production-apk": {
+      "extends": "production",
+      "distribution": "internal",
+      "android": { "buildType": "apk" }
     }
   },
   "submit": {
