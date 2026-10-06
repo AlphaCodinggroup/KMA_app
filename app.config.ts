@@ -72,6 +72,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       'expo-camera',
       'expo-task-manager',
       'expo-background-task',
+      './plugins/withUISceneLifecycle',
     ],
 
     ios: {
@@ -85,6 +86,18 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         NSPhotoLibraryAddUsageDescription: 'We save photos captured by the app to your gallery.',
         UIBackgroundModes: ['fetch', 'processing'],
         BGTaskSchedulerPermittedIdentifiers: ['com.kma.app.sync'],
+        // Requerido por el SDK de iOS 27 (Xcode 27): sin esto UIKit rechaza el launch.
+        UIApplicationSceneManifest: {
+          UIApplicationSupportsMultipleScenes: false,
+          UISceneConfigurations: {
+            UIWindowSceneSessionRoleApplication: [
+              {
+                UISceneConfigurationName: 'Default Configuration',
+                UISceneDelegateClassName: '$(PRODUCT_MODULE_NAME).SceneDelegate',
+              },
+            ],
+          },
+        },
       },
     },
 
