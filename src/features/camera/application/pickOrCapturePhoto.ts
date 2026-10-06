@@ -44,7 +44,7 @@ export async function pickOrCapturePhoto(): Promise<string | null> {
         return null
       }
       const shot = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         quality: 0.8,
       })
       return shot.canceled ? null : (shot.assets?.[0]?.uri ?? null)
@@ -55,7 +55,7 @@ export async function pickOrCapturePhoto(): Promise<string | null> {
         return null
       }
       const pick = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         quality: 0.8,
       })
       return pick.canceled ? null : (pick.assets?.[0]?.uri ?? null)
