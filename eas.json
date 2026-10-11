@@ -15,7 +15,8 @@
         "EXPO_PUBLIC_SYNC_BATCH_SIZE": "10",
         "EAS_PROJECT_ID": "1b6bf518-a922-462a-814e-460280053abf"
       },
-      "autoIncrement": true
+      "autoIncrement": true,
+      "pnpm": "10.24.0"
     },
     "preview": {
       "distribution": "internal",
@@ -30,7 +31,8 @@
         "EXPO_PUBLIC_SYNC_BATCH_SIZE": "10",
         "EAS_PROJECT_ID": "1b6bf518-a922-462a-814e-460280053abf"
       },
-      "autoIncrement": true
+      "autoIncrement": true,
+      "pnpm": "10.24.0"
     },
     "production": {
       "distribution": "store",
@@ -45,7 +47,8 @@
         "EXPO_PUBLIC_SYNC_BATCH_SIZE": "10",
         "EAS_PROJECT_ID": "1b6bf518-a922-462a-814e-460280053abf"
       },
-      "autoIncrement": true
+      "autoIncrement": true,
+      "pnpm": "10.24.0"
     },
     "production-apk": {
       "extends": "production",
