@@ -44,6 +44,8 @@ export type EnqueueParams = {
   filePaths?: string[]
   /** Permite forzar un id (por ejemplo, si querés idempotencia). */
   id?: string
+  /** Usuario dueño del item (para filtrar al cambiar de sesión). */
+  userId?: string
 }
 
 /** Id simple sin dependencias externas. Alcanzan unicidad y orden aproximado. */
@@ -62,6 +64,11 @@ function safeStringify(value: unknown): string {
 
 export const sqliteOutboxRepo: OutboxRepo & {
   enqueue(params: EnqueueParams): Promise<string>
+  requeue(id: string): Promise<void>
+  requeueBySubmissionId(submissionId: string): Promise<boolean>
+  markFailedBySubmissionId(submissionId: string, reason: string): Promise<boolean>
+  countPending(userId?: string): Promise<number>
+  assignOwner(userId: string): Promise<void>
 } = {
   /**
    * Encola un nuevo item en la tabla `outbox`.
@@ -86,10 +93,11 @@ export const sqliteOutboxRepo: OutboxRepo & {
           file_paths_json,
           attempts,
           last_error,
-          created_at
-        ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?)
+          created_at,
+          user_id
+        ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?)
       `,
-      [id, params.endpoint, method, payloadJson, filePathsJson, now],
+      [id, params.endpoint, method, payloadJson, filePathsJson, now, params.userId ?? null],
     )
 
     return id
@@ -97,19 +105,24 @@ export const sqliteOutboxRepo: OutboxRepo & {
 
   /**
    * Devuelve el siguiente lote de items a procesar, ordenados por created_at ASC.
+   * Sólo `pending` del usuario indicado y con backoff vencido: los `failed` o en espera no ocupan lote.
    */
-  async nextBatch(limit: number): Promise<OutboxItem[]> {
+  async nextBatch(limit: number, now: number, userId: string): Promise<OutboxItem[]> {
     const rows = await query<OutboxRow>(
       `
         SELECT
           id,
           endpoint,
-          payload_json
+          payload_json,
+          attempts
         FROM outbox
+        WHERE status = 'pending'
+          AND user_id = ?
+          AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
         ORDER BY created_at ASC
         LIMIT ?
       `,
-      [limit],
+      [userId, now, limit],
     )
 
     return rows.map(row => {
@@ -125,6 +138,7 @@ export const sqliteOutboxRepo: OutboxRepo & {
         // Usamos endpoint como `type` hacia el SyncService/dispatcher
         type: row.endpoint,
         payload,
+        attempts: row.attempts,
       }
     })
   },
@@ -138,19 +152,98 @@ export const sqliteOutboxRepo: OutboxRepo & {
   },
 
   /**
-   * Falla: incrementamos attempts y dejamos trazado el último error textual.
-   * La política de reintentos (max, backoff, etc.) la maneja SyncService.
+   * Reintento: suma un intento, deja el motivo y agenda el próximo para `nextAttemptAt`.
+   * El backoff queda persistido: sobrevive a que se mate la app.
    */
-  async markFailure(id: string, reason?: string): Promise<void> {
+  async markRetry(id: string, nextAttemptAt: number, reason?: string): Promise<void> {
     await run(
       `
         UPDATE outbox
         SET
           attempts = attempts + 1,
+          next_attempt_at = ?,
           last_error = COALESCE(?, last_error)
         WHERE id = ?
       `,
-      [reason ?? null, id],
+      [nextAttemptAt, reason ?? null, id],
     )
+  },
+
+  /**
+   * Marca el item como fallido definitivo: queda en la tabla (no se borra)
+   * con el motivo, y deja de ser candidato a reintento hasta un `requeue`.
+   */
+  async markFailed(id: string, reason: string): Promise<void> {
+    await run(
+      `UPDATE outbox SET status = 'failed', attempts = attempts + 1, last_error = ? WHERE id = ?`,
+      [reason, id],
+    )
+  },
+
+  /** Posterga el item sin tocar `attempts`. */
+  async defer(id: string, nextAttemptAt: number): Promise<void> {
+    await run(`UPDATE outbox SET next_attempt_at = ? WHERE id = ?`, [nextAttemptAt, id])
+  },
+
+  /**
+   * Marca como fallido el item AUDIT_SUBMISSION de una submission (cuando los datos locales ya
+   * no permiten enviarla, p. ej. falta una foto). Devuelve false si no había fila.
+   */
+  async markFailedBySubmissionId(submissionId: string, reason: string): Promise<boolean> {
+    const res = await run(
+      `
+        UPDATE outbox
+        SET status = 'failed', last_error = ?
+        WHERE endpoint = 'AUDIT_SUBMISSION'
+          AND json_extract(payload_json, '$.submissionId') = ?
+      `,
+      [reason, submissionId],
+    )
+    return res.changes > 0
+  },
+
+  async resetBackoff(): Promise<void> {
+    await run(`UPDATE outbox SET next_attempt_at = NULL WHERE status = 'pending'`)
+  },
+
+  /** Devuelve un item a `pending` con intentos y backoff reiniciados. */
+  async requeue(id: string): Promise<void> {
+    await run(
+      `UPDATE outbox SET status = 'pending', attempts = 0, next_attempt_at = NULL WHERE id = ?`,
+      [id],
+    )
+  },
+
+  /**
+   * Re-encola el item AUDIT_SUBMISSION de una submission fallida.
+   * Devuelve false si no existe fila en el outbox para ese submissionId.
+   */
+  async requeueBySubmissionId(submissionId: string): Promise<boolean> {
+    const res = await run(
+      `
+        UPDATE outbox
+        SET status = 'pending', attempts = 0, next_attempt_at = NULL
+        WHERE endpoint = 'AUDIT_SUBMISSION'
+          AND json_extract(payload_json, '$.submissionId') = ?
+      `,
+      [submissionId],
+    )
+    return res.changes > 0
+  },
+
+  /** Backfill: asigna al usuario los items sin dueño (filas previas a la migración 4). */
+  async assignOwner(userId: string): Promise<void> {
+    await run(`UPDATE outbox SET user_id = ? WHERE user_id IS NULL`, [userId])
+  },
+
+  /** Cantidad de items `pending`, opcionalmente de un solo usuario. */
+  async countPending(userId?: string): Promise<number> {
+    const rows = userId
+      ? await query<{ n: number }>(
+          `SELECT COUNT(*) AS n FROM outbox WHERE status = 'pending' AND user_id = ?`,
+          [userId],
+        )
+      : await query<{ n: number }>(`SELECT COUNT(*) AS n FROM outbox WHERE status = 'pending'`)
+    return rows[0]?.n ?? 0
   },
 }

@@ -7,6 +7,15 @@ import type { SubmissionDraft } from './model'
 export type SubmissionId = string
 
 /**
+ * Estado local de una submission.
+ * - draft: en edición, todavía no se encoló.
+ * - queued: con item pendiente en el outbox.
+ * - failed: el outbox agotó reintentos o recibió un error no recuperable.
+ * - legacy: filas previas a la migración 4 sin item en outbox (no se muestran ni se borran).
+ */
+export type SubmissionStatus = 'draft' | 'queued' | 'failed' | 'legacy'
+
+/**
  * Snapshot completo de una submission guardada localmente.
  *
  * - Incluye el draft (flowId, title, createdAt, answers).
@@ -18,15 +27,15 @@ export type SubmissionSnapshot = SubmissionDraft & {
   /**
    * Proyecto al que pertenece la auditoría.
    */
-  projectId?: string
+  projectId?: string | undefined
   /**
    * Facility / building asociado.
    */
-  facilityId?: string
+  facilityId?: string | undefined
   /**
    * Versión del flow usada al momento de responder.
    */
-  version?: string
+  version?: string | undefined
   /**
    * Indica si esta submission ya fue sincronizada con el backend.
    * Mapea contra la columna `synced` (0/1) en SQLite.
@@ -37,6 +46,14 @@ export type SubmissionSnapshot = SubmissionDraft & {
    * Mapea contra `has_files` (0/1).
    */
   hasFiles: boolean
+  /** Estado local (columna `status`). */
+  status: SubmissionStatus
+  /** Último error registrado al pasar a `failed`. */
+  lastError?: string
+  /** Usuario dueño de la submission (null en filas anteriores a la migración 4). */
+  userId?: string
+  /** Última modificación local (epoch ms). */
+  updatedAt?: number
 }
 
 /**
@@ -51,6 +68,7 @@ export interface SaveDraftInput {
   projectId?: string
   facilityId?: string
   version?: string
+  userId?: string
 }
 
 /**
@@ -80,6 +98,29 @@ export interface SubmissionRepo {
   markSynced(id: SubmissionId): Promise<void>
 
   /**
+   * Lista submissions por estado, de la más reciente a la más antigua.
+   * Si viene `userId`, filtra sólo las de ese usuario.
+   */
+  listByStatus(status: SubmissionStatus, userId?: string): Promise<SubmissionSnapshot[]>
+
+  /**
+   * Draft más reciente del usuario para un flow + proyecto + facility, o null.
+   * Filtra en SQL: no parsea los payloads de los demás drafts.
+   */
+  findDraft(params: {
+    flowId: string
+    projectId?: string
+    facilityId?: string
+    userId?: string
+  }): Promise<SubmissionSnapshot | null>
+
+  /**
+   * Cambia el estado de una submission. `lastError` se guarda tal cual;
+   * si no viene, se limpia.
+   */
+  markStatus(id: SubmissionId, status: SubmissionStatus, lastError?: string): Promise<void>
+
+  /**
    * Elimina completamente una submission local.
    * Útil para limpieza agresiva o para casos de error irrecuperable.
    */
@@ -103,6 +144,15 @@ export const SubmissionRepoNotImplemented: SubmissionRepo = {
   },
   async markSynced() {
     throw new Error('SubmissionRepo.markSynced no implementado')
+  },
+  async listByStatus() {
+    throw new Error('SubmissionRepo.listByStatus no implementado')
+  },
+  async findDraft() {
+    throw new Error('SubmissionRepo.findDraft no implementado')
+  },
+  async markStatus() {
+    throw new Error('SubmissionRepo.markStatus no implementado')
   },
   async delete() {
     throw new Error('SubmissionRepo.delete no implementado')

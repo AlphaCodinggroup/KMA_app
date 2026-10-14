@@ -124,4 +124,63 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE flows ADD COLUMN updatedAt TEXT;
     `,
   },
+  {
+    id: 4,
+    name: 'outbox_submission_states_v1',
+    up: `
+      -- Estado de submissions: draft | queued | failed | legacy
+      ALTER TABLE submissions ADD COLUMN status TEXT NOT NULL DEFAULT 'legacy';
+      ALTER TABLE submissions ADD COLUMN last_error TEXT;
+      ALTER TABLE submissions ADD COLUMN user_id TEXT;
+      ALTER TABLE submissions ADD COLUMN updated_at INTEGER;
+
+      -- Estado del outbox: pending | failed
+      ALTER TABLE outbox ADD COLUMN status TEXT NOT NULL DEFAULT 'pending';
+      ALTER TABLE outbox ADD COLUMN next_attempt_at INTEGER;
+      ALTER TABLE outbox ADD COLUMN user_id TEXT;
+
+      -- Submissions con item en outbox pasan a 'queued'; el resto queda 'legacy'
+      UPDATE submissions SET status = 'queued'
+        WHERE id IN (SELECT json_extract(payload_json, '$.submissionId') FROM outbox);
+
+      CREATE INDEX IF NOT EXISTS idx_outbox_ready ON outbox(status, next_attempt_at, created_at);
+      CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions(status, flow_id);
+    `,
+  },
+  {
+    id: 5,
+    name: 'submissions_without_flow_fk_v1',
+    up: `
+      -- submissions tenía FOREIGN KEY (flow_id) ... ON DELETE CASCADE: al refrescar o podar el
+      -- catálogo de flows se borraban drafts y auditorías pendientes. Se recrea la tabla sin FK.
+      CREATE TABLE submissions_new (
+        id TEXT PRIMARY KEY,
+        flow_id TEXT NOT NULL,
+        step_id TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        has_files INTEGER NOT NULL DEFAULT 0,
+        synced INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'legacy',
+        last_error TEXT,
+        user_id TEXT,
+        updated_at INTEGER
+      );
+
+      INSERT INTO submissions_new (
+        id, flow_id, step_id, payload_json, has_files, synced, created_at,
+        status, last_error, user_id, updated_at
+      )
+      SELECT
+        id, flow_id, step_id, payload_json, has_files, synced, created_at,
+        status, last_error, user_id, updated_at
+      FROM submissions;
+
+      DROP TABLE submissions;
+      ALTER TABLE submissions_new RENAME TO submissions;
+
+      CREATE INDEX IF NOT EXISTS idx_submissions_sync ON submissions(synced, created_at);
+      CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions(status, flow_id);
+    `,
+  },
 ]

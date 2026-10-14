@@ -46,7 +46,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     name: 'KMA_app',
     slug: 'kma_app',
     scheme: 'kma',
-    version: '1.0.9',
+    version: '1.0.10',
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',

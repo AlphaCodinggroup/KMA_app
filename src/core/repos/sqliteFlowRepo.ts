@@ -20,9 +20,12 @@ const normalizeVersion = (value: unknown): string => {
  * - Mantiene consistencia y hace upsert idempotente.
  */
 export const sqliteFlowRepo = {
-  /** Guarda (upsert) el catálogo de flows. Prunea los que ya no están. */
-  async saveCatalog(cat: FlowCatalog): Promise<void> {
-    const ids = cat.flows.map(f => f.id)
+  /**
+   * Guarda (upsert) el catálogo de flows. Prunea los que ya no están, salvo `keepIds`
+   * (flows que el backend sí devolvió pero se descartaron por inválidos: se conserva su última versión).
+   */
+  async saveCatalog(cat: FlowCatalog, opts?: { keepIds?: string[] }): Promise<void> {
+    const ids = [...new Set([...cat.flows.map(f => f.id), ...(opts?.keepIds ?? [])])]
 
     await withTransaction(async () => {
       // Upsert de cada flow (incluyendo metadatos extra si están en FlowSummary)
@@ -42,8 +45,10 @@ export const sqliteFlowRepo = {
         const updatedAt: string | null =
           typeof anyFlow.updatedAt === 'string' ? anyFlow.updatedAt : null
 
+        // ON CONFLICT DO UPDATE (no REPLACE): REPLACE borra la fila y el ON DELETE CASCADE
+        // arrastraría las submissions (drafts y pendientes) y los steps del flow
         await run(
-          `INSERT OR REPLACE INTO flows (
+          `INSERT INTO flows (
              id,
              title,
              version,
@@ -54,7 +59,16 @@ export const sqliteFlowRepo = {
              createdAt,
              updatedAt
            )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             title = excluded.title,
+             version = excluded.version,
+             description = excluded.description,
+             stepsCount = excluded.stepsCount,
+             flowType = excluded.flowType,
+             isActive = excluded.isActive,
+             createdAt = excluded.createdAt,
+             updatedAt = excluded.updatedAt`,
           [
             f.id,
             f.title,
@@ -77,6 +91,37 @@ export const sqliteFlowRepo = {
         await run('DELETE FROM flows')
       }
     })
+  },
+
+  /**
+   * Firma de lo cacheado por flow (versión, updatedAt, stepsCount y steps realmente guardados).
+   * Permite saltear el re-guardado de los flows que no cambiaron.
+   */
+  async getCachedSignatures(): Promise<
+    Map<string, { version: string; updatedAt: string | null; stepsCount: number; stored: number }>
+  > {
+    const rows = await query<{
+      id: string
+      version: string
+      updatedAt: string | null
+      stepsCount: number | null
+      stored: number
+    }>(
+      `SELECT f.id, f.version, f.updatedAt, f.stepsCount,
+              (SELECT COUNT(*) FROM flow_steps s WHERE s.flow_id = f.id) AS stored
+         FROM flows f`,
+    )
+    return new Map(
+      rows.map(r => [
+        r.id,
+        {
+          version: r.version,
+          updatedAt: r.updatedAt,
+          stepsCount: r.stepsCount ?? -1,
+          stored: r.stored,
+        },
+      ]),
+    )
   },
 
   /**

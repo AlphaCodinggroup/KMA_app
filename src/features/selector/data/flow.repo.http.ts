@@ -1,16 +1,14 @@
 import type { FlowRepo, FlowsQuery } from '@entities/flow/ports'
 import type { Flow, FlowSummary } from '@entities/flow/model'
-import { FlowsResponseDtoSchema } from '@entities/flow/api/flow.dto'
-import { mapFlowsResponseDto } from '@entities/flow/lib/mappers'
+import { FlowItemDtoSchema, FlowsEnvelopeDtoSchema } from '@entities/flow/api/flow.dto'
+import { mapFlowItemDto } from '@entities/flow/lib/mappers'
 import { Env } from '@shared/config/env'
 import type { GenericAbortSignal, AxiosRequestConfig } from 'axios'
 import { http } from '@core/http/http'
 
-/**
- * Resuelve la baseURL de la API. Prioriza Env, cae en EXPO_PUBLIC_ si no está mapeado.
- */
+/** Resuelve la baseURL de la API desde Env. */
 function getBaseUrl(): string {
-  return Env.apiBaseUrl || (process.env.EXPO_PUBLIC_API_BASE_URL as string) || ''
+  return Env.apiBaseUrl
 }
 
 /** Arma una URL segura respetando base y path. */
@@ -37,12 +35,21 @@ function toSummary(f: Flow): FlowSummary {
   }
 }
 
+/** Flow del catálogo que no pasó la validación y se descartó. `id` es null si ni siquiera lo trae. */
+export type DiscardedFlow = { id: string | null; reason: string }
+
+export type FlowCatalogResult = { flows: Flow[]; discarded: DiscardedFlow[] }
+
 /**
  * Implementación HTTP del repositorio de Flows.
  * Requiere que el http client ya tenga interceptores de Authorization.
  */
 export class HttpFlowRepo implements FlowRepo {
-  async getAll(query?: FlowsQuery): Promise<Flow[]> {
+  /**
+   * Trae el catálogo y valida cada flow por separado: uno con un `type` desconocido (paso o campo)
+   * se descarta y se loguea, el resto se usa normalmente. Sólo la envoltura inválida rechaza todo.
+   */
+  async fetchCatalog(query?: FlowsQuery): Promise<FlowCatalogResult> {
     const url = buildUrl('/flows')
 
     const config: AxiosRequestConfig | undefined = query?.signal
@@ -51,11 +58,42 @@ export class HttpFlowRepo implements FlowRepo {
 
     const resp = await http.get(url, config)
 
-    // Validar payload crudo con Zod
-    const dto = FlowsResponseDtoSchema.parse(resp.data)
+    const envelope = FlowsEnvelopeDtoSchema.parse(resp.data)
 
-    // Mapear a dominio
-    let flows = mapFlowsResponseDto(dto)
+    const flows: Flow[] = []
+    const discarded: DiscardedFlow[] = []
+
+    for (const raw of envelope.flows) {
+      const rawId =
+        raw && typeof raw === 'object' && typeof (raw as { id?: unknown }).id === 'string'
+          ? (raw as { id: string }).id
+          : null
+
+      const parsed = FlowItemDtoSchema.safeParse(raw)
+      if (!parsed.success) {
+        const reason = parsed.error.issues
+          .slice(0, 3)
+          .map(i => `${i.path.join('.')}: ${i.message}`)
+          .join('; ')
+        discarded.push({ id: rawId, reason })
+        if (__DEV__) console.warn('[HttpFlowRepo] Flow descartado por validación', rawId, reason)
+        continue
+      }
+
+      try {
+        flows.push(mapFlowItemDto(parsed.data))
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err)
+        discarded.push({ id: rawId, reason })
+        if (__DEV__) console.warn('[HttpFlowRepo] Flow descartado al mapear', rawId, reason)
+      }
+    }
+
+    return { flows, discarded }
+  }
+
+  async getAll(query?: FlowsQuery): Promise<Flow[]> {
+    let { flows } = await this.fetchCatalog(query)
 
     // Filtros/paginación client-side
     const anyQuery = query as any

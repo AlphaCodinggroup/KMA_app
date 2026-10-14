@@ -3,6 +3,7 @@ import { refreshTokensUseCase, type LoginTokens } from '@features/auth/applicati
 import { SessionError, type SessionRecord } from '@entities/user/model'
 import type { UserSessionRepo } from '@entities/user/ports'
 import { createUserSessionSecureRepo } from '@core/repos/user.secure-store.repo'
+import { decodeJwtPayload } from '@shared/lib/jwt'
 
 // --- Tipos públicos
 export type SessionSnapshot = {
@@ -28,7 +29,12 @@ export function setSessionRepo(custom: UserSessionRepo) {
 }
 
 // Caché en memoria
-const mem: SessionSnapshot = { idToken: null, accessToken: null, refreshToken: null, expiresAt: null }
+const mem: SessionSnapshot = {
+  idToken: null,
+  accessToken: null,
+  refreshToken: null,
+  expiresAt: null,
+}
 
 // Observadores simples
 const listeners = new Set<(e: SessionEvent) => void>()
@@ -56,8 +62,7 @@ function snapshot(): SessionSnapshot {
 }
 
 function toSnapshot(r: SessionRecord | null): SessionSnapshot {
-  if (!r)
-    return { idToken: null, accessToken: null, refreshToken: null, expiresAt: null }
+  if (!r) return { idToken: null, accessToken: null, refreshToken: null, expiresAt: null }
   return {
     idToken: r.idToken,
     accessToken: r.accessToken,
@@ -127,6 +132,15 @@ export async function clearSession(): Promise<void> {
 
 export function getSnapshot(): SessionSnapshot {
   return snapshot()
+}
+
+/**
+ * `sub` del idToken de la sesión actual (best-effort, sin validar firma).
+ * null si no hay sesión o el token no se puede decodificar.
+ */
+export function getCurrentUserId(): string | null {
+  const sub = decodeJwtPayload(mem.idToken)?.sub
+  return typeof sub === 'string' && sub.length > 0 ? sub : null
 }
 
 /**

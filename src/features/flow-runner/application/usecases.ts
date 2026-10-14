@@ -1,16 +1,24 @@
-import * as FileSystem from 'expo-file-system'
 import type { FlowDetail } from '@shared/validation/steps.schema'
 import type { Flow, Step, StepCondition, ConditionalNext } from '@entities/flow/model'
 import type { SubmissionAnswer, SubmissionDraft } from '@entities/submission/model'
 import type { SubmissionRepo, SubmissionSnapshot } from '@entities/submission/ports'
 import type { FlowRepo } from '@entities/flow/ports'
-import { putPresignedBinary, request } from '@core/http/http'
+import {
+  extractPhotoArray,
+  photoFieldKey,
+  photoUriOf,
+  type PhotoValueObject,
+} from '@entities/submission/lib/photos'
+import { request } from '@core/http/http'
+import { expoFileUploader } from '@core/http/fileUploader'
 import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
 import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
 import { createOfflineFirstFlowRepo } from '@features/selector/data/flow.repo.offline'
 import { showAuditCreatedToast, showAuditProcessingToast } from '@shared/ui/toast/AppToast'
 import { triggerOutboxSync } from '@processes/sync/outboxTrigger'
+import { discardPhotoGroup } from '@features/camera'
 import { isOnlineOnce } from '@shared/lib/network'
+import { getCurrentUserId } from '@shared/session/session'
 
 // Repos / singletons
 const flowRepo: FlowRepo = createOfflineFirstFlowRepo()
@@ -22,15 +30,6 @@ type PhotoToUpload = {
   localUri: string
   uploadName: string
   mimeType: string
-}
-
-type DraftPhotoValue = {
-  uri?: string
-  localUri?: string
-  name?: string
-  fileName?: string
-  filename?: string
-  type?: string
 }
 
 type AuditAnswerForApi =
@@ -63,15 +62,17 @@ type AuditSubmissionOutboxPayload = {
   submissionId: string
 }
 
-type SubmitResult = 'success' | 'retry' | 'drop'
+type SubmitResult = 'success' | 'retry' | 'fail'
 
 /**
  * Campos que el backend considera numéricos opcionales:
  * - Si los mandamos, tienen que ser number
  * - Si están vacíos o no son parseables -> no mandarlos
  */
+/** Fotos que se suben en paralelo por auditoría. */
+const PHOTO_UPLOAD_CONCURRENCY = 3
+
 const NUMERIC_OPTIONAL_FIELDS = new Set<string>(['quantity', 'measurements'])
-const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
 
 // -----------------------------------------------------------------------------
 // API pública
@@ -94,10 +95,44 @@ export async function loadFlowDetail(flowId: string): Promise<FlowDetail> {
   return mapToFlowDetail(flow)
 }
 
+/** Id local de una submission (una por corrida del runner). */
+export function newSubmissionId(): string {
+  return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+}
+
+/**
+ * Draft pendiente del usuario actual para ese flow + facility (el más reciente), si existe.
+ */
+export async function findResumableDraft(params: {
+  flowId: string
+  projectId?: string
+  facilityId?: string
+}): Promise<SubmissionSnapshot | null> {
+  const userId = getCurrentUserId() ?? undefined
+  return submissionRepo.findDraft({
+    flowId: params.flowId,
+    ...(params.projectId ? { projectId: params.projectId } : {}),
+    ...(params.facilityId ? { facilityId: params.facilityId } : {}),
+    ...(userId ? { userId } : {}),
+  })
+}
+
+/** Descarta un draft: fila de SQLite + directorio de fotos. */
+export async function discardDraft(submissionId: string): Promise<void> {
+  try {
+    await submissionRepo.delete(submissionId)
+  } catch (err) {
+    if (__DEV__) console.warn('[discardDraft] No se pudo borrar el draft', submissionId, err)
+  }
+  await discardPhotoGroup(submissionId)
+}
+
 /**
  * Persistencia de borrador local en SQLite (draft de auditoría).
+ * Una corrida = una fila: se actualiza siempre `submissionId`.
  */
 export async function persistDraft(params: {
+  submissionId: string
   flowId: string
   title: string
   answers: Record<string, SubmissionAnswer>
@@ -114,10 +149,12 @@ export async function persistDraft(params: {
 
   try {
     await submissionRepo.saveDraft({
+      id: params.submissionId,
       draft,
       projectId: params.projectId ?? '',
       facilityId: params.facilityId ?? '',
       version: params.version ?? '',
+      ...ownerFields(),
     })
   } catch (err) {
     if (__DEV__) {
@@ -139,6 +176,7 @@ export async function persistDraft(params: {
  * vía `submitAuditOnlineFromSnapshot`.
  */
 export async function finalizeSubmission(params: {
+  submissionId: string
   flowId: string
   title: string
   answers: Record<string, SubmissionAnswer>
@@ -156,6 +194,7 @@ export async function finalizeSubmission(params: {
 
   // Guardar en SQLite + encolar en outbox + toast "Processing"
   await queueOfflineSubmission(draft, {
+    submissionId: params.submissionId,
     projectId: params.projectId ?? '',
     facilityId: params.facilityId ?? '',
     version: params.version ?? '',
@@ -182,7 +221,7 @@ export async function finalizeSubmission(params: {
  * - Si falla:
  *   - Devuelve:
  *     - 'retry' en offline/red/5xx.
- *     - 'drop' en 4xx no recuperables.
+ *     - 'fail' en 4xx no recuperables: la submission queda `failed` con su `last_error`.
  */
 export async function submitAuditOnlineFromSnapshot(
   snapshot: SubmissionSnapshot,
@@ -225,18 +264,30 @@ export async function submitAuditOnlineFromSnapshot(
       }
     }
 
-    // Subir cada foto a S3 via PUT presignado
-    for (const p of photosToUpload) {
+    // Todas las fotos tienen que tener URL antes de subir nada: nunca se envía incompleta
+    const targets = photosToUpload.map(p => {
       const match = byFileName[p.uploadName]
-      if (!match) continue
+      if (!match?.upload_url || !match.file_url) {
+        if (__DEV__) {
+          console.warn('[submitAuditOnlineFromSnapshot] presign sin URL para', p.uploadName)
+        }
+        return null
+      }
+      return { photo: p, uploadUrl: match.upload_url }
+    })
+    if (targets.some(t => t === null)) return 'retry'
 
-      const fileBytes = await readFileAsUint8(p.localUri)
-      await putPresignedBinary({
-        url: match.upload_url,
-        data: fileBytes,
-        contentType: p.mimeType,
-      })
-    }
+    // Subida a S3 (PUT presignado) con concurrencia acotada: el streaming nativo no carga memoria JS
+    await runWithConcurrency(
+      targets.filter((t): t is NonNullable<typeof t> => t !== null),
+      PHOTO_UPLOAD_CONCURRENCY,
+      ({ photo, uploadUrl }) =>
+        expoFileUploader.upload({
+          url: uploadUrl,
+          localUri: photo.localUri,
+          contentType: photo.mimeType,
+        }),
+    )
 
     // Construir mapa nombreArchivo -> ruta s3://...
     const uploadMap: Record<string, string> = {}
@@ -274,9 +325,10 @@ export async function submitAuditOnlineFromSnapshot(
 
     if (!recoverable) {
       if (__DEV__) {
-        console.warn('[submitAuditOnlineFromSnapshot] drop (4xx)', status, err)
+        console.warn('[submitAuditOnlineFromSnapshot] fail (4xx)', status, err)
       }
-      return 'drop'
+      await submissionRepo.markStatus(snapshot.id, 'failed', buildLastError(err, status))
+      return 'fail'
     }
 
     console.warn('[submitAuditOnlineFromSnapshot] retryable error:', err)
@@ -398,19 +450,16 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
 }
 
 /**
- * Algunos formularios guardan las fotos en `values.photo`
- * Otros podrían guardarlas en `values.photos`.
+ * Nombre de subida estable: `<stepId>_<fieldId>_<photoId>.<ext>` (BE-5).
+ * `photoId` sale del nombre del archivo local (único por foto, lo genera `persistPhoto`), así que
+ * reintentar un envío reutiliza el mismo nombre y no depende del orden del array ni de la hora.
  */
-function extractPhotoArray(values: Record<string, unknown>): unknown[] {
-  const v = values ?? {}
-  if (Array.isArray(v.photos)) return v.photos
-  if (Array.isArray(v.photo)) return v.photo
-  return []
-}
-
-function asDraftPhotoValue(value: unknown): DraftPhotoValue | null {
-  if (!value || typeof value !== 'object') return null
-  return value as DraftPhotoValue
+function photoUploadName(stepId: string, fieldId: string, localUri: string): string {
+  const file = localUri.split('?')[0]?.split('/').pop() ?? ''
+  const dot = file.lastIndexOf('.')
+  const photoId = (dot > 0 ? file.slice(0, dot) : file) || 'photo'
+  const ext = (dot > 0 ? file.slice(dot + 1) : 'jpg').toLowerCase() || 'jpg'
+  return `${stepId}_${fieldId}_${photoId}.${ext}`
 }
 
 /**
@@ -418,40 +467,27 @@ function asDraftPhotoValue(value: unknown): DraftPhotoValue | null {
  */
 function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): PhotoToUpload[] {
   const out: PhotoToUpload[] = []
-  const nowTs = Date.now()
+  const seen = new Set<string>()
 
   Object.entries(answers).forEach(([stepId, ans]) => {
     if (ans?.type !== 'Form') return
 
     const vals = ans.values ?? {}
-    const photos = extractPhotoArray(vals)
+    const fieldId = photoFieldKey(vals)
 
-    photos.forEach((p, idx: number) => {
-      const photoValue = asDraftPhotoValue(p)
-      const localUri =
-        (typeof p === 'string' ? p : photoValue?.uri || photoValue?.localUri || '') ?? ''
+    extractPhotoArray(vals).forEach(p => {
+      const localUri = photoUriOf(p)
       if (!localUri || !localUri.startsWith('file')) return
 
-      const rawName: string | undefined =
-        (typeof p === 'string'
-          ? undefined
-          : photoValue?.name || photoValue?.fileName || photoValue?.filename) ??
-        localUri.split('/').pop() ??
-        `photo_${idx}.jpg`
+      const uploadName = photoUploadName(stepId, fieldId, localUri)
+      if (seen.has(uploadName)) return
+      seen.add(uploadName)
 
-      const ext = rawName?.includes('.') ? rawName.split('.').pop() : 'jpg'
-
-      const uploadName = `${stepId}_${idx}_${nowTs}.${ext}`
-
+      const ext = uploadName.split('.').pop() ?? 'jpg'
       const mimeType: string =
-        (typeof p === 'string' ? undefined : photoValue?.type) || guessMimeFromExt(ext || 'jpg')
+        (typeof p === 'string' ? undefined : (p as PhotoValueObject).type) || guessMimeFromExt(ext)
 
-      out.push({
-        stepId,
-        localUri,
-        uploadName,
-        mimeType,
-      })
+      out.push({ stepId, localUri, uploadName, mimeType })
     })
   })
 
@@ -470,47 +506,56 @@ function guessMimeFromExt(ext: string): string {
 }
 
 /**
- * Lee file://... como base64 y lo convierte a Uint8Array binario.
+ * Procesa `items` con hasta `limit` tareas en paralelo. Si una falla, rechaza con ese error
+ * (las que ya estaban en vuelo terminan solas: el PUT a la misma key es idempotente).
  */
-async function readFileAsUint8(uri: string): Promise<Uint8Array> {
-  const base64 = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.Base64,
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  task: (item: T) => Promise<unknown>,
+): Promise<void> {
+  const queue = [...items]
+  const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
+      await task(item)
+    }
   })
-  return base64ToUint8Array(base64)
-}
-
-function base64ToUint8Array(base64: string): Uint8Array {
-  const sanitized = base64.replace(/[^A-Za-z0-9+/=]/g, '')
-  const bytes: number[] = []
-
-  for (let i = 0; i < sanitized.length; i += 4) {
-    const chunk = sanitized.slice(i, i + 4)
-    if (chunk.length < 4) break
-
-    const enc1 = BASE64_ALPHABET.indexOf(chunk[0])
-    const enc2 = BASE64_ALPHABET.indexOf(chunk[1])
-    const enc3 = BASE64_ALPHABET.indexOf(chunk[2])
-    const enc4 = BASE64_ALPHABET.indexOf(chunk[3])
-
-    if (enc1 < 0 || enc2 < 0 || enc3 < 0 || enc4 < 0) continue
-
-    bytes.push((enc1 << 2) | (enc2 >> 4))
-
-    if (enc3 !== 64) {
-      bytes.push(((enc2 & 15) << 4) | (enc3 >> 2))
-    }
-
-    if (enc4 !== 64) {
-      bytes.push(((enc3 & 3) << 6) | enc4)
-    }
-  }
-
-  return new Uint8Array(bytes)
+  await Promise.all(workers)
 }
 
 function extractStatus(err: unknown): number | undefined {
   const maybe = err as { response?: { status?: number } }
   return maybe?.response?.status
+}
+
+/**
+ * `last_error` = JSON `{ status, error, message }` con el formato estándar del backend (BE-13).
+ * Si el body no lo respeta: `HTTP <status>` + body recortado.
+ */
+function buildLastError(err: unknown, status?: number): string {
+  const data = (err as { response?: { data?: unknown } })?.response?.data
+  if (data && typeof data === 'object') {
+    const body = data as { error?: unknown; message?: unknown }
+    if (typeof body.message === 'string' && body.message.length > 0) {
+      return JSON.stringify({
+        status: status ?? null,
+        error: typeof body.error === 'string' ? body.error : null,
+        message: body.message,
+      })
+    }
+  }
+  const raw = typeof data === 'string' ? data : data ? JSON.stringify(data) : ''
+  return JSON.stringify({
+    status: status ?? null,
+    error: null,
+    message: `HTTP ${status ?? '?'}${raw ? ` ${raw.slice(0, 200)}` : ''}`,
+  })
+}
+
+/** `userId` de la sesión actual para persistir junto a la submission / item de outbox. */
+function ownerFields(): { userId?: string } {
+  const userId = getCurrentUserId()
+  return userId ? { userId } : {}
 }
 
 function isRecoverableStatus(status?: number): boolean {
@@ -567,16 +612,16 @@ function buildAnswersForApi(params: {
 
       const rawArray = extractPhotoArray(outValues)
 
-      const mappedUrls = rawArray
-        .map((p, idx: number) => {
-          // Caso ya remoto
-          if (typeof p === 'string' && p.startsWith('s3://')) return p
-          // Caso local: buscamos key en uploadMap que matchee `${stepId}_${idx}_...`
-          const prefix = `${stepId}_${idx}_`
-          const matchKey = Object.keys(uploadMap).find(k => k.startsWith(prefix))
-          return matchKey ? uploadMap[matchKey] : null
-        })
-        .filter((u): u is string => !!u)
+      const fieldId = photoFieldKey(outValues)
+      const mappedUrls = rawArray.map(p => {
+        const uri = photoUriOf(p)
+        // Ya remoto
+        if (uri.startsWith('s3://') || uri.startsWith('https://')) return uri
+        // Local: tiene que haberse subido; si no, error explícito (nunca viaja un file://)
+        const url = uploadMap[photoUploadName(stepId, fieldId, uri)]
+        if (!url) throw new Error(`Photo not uploaded for step ${stepId}: ${uri}`)
+        return url
+      })
 
       if (mappedUrls.length > 0) {
         outValues.photos = mappedUrls
@@ -644,14 +689,16 @@ function buildAnswersForApi(params: {
  */
 async function queueOfflineSubmission(
   draft: SubmissionDraft,
-  context: { projectId?: string; facilityId?: string; version?: string },
+  context: { submissionId: string; projectId?: string; facilityId?: string; version?: string },
 ): Promise<void> {
-  // Persistimos el draft en submissions
+  // Persistimos el draft en submissions (misma fila que el draft de la corrida)
   const { id } = await submissionRepo.saveDraft({
+    id: context.submissionId,
     draft,
     projectId: context.projectId ?? '',
     facilityId: context.facilityId ?? '',
     version: context.version ?? '',
+    ...ownerFields(),
   })
 
   // Avisamos que se está procesando (modo offline / encolado)
@@ -674,7 +721,10 @@ async function queueOfflineSubmission(
     method: 'USECASE',
     payload,
     filePaths,
+    ...ownerFields(),
   })
+
+  await submissionRepo.markStatus(id, 'queued')
 
   if (__DEV__) {
     console.log('[OUTBOX] Enqueued AUDIT_SUBMISSION', { submissionId: id })

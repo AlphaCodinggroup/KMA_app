@@ -9,7 +9,15 @@ module.exports = {
   parser: '@typescript-eslint/parser',
   plugins: ['@typescript-eslint', 'jest'],
   env: { es2021: true },
-  ignorePatterns: ['node_modules/', 'dist/', '.expo/', 'coverage/'],
+  ignorePatterns: [
+    'node_modules/',
+    'dist/',
+    '.expo/',
+    'coverage/',
+    'android/',
+    'ios/',
+    'kma-docs-app-back/',
+  ],
   rules: {
     'no-console': 'warn',
     '@typescript-eslint/consistent-type-imports': 'warn',

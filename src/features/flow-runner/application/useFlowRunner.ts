@@ -16,7 +16,13 @@ import type {
 } from '@shared/validation/steps.schema'
 import type { QuestionAnswerValue } from '@shared/lib/questionAnswers'
 
-import { finalizeSubmission, persistDraft } from './usecases'
+import {
+  discardDraft,
+  finalizeSubmission,
+  findResumableDraft,
+  newSubmissionId,
+  persistDraft,
+} from './usecases'
 import { END_ID, mapById, parseStepsParam, resolveInitialStepId } from '../lib/helpers'
 import {
   appendVisibleId,
@@ -24,6 +30,7 @@ import {
   getStepIdsAfter,
   getStoredQuestionState as readStoredQuestionState,
   removeAnswers,
+  replayPath,
   resolveQuestionNextStep,
   resolveSelectOptionNext,
   sliceVisibleIdsAfterStep,
@@ -40,9 +47,26 @@ export type FlowRunnerRouteParams = {
 
 type StoredQuestionState = ReturnType<typeof readStoredQuestionState>
 
+/** Pregunta si se reanuda el draft encontrado o se empieza de nuevo. */
+function askResumeDraft(): Promise<'resume' | 'restart'> {
+  return new Promise(resolve => {
+    Alert.alert(
+      'Resume draft?',
+      'You have an unfinished audit for this flow in this facility.',
+      [
+        { text: 'Start over', style: 'destructive', onPress: () => resolve('restart') },
+        { text: 'Resume draft', onPress: () => resolve('resume') },
+      ],
+      { cancelable: false },
+    )
+  })
+}
+
 export type UseFlowRunnerResult = {
   detail: FlowDetail | null
   loading: boolean
+  /** Id local de la corrida: una auditoría = una fila en `submissions` y un directorio de fotos. */
+  submissionId: string
   zoomed: boolean
   submitting: boolean
   visibleIds: string[]
@@ -51,6 +75,8 @@ export type UseFlowRunnerResult = {
   scrollRef: RefObject<ScrollView | null>
   setZoomed: (value: boolean) => void
   getStoredQuestionState: (stepId: string) => StoredQuestionState
+  /** Valores guardados de un step Form (al reanudar un draft), para precargar el formulario. */
+  getStoredFormValues: (stepId: string) => Record<string, unknown> | undefined
   onAnswer: (
     step: QuestionStep,
     answer: QuestionAnswerValue,
@@ -80,10 +106,16 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
   const [zoomed, setZoomed] = useState<boolean>(false)
   const [submitting, setSubmitting] = useState<boolean>(false)
   const [stepRenderVersions, setStepRenderVersions] = useState<Record<string, number>>({})
+  const [submissionId, setSubmissionId] = useState<string>(() => newSubmissionId())
 
   const scrollRef = useRef<ScrollView>(null)
   const visibleIdsRef = useRef<string[]>([])
   const answersRef = useRef<Record<string, SubmissionAnswer>>({})
+  const submissionIdRef = useRef<string>(submissionId)
+  const bootTokenRef = useRef(0)
+  // El router no entra en las deps de `boot`: si su identidad cambia, no debe reiniciar la corrida
+  const routerRef = useRef(router)
+  routerRef.current = router
 
   useEffect(() => {
     visibleIdsRef.current = visibleIds
@@ -101,41 +133,86 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
     }, []),
   )
 
-  const boot = useCallback(() => {
+  const startRun = useCallback(
+    (steps: Step[], id: string, answers: Record<string, SubmissionAnswer>, path?: string[]) => {
+      const initialVisibleIds =
+        path && path.length > 0
+          ? path
+          : (() => {
+              const firstId = resolveInitialStepId(steps)
+              return firstId ? [firstId] : []
+            })()
+
+      submissionIdRef.current = id
+      answersRef.current = answers
+      visibleIdsRef.current = initialVisibleIds
+
+      setSubmissionId(id)
+      setStepRenderVersions({})
+      setDetail({ flowId, title, steps })
+      setVisibleIds(initialVisibleIds)
+    },
+    [flowId, title],
+  )
+
+  const boot = useCallback(async () => {
+    const token = ++bootTokenRef.current
     setLoading(true)
 
     try {
       const steps = parseStepsParam(rawSteps)
-      const initialVisibleIds = (() => {
-        const firstId = resolveInitialStepId(steps)
-        return firstId ? [firstId] : []
-      })()
 
-      answersRef.current = {}
-      visibleIdsRef.current = initialVisibleIds
+      // ¿Hay un draft de este flow + facility para reanudar?
+      let draft = null
+      try {
+        draft = await findResumableDraft({ flowId, projectId, facilityId })
+      } catch (err) {
+        if (__DEV__) console.warn('[useFlowRunner.boot] findResumableDraft', err)
+      }
+      if (token !== bootTokenRef.current) return
 
-      setStepRenderVersions({})
-      setDetail({
-        flowId,
-        title,
-        steps,
-      })
-      setVisibleIds(initialVisibleIds)
+      if (draft && draft.version !== (version ?? '')) {
+        // Cambió la versión del flow: el draft ya no es compatible
+        await discardDraft(draft.id)
+        Alert.alert('Flow updated', 'This flow changed since you started, so you will start over.')
+        draft = null
+      }
+
+      if (draft) {
+        const choice = await askResumeDraft()
+        if (token !== bootTokenRef.current) return
+
+        if (choice === 'resume') {
+          const answers = { ...draft.answers }
+          const path = replayPath(steps, answers)
+          if (path.length > 0) {
+            // Respuestas fuera del camino reconstruido: quedaron huérfanas
+            removeAnswers(
+              answers,
+              Object.keys(answers).filter(id => !path.includes(id)),
+            )
+            startRun(steps, draft.id, answers, path)
+            return
+          }
+        }
+        await discardDraft(draft.id)
+      }
+
+      startRun(steps, newSubmissionId(), {})
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[useFlowRunner.boot] error reading steps from params', err)
       Alert.alert('Error', 'The flow could not be loaded from the provided steps.')
-      if (router.canGoBack()) router.back()
+      if (routerRef.current.canGoBack()) routerRef.current.back()
     } finally {
-      setLoading(false)
+      if (token === bootTokenRef.current) setLoading(false)
     }
-  }, [flowId, rawSteps, router, title])
+  }, [facilityId, flowId, projectId, rawSteps, startRun, version])
 
-  useFocusEffect(
-    useCallback(() => {
-      boot()
-    }, [boot]),
-  )
+  // Sólo al montar o cuando cambian los params: volver a enfocar la pantalla no reinicia la corrida
+  useEffect(() => {
+    void boot()
+  }, [boot])
 
   const stepsById = useMemo<Record<string, Step>>(
     () => (detail ? mapById(detail.steps) : {}),
@@ -183,10 +260,16 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
     return readStoredQuestionState(answersRef.current, stepId)
   }, [])
 
+  const getStoredFormValues = useCallback((stepId: string) => {
+    const stored = answersRef.current[stepId]
+    return stored?.type === 'Form' ? stored.values : undefined
+  }, [])
+
   const persistAll = useCallback(async () => {
     if (!detail) return
 
     await persistDraft({
+      submissionId: submissionIdRef.current,
       flowId: detail.flowId,
       title: detail.title,
       answers: answersRef.current,
@@ -255,6 +338,7 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
       setSubmitting(true)
 
       const ok = await finalizeSubmission({
+        submissionId: submissionIdRef.current,
         flowId: detail.flowId,
         title: detail.title,
         answers: answersRef.current,
@@ -284,6 +368,7 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
   return {
     detail,
     loading,
+    submissionId,
     zoomed,
     submitting,
     visibleIds,
@@ -292,6 +377,7 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
     scrollRef,
     setZoomed,
     getStoredQuestionState,
+    getStoredFormValues,
     onAnswer,
     onSubmitForm,
     onSelectOption,

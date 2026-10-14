@@ -53,9 +53,7 @@ async function attachAuthHeader(
   if (!config.headers?.Authorization) {
     const token = await getValidToken()
     if (token) {
-      const h = { ...(config.headers ?? {}) }
-      h.Authorization = `Bearer ${token}`
-      config.headers = h
+      config.headers.set('Authorization', `Bearer ${token}`)
     }
   }
   return config
@@ -87,7 +85,7 @@ function handleResponseError(instance: AxiosInstance, deps: AuthInterceptorDeps)
         enqueue(
           (newToken: string) => {
             try {
-              const cfg: AxiosRequestConfig = {
+              const cfg: AxiosRequestConfig & { [RETRIED_401]?: boolean } = {
                 ...original,
                 headers: { ...(original.headers ?? {}), Authorization: `Bearer ${newToken}` },
               }

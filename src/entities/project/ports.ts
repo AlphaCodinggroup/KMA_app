@@ -11,12 +11,12 @@ import type { Project, ProjectId, ProjectStatus, ProjectsPage } from './model'
  * - sortOrder: 'asc' | 'desc'
  */
 export type ListProjectsParams = {
-  status?: ProjectStatus
-  search?: string
-  limit?: number
-  cursor?: string
-  sortBy?: 'created_at' | 'updated_at' | 'name'
-  sortOrder?: 'asc' | 'desc'
+  status?: ProjectStatus | undefined
+  search?: string | undefined
+  limit?: number | undefined
+  cursor?: string | undefined
+  sortBy?: 'created_at' | 'updated_at' | 'name' | undefined
+  sortOrder?: 'asc' | 'desc' | undefined
 }
 
 /**
@@ -24,10 +24,10 @@ export type ListProjectsParams = {
  */
 export interface ProjectRepo {
   /** Lista proyectos con filtros/paginación por cursor. */
-  list(params?: ListProjectsParams): Promise<ProjectsPage>
+  list(params?: ListProjectsParams & { signal?: AbortSignal }): Promise<ProjectsPage>
 
   /** Obtiene un proyecto por su ID. Lanza si no existe. */
-  getById(id: ProjectId): Promise<Project>
+  getById(id: ProjectId, opts?: { signal?: AbortSignal }): Promise<Project>
 }
 
 /**

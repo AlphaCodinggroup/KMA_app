@@ -4,17 +4,21 @@ import * as FileSystem from 'expo-file-system'
 
 import { initDatabase } from '@shared/storage/db'
 import { registerBackgroundSync, unregisterBackgroundSync } from '@shared/workers/background'
-import { getSnapshot, initSession, subscribe } from '@shared/session/session'
+import { getCurrentUserId, getSnapshot, initSession, subscribe } from '@shared/session/session'
 
 import { SyncService, type OutboxRepo, type OutboxItem } from '@processes/sync/SyncService'
 import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
 import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
 import type { SubmissionSnapshot } from '@entities/submission/ports'
+import { extractPhotoArray, photoUriOf } from '@entities/submission/lib/photos'
 import { submitAuditOnlineFromSnapshot } from '@features/flow-runner/application/usecases'
 import { syncAllCatalogs } from '@processes/catalog-sync'
 import { coldSyncAllFlows } from '@features/selector/application/usecases'
 import { registerOutboxSyncTrigger } from '@processes/sync/outboxTrigger'
-import { initNetworkWatcher } from '@shared/lib/network'
+import { notifyFailedAuditsChanged } from '@processes/sync/failedAuditsSignal'
+import { PHOTOS_ROOT, discardPhotoGroup } from '@features/camera'
+import { migrateCachedPhotos } from './migratePhotos'
+import { initNetworkWatcher, isOnlineOnce } from '@shared/lib/network'
 
 let _bootPromise: Promise<void> | null = null
 let _cleanup: (() => void) | null = null
@@ -29,24 +33,28 @@ type AuditSubmissionOutboxPayload = {
  * Dispatcher del SyncService.
  */
 function createOutboxDispatcher() {
-  return async (item: OutboxItem): Promise<'success' | 'retry' | 'drop'> => {
+  return async (item: OutboxItem): Promise<'success' | 'retry' | 'fail' | 'drop' | 'defer'> => {
     if (item.type === AUDIT_SUBMISSION_ENDPOINT) return handleAuditSubmissionItem(item)
 
+    // Tipo que esta versión no sabe procesar (p. ej. creado por un build más nuevo): se posterga
+    // sin sumar intentos ni borrarlo, para que lo procese la versión que lo entienda.
     if (__DEV__) {
-      console.log('[SyncService] dispatch (noop):', {
+      console.log('[SyncService] tipo de outbox desconocido, defer:', {
         id: item.id,
         type: item.type,
       })
     }
 
-    return 'success'
+    return 'defer'
   }
 }
 
 /**
  * Maneja un item de outbox de tipo AUDIT_SUBMISSION.
  */
-async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 'retry' | 'drop'> {
+async function handleAuditSubmissionItem(
+  item: OutboxItem,
+): Promise<'success' | 'retry' | 'fail' | 'drop'> {
   const payload = (item.payload ?? null) as Partial<AuditSubmissionOutboxPayload> | null
   const submissionId = payload?.submissionId
 
@@ -84,11 +92,11 @@ async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 
       return 'success'
     }
 
-    if (result === 'drop') {
+    if (result === 'fail') {
       if (__DEV__) {
-        console.warn('[SyncService] AUDIT_SUBMISSION drop (4xx)', submissionId)
+        console.warn('[SyncService] AUDIT_SUBMISSION fail (4xx)', submissionId)
       }
-      return 'drop'
+      return 'fail'
     }
 
     // retry
@@ -102,27 +110,65 @@ async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 
 }
 
 /**
- * Borra todas las fotos locales (file://...) asociadas a una submission.
+ * Un item del outbox pasó a `failed`: la submission asociada debe quedar `failed`
+ * (con motivo) para listarse en la UI. El resultado `fail` ya la marcó con el error del backend;
+ * al agotar intentos hay que marcarla acá.
+ */
+async function handleOutboxItemFailed(item: OutboxItem, reason: string): Promise<void> {
+  if (item.type !== AUDIT_SUBMISSION_ENDPOINT) return
+
+  const payload = (item.payload ?? null) as Partial<AuditSubmissionOutboxPayload> | null
+  const submissionId = payload?.submissionId
+  if (!submissionId) return
+
+  const snapshot = await sqliteSubmissionRepo.getById(submissionId)
+  if (!snapshot) return
+
+  if (snapshot.status !== 'failed') {
+    await sqliteSubmissionRepo.markStatus(
+      submissionId,
+      'failed',
+      JSON.stringify({
+        status: null,
+        error: 'max_attempts',
+        message: 'The audit could not be sent after several attempts.',
+        detail: reason,
+      }),
+    )
+  }
+
+  notifyFailedAuditsChanged()
+}
+
+/**
+ * Backfill de dueño: las filas sin `user_id` (creadas con la 1.0.8) se asignan al usuario de la
+ * sesión actual. Asume un solo auditor por dispositivo (a confirmar con el cliente).
+ */
+async function claimOrphanRows(): Promise<void> {
+  const userId = getCurrentUserId()
+  if (!userId) return
+  try {
+    await sqliteSubmissionRepo.assignOwner(userId)
+    await sqliteOutboxRepo.assignOwner(userId)
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[bootstrap] claimOrphanRows failed', err)
+    }
+  }
+}
+
+/**
+ * Borra todas las fotos locales (file://...) asociadas a una submission y su directorio.
  */
 async function cleanupSubmissionFiles(snapshot: SubmissionSnapshot): Promise<void> {
-  const answers = snapshot.answers ?? {}
   const fileUris = new Set<string>()
 
-  Object.values(answers).forEach(ans => {
+  Object.values(snapshot.answers ?? {}).forEach(ans => {
     if (!ans || ans.type !== 'Form') return
-
-    const values = ans.values ?? {}
-    const photos = extractPhotoArrayFromValues(values)
-
-    photos.forEach(p => {
-      const uri: string =
-        (typeof p === 'string' ? p : (p as any)?.uri || (p as any)?.localUri || (p as any)?.url) ??
-        ''
-
-      if (typeof uri === 'string' && uri.startsWith('file://')) {
-        fileUris.add(uri)
-      }
-    })
+    for (const p of extractPhotoArray(ans.values)) {
+      const uri = photoUriOf(p)
+      if (uri.startsWith('file://')) fileUris.add(uri)
+    }
   })
 
   for (const uri of fileUris) {
@@ -134,16 +180,21 @@ async function cleanupSubmissionFiles(snapshot: SubmissionSnapshot): Promise<voi
       }
     }
   }
-}
 
-/**
- * Extrae un array de posibles fotos desde values.{photo|photos}.
- */
-function extractPhotoArrayFromValues(values: Record<string, unknown>): unknown[] {
-  const v = values ?? {}
-  if (Array.isArray(v.photos)) return v.photos
-  if (Array.isArray(v.photo)) return v.photo
-  return []
+  // El directorio de la submission se borra completo (incluye fotos descartadas que hayan quedado)
+  await discardPhotoGroup(snapshot.id)
+
+  // Fotos de la 1.0.8 en directorios ajenos: se borran si quedaron vacíos
+  const dirs = new Set([...fileUris].map(u => u.slice(0, u.lastIndexOf('/'))))
+  for (const dir of dirs) {
+    if (!PHOTOS_ROOT || !dir.startsWith(`${PHOTOS_ROOT}/`)) continue
+    try {
+      const left = await FileSystem.readDirectoryAsync(dir)
+      if (left.length === 0) await FileSystem.deleteAsync(dir, { idempotent: true })
+    } catch {
+      // el directorio ya no existe
+    }
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -157,11 +208,16 @@ export async function bootstrapApp(): Promise<void> {
   _bootPromise = (async () => {
     await initDatabase()
     await initSession()
+    await claimOrphanRows()
+    await migrateCachedPhotos()
 
     const outbox: OutboxRepo = sqliteOutboxRepo
     const sync = new SyncService({
       outbox,
       dispatch: createOutboxDispatcher(),
+      getUserId: getCurrentUserId,
+      isOnline: isOnlineOnce,
+      onFailed: handleOutboxItemFailed,
     })
 
     const hasAuthenticatedSession = () => Boolean(getSnapshot().refreshToken)
@@ -206,7 +262,9 @@ export async function bootstrapApp(): Promise<void> {
 
     const handleAppStateChange = (state: AppStateStatus) => {
       if (state === 'active') {
-        forceOutboxSync()
+        // Foreground: respeta el backoff persistido. El reset queda para red recuperada,
+        // login, refresh de sesión y el Retry manual; si no, cada apertura de la app consumiría intentos.
+        queueOutboxSync()
         queueCatalogSync()
         queueFlowsSync()
       }
@@ -229,7 +287,7 @@ export async function bootstrapApp(): Promise<void> {
 
     const unsubscribeSession = subscribe(e => {
       if (e.type === 'login') {
-        forceOutboxSync()
+        claimOrphanRows().finally(forceOutboxSync)
         queueCatalogSync()
         queueFlowsSync()
       }

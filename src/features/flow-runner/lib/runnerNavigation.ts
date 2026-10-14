@@ -5,7 +5,7 @@ import {
 } from '@entities/flow/model'
 import type { SubmissionAnswer } from '@entities/submission/model'
 import { normalizeQuestionAnswerValue, type QuestionAnswerValue } from '@shared/lib/questionAnswers'
-import type { QuestionStep, SelectOption } from '@shared/validation/steps.schema'
+import type { QuestionStep, SelectOption, Step } from '@shared/validation/steps.schema'
 
 export type FlowRunnerAnswers = Record<string, SubmissionAnswer>
 
@@ -164,4 +164,53 @@ export function bumpRenderVersions(
   }
 
   return next
+}
+
+const END = 'END'
+
+/**
+ * Reconstruye los pasos visibles a partir de las respuestas guardadas (reanudar un draft).
+ * Camina desde el primer paso aplicando las mismas reglas de navegación del runner y se detiene en el
+ * primer paso sin respuesta (el que hay que contestar ahora) o en END. Los ciclos se cortan.
+ */
+export function replayPath(steps: Step[], answers: FlowRunnerAnswers): string[] {
+  const byId = new Map(steps.map(s => [s.id, s]))
+  const resolve = (next?: string | null): string | null => {
+    if (!next) return byId.has(END) ? END : null
+    return byId.has(next) ? next : byId.has(END) ? END : null
+  }
+
+  const first = steps[0]?.id ?? (byId.has(END) ? END : null)
+  const path: string[] = []
+  const seen = new Set<string>()
+  let current: string | null = first
+
+  while (current && !seen.has(current)) {
+    seen.add(current)
+    path.push(current)
+
+    const step = byId.get(current)
+    const stored = answers[current]
+    if (!step || !stored || step.type === 'End') break
+
+    let rawNext: string | null | undefined
+    if (step.type === 'Question') {
+      if (stored.type !== 'Question') break
+      const answer = normalizeQuestionAnswerValue(stored.answer)
+      if (!answer) break
+      rawNext = resolveQuestionNextStep(step, answer, answers)
+    } else if (step.type === 'Select') {
+      if (stored.type !== 'Question') break
+      const option = step.options.find(o => o.label === stored.option)
+      if (!option) break
+      rawNext = resolveSelectOptionNext(option, answers)
+    } else {
+      if (stored.type !== 'Form') break
+      rawNext = step.next ?? null
+    }
+
+    current = resolve(rawNext)
+  }
+
+  return path
 }

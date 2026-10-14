@@ -81,7 +81,9 @@ class OfflineFirstFacilityRepo implements FacilityRepo {
 
     if (online) {
       try {
-        const facility = await this.httpRepo.getById(projectId, facilityId)
+        const fetchRemote = this.httpRepo.getById?.bind(this.httpRepo)
+        if (!fetchRemote) throw new Error('FacilityRepo remoto sin getById')
+        const facility = await fetchRemote(projectId, facilityId)
 
         try {
           await sqliteFacilityRepo.upsertMany([facility])

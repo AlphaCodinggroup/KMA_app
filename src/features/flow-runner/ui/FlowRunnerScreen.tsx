@@ -4,7 +4,7 @@ import { View, Text, ScrollView, Platform } from 'react-native'
 import type { SelectStep } from '@shared/validation/steps.schema'
 import { QuestionCard } from '@features/question'
 import { DynamicForm } from '@features/dynamic-form'
-import { pickOrCapturePhoto } from '@features/camera'
+import { discardPhoto, pickOrCapturePhoto } from '@features/camera'
 import Loader from '@shared/ui/loader/Loader'
 
 import { useFlowRunner } from '../application/useFlowRunner'
@@ -17,6 +17,7 @@ const FlowRunnerScreen: React.FC = () => {
   const {
     detail,
     loading,
+    submissionId,
     zoomed,
     submitting,
     visibleIds,
@@ -25,11 +26,15 @@ const FlowRunnerScreen: React.FC = () => {
     scrollRef,
     setZoomed,
     getStoredQuestionState,
+    getStoredFormValues,
     onAnswer,
     onSubmitForm,
     onSelectOption,
     onFinish,
   } = useFlowRunner()
+
+  // Las fotos de la corrida viven en un directorio propio: kma/photos/<submissionId>
+  const capturePhoto = useCallback(() => pickOrCapturePhoto(submissionId), [submissionId])
 
   const renderSelectStep = useCallback(
     (step: SelectStep) => {
@@ -109,7 +114,9 @@ const FlowRunnerScreen: React.FC = () => {
                 <DynamicForm
                   step={step}
                   onSubmit={values => onSubmitForm(step, values)}
-                  capturePhoto={pickOrCapturePhoto}
+                  initialValues={getStoredFormValues(step.id)}
+                  capturePhoto={capturePhoto}
+                  discardPhoto={discardPhoto}
                 />
               )}
 

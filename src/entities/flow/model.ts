@@ -16,8 +16,8 @@ export interface Field {
   id: string
   type: FieldType
   label: string
-  unit?: string
-  placeholder?: string
+  unit?: string | undefined
+  placeholder?: string | undefined
 }
 
 export interface OptionCondition {
@@ -27,11 +27,11 @@ export interface OptionCondition {
 
 export interface SelectOption {
   label: string
-  next?: string
-  yesNext?: string
-  noNext?: string
-  condition?: OptionCondition
-  barrierId?: string
+  next?: string | undefined
+  yesNext?: string | undefined
+  noNext?: string | undefined
+  condition?: OptionCondition | undefined
+  barrierId?: string | undefined
 }
 
 export type ConditionType = 'Question' | 'Select'
@@ -55,45 +55,45 @@ export type StepCondition = QuestionCondition | SelectCondition
 export interface ConditionalNext {
   conditions: StepCondition[]
   next: string
-  matchAny?: boolean
+  matchAny?: boolean | undefined
 }
 
 // --------------------
 // Variantes de Step
 // --------------------
 export interface StepMedia {
-  image?: string
-  images?: string[]
+  image?: string | undefined
+  images?: string[] | undefined
 }
 
 export interface QuestionStep extends StepMedia {
   id: string
   type: 'Question'
   text: string
-  yesNext?: string
-  noNext?: string
-  conditionalYesNext?: ConditionalNext[]
-  conditionalNoNext?: ConditionalNext[]
-  barrierId?: string
-  checkPreviousNos?: string[]
+  yesNext?: string | undefined
+  noNext?: string | undefined
+  conditionalYesNext?: ConditionalNext[] | undefined
+  conditionalNoNext?: ConditionalNext[] | undefined
+  barrierId?: string | undefined
+  checkPreviousNos?: string[] | undefined
 }
 
 export interface FormStep extends StepMedia {
   id: string
   type: 'Form'
   title: string
-  next?: string
-  barrierId?: string
+  next?: string | undefined
+  barrierId?: string | undefined
   fields: Field[]
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown> | undefined
 }
 
 // "Select" puede venir con `text` o con `title` según el flujo
 export interface SelectStep extends StepMedia {
   id: string
   type: 'Select'
-  text?: string
-  title?: string
+  text?: string | undefined
+  title?: string | undefined
   options: SelectOption[]
 }
 
@@ -110,13 +110,13 @@ export type Step = QuestionStep | FormStep | SelectStep | EndStep
 export interface Flow {
   flowId: string // mapea desde DTO.id
   title: string
-  description?: string
+  description?: string | undefined
   steps: Step[]
-  flowType?: string
+  flowType?: string | undefined
   version: number
-  isActive?: boolean
-  createdAt?: string // ISO
-  updatedAt?: string // ISO
+  isActive?: boolean | undefined
+  createdAt?: string | undefined // ISO
+  updatedAt?: string | undefined // ISO
 }
 
 // --------------------
@@ -126,13 +126,13 @@ export interface Flow {
 export interface FlowSummary {
   id: string
   title: string
-  version?: string | number
-  description?: string
-  stepsCount?: number
-  flowType?: string
-  isActive?: boolean
-  createdAt?: string // ISO
-  updatedAt?: string // ISO
+  version?: string | number | undefined
+  description?: string | undefined
+  stepsCount?: number | undefined
+  flowType?: string | undefined
+  isActive?: boolean | undefined
+  createdAt?: string | undefined // ISO
+  updatedAt?: string | undefined // ISO
 }
 
 /** Payload mínimo que espera el Runner (según requerimiento del cliente) */

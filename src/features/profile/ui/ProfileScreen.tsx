@@ -1,10 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Text, View } from 'react-native'
+import { Alert, Text, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import PrimaryButton from '@shared/ui/buttons/PrimaryButton'
-import { getSnapshot, subscribe, type SessionSnapshot } from '@shared/session/session'
+import {
+  getCurrentUserId,
+  getSnapshot,
+  subscribe,
+  type SessionSnapshot,
+} from '@shared/session/session'
+import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
 import { logoutUseCase } from '@features/auth/application/logout'
 import { decodeJwtPayload, type JwtClaims } from '@shared/lib/jwt'
+import { FailedAuditsSection } from '@features/failed-audits'
 import { styles } from './styles/profile.styles'
 
 export const ProfileScreen: React.FC = () => {
@@ -20,7 +27,7 @@ export const ProfileScreen: React.FC = () => {
         setSession(event.snapshot)
       }
       if (event.type === 'logout') {
-        setSession({ idToken: null, refreshToken: null, expiresAt: null })
+        setSession(getSnapshot())
       }
     })
 
@@ -45,15 +52,11 @@ export const ProfileScreen: React.FC = () => {
     if (!session.idToken) return 'No role'
     const groups = Array.isArray(claims?.['cognito:groups']) ? claims?.['cognito:groups'] : []
     return (
-      claims?.role ??
-      claims?.['custom:role'] ??
-      (groups.length > 0 ? groups[0] : null) ??
-      'No role'
+      claims?.role ?? claims?.['custom:role'] ?? (groups.length > 0 ? groups[0] : null) ?? 'No role'
     )
   }, [claims, session.idToken])
 
-  const handleLogout = useCallback(async () => {
-    if (signingOut) return
+  const performLogout = useCallback(async () => {
     setSigningOut(true)
     setError(null)
     try {
@@ -64,7 +67,35 @@ export const ProfileScreen: React.FC = () => {
     } finally {
       setSigningOut(false)
     }
-  }, [router, signingOut])
+  }, [router])
+
+  const handleLogout = useCallback(async () => {
+    if (signingOut) return
+
+    // Con auditorías pendientes avisamos: se envían la próxima vez que el mismo usuario inicie sesión.
+    let pending = 0
+    try {
+      const userId = getCurrentUserId()
+      pending = userId ? await sqliteOutboxRepo.countPending(userId) : 0
+    } catch {
+      pending = 0
+    }
+
+    if (pending === 0) {
+      await performLogout()
+      return
+    }
+
+    const noun = pending === 1 ? 'audit' : 'audits'
+    Alert.alert(
+      'Sign out',
+      `You have ${pending} ${noun} pending sync. They will be sent the next time you log in.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign out', style: 'destructive', onPress: () => void performLogout() },
+      ],
+    )
+  }, [performLogout, signingOut])
 
   return (
     <View style={styles.container}>
@@ -75,6 +106,8 @@ export const ProfileScreen: React.FC = () => {
         <Text style={[styles.label, styles.sectionSpacing]}>Role</Text>
         <Text style={styles.value}>{displayRole}</Text>
       </View>
+
+      <FailedAuditsSection />
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 

@@ -1,18 +1,20 @@
 import React, { forwardRef, useMemo, useState } from 'react'
 import { View, Text, TextInput, type TextInputProps, TouchableOpacity } from 'react-native'
-import { type Control, Controller, type FieldPath, type FieldValues } from 'react-hook-form'
+import { Controller } from 'react-hook-form'
 import { AppColors } from '@shared/ui/colors'
 import { styles } from './formTextInput.styles'
 import Icon from '../icons/Icon'
 import { RFValue } from 'react-native-responsive-fontsize'
 
-type Props<T extends FieldValues> = TextInputProps & {
-  control: Control<T>
-  name: FieldPath<T>
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type Props = TextInputProps & {
+  // `any`: las firmas de Control<T, Ctx, TTransformed> de react-hook-form no son asignables entre sí
+  control: any
+  name: string
   label?: string
 }
 
-export const FormTextInput = forwardRef<TextInput, Props<any>>(function FormTextInput(
+export const FormTextInput = forwardRef<TextInput, Props>(function FormTextInput(
   { control, name, label, style, ...inputProps },
   ref,
 ) {

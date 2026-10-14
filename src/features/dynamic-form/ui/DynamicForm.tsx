@@ -10,14 +10,18 @@ type Field = FormField
 type Props = {
   step: FormStep
   onSubmit: (values: Record<string, unknown>) => void
+  /** Valores previos (reanudar un draft): pisan los defaults de cada campo. */
+  initialValues?: Record<string, unknown> | undefined
   capturePhoto?: () => Promise<string | null>
+  /** Borra el archivo local de una foto quitada del form. */
+  discardPhoto?: (uri: string) => Promise<void>
 }
 
 /** DynamicForm
  * - Orquesta el render de cada field y delega UI específica a subcomponentes.
  * - Compatibilidad: si `photo` viniera como string desde datos antiguos, se normaliza a string[] solo en UI.
  */
-function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
+function DynamicFormBase({ step, onSubmit, capturePhoto, discardPhoto, initialValues }: Props) {
   const defaultValues = React.useMemo(() => {
     const acc: Record<string, unknown> = {}
     for (const f of step.fields) {
@@ -34,7 +38,15 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
           break
       }
     }
+    // Valores previos (draft reanudado) sobre los defaults
+    if (initialValues) {
+      for (const f of step.fields) {
+        if (f.id in acc && initialValues[f.id] !== undefined) acc[f.id] = initialValues[f.id]
+      }
+    }
     return acc
+    // initialValues sólo se lee al montar el form
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.fields])
 
   const { control, handleSubmit, watch } = useForm<Record<string, unknown>>({
@@ -172,7 +184,9 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
 
         const onRemoveAt = (index: number) => {
           if (index < 0 || index >= list.length) return
+          const removed = list[index]
           const next = list.slice(0, index).concat(list.slice(index + 1))
+          if (removed && discardPhoto) void discardPhoto(removed)
           rhf.onChange(next)
         }
 

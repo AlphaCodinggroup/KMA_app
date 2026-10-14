@@ -139,3 +139,11 @@ export const FlowsResponseDtoSchema = z.object({
   offset: z.number(),
 })
 export type FlowsResponseDTO = z.infer<typeof FlowsResponseDtoSchema>
+
+/**
+ * Envoltura laxa de GET /flows: valida sólo que `flows` sea un array. Cada item se valida por
+ * separado (`FlowItemDtoSchema.safeParse`) para que un flow inválido no invalide todo el catálogo.
+ */
+export const FlowsEnvelopeDtoSchema = z.object({
+  flows: z.array(z.unknown()),
+})

@@ -8,10 +8,10 @@ import type { FacilitiesPage, Facility, FacilityStatus, ProjectId } from '@entit
  * - search: texto para filtrar por nombre
  */
 export interface ListFacilitiesParams {
-  limit?: number
-  cursor?: string
-  status?: FacilityStatus
-  search?: string
+  limit?: number | undefined
+  cursor?: string | undefined
+  status?: FacilityStatus | undefined
+  search?: string | undefined
 }
 
 /**

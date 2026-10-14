@@ -1,8 +1,8 @@
 import { Platform } from 'react-native'
 
 export type FlowStepImageLike = {
-  image?: string
-  images?: string[]
+  image?: string | undefined
+  images?: string[] | undefined
 }
 
 const warnedUnsupportedBlobUrls = new Set<string>()

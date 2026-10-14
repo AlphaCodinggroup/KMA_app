@@ -1,6 +1,8 @@
 import { Alert, Platform, ActionSheetIOS } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 
+import { persistPhoto } from './persistPhoto'
+
 type Source = 'camera' | 'library'
 
 function askSource(): Promise<Source | null> {
@@ -32,7 +34,11 @@ function askSource(): Promise<Source | null> {
   })
 }
 
-export async function pickOrCapturePhoto(): Promise<string | null> {
+/**
+ * Pide la foto (cámara o galería) y la persiste en `documentDirectory` bajo `groupId`.
+ * Devuelve la URI persistida, nunca la de caché.
+ */
+export async function pickOrCapturePhoto(groupId: string): Promise<string | null> {
   const choice = await askSource()
   if (!choice) return null
 
@@ -47,7 +53,8 @@ export async function pickOrCapturePhoto(): Promise<string | null> {
         mediaTypes: ['images'],
         quality: 0.8,
       })
-      return shot.canceled ? null : (shot.assets?.[0]?.uri ?? null)
+      const uri = shot.canceled ? null : (shot.assets?.[0]?.uri ?? null)
+      return uri ? (await persistPhoto(uri, groupId)).uri : null
     } else {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
       if (status !== 'granted') {
@@ -58,9 +65,10 @@ export async function pickOrCapturePhoto(): Promise<string | null> {
         mediaTypes: ['images'],
         quality: 0.8,
       })
-      return pick.canceled ? null : (pick.assets?.[0]?.uri ?? null)
+      const uri = pick.canceled ? null : (pick.assets?.[0]?.uri ?? null)
+      return uri ? (await persistPhoto(uri, groupId)).uri : null
     }
-  } catch (e) {
+  } catch {
     Alert.alert('Photo error', 'Could not get image.')
     return null
   }

@@ -9,6 +9,7 @@ import Loader from '@shared/ui/loader/Loader'
 import { filterItemsByLetter, getAvailableLetters, type LetterKey } from '@shared/lib/alphaFilter'
 import LetterFilter from '@shared/ui/filters/LetterFilter'
 import { useFlows } from '../application/useFlows'
+import { FailedAuditsBanner } from '@features/failed-audits'
 import { EntityErrorState } from '@shared/ui/states/EntityErrorState'
 
 const SelectorScreen: React.FC = () => {
@@ -100,6 +101,7 @@ const SelectorScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <FailedAuditsBanner />
       <SubHeadline text="Select a flow" stylesText={styles.text} />
       <LetterFilter
         letters={availableLetters}

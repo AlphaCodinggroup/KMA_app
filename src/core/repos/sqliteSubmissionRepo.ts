@@ -4,6 +4,7 @@ import type {
   SubmissionId,
   SaveDraftInput,
   SubmissionSnapshot,
+  SubmissionStatus,
 } from '@entities/submission/ports'
 import type {
   SubmissionDraft,
@@ -11,6 +12,7 @@ import type {
   FormAnswer,
   QuestionAnswer,
 } from '@entities/submission/model'
+import { PHOTO_FIELD_KEYS, photoUriOf } from '@entities/submission/lib/photos'
 import { normalizeQuestionAnswerValue } from '@shared/lib/questionAnswers'
 
 const STEP_ID_ALL = 'ALL'
@@ -27,6 +29,36 @@ type SubmissionRow = {
   has_files: number
   synced: number
   created_at: number
+  status: SubmissionStatus
+  last_error: string | null
+  user_id: string | null
+  updated_at: number | null
+}
+
+const SUBMISSION_COLUMNS =
+  'id, flow_id, step_id, payload_json, has_files, synced, created_at, status, last_error, user_id, updated_at'
+
+function rowToSnapshot(row: SubmissionRow): SubmissionSnapshot {
+  const { draft, projectId, facilityId, version } = parsePayload(row)
+
+  const snapshot: SubmissionSnapshot = {
+    id: row.id,
+    flowId: draft.flowId,
+    title: draft.title,
+    createdAt: draft.createdAt,
+    answers: draft.answers,
+    projectId,
+    facilityId,
+    version,
+    synced: !!row.synced,
+    hasFiles: !!row.has_files,
+    status: row.status,
+  }
+  if (row.last_error !== null) snapshot.lastError = row.last_error
+  if (row.user_id !== null) snapshot.userId = row.user_id
+  if (row.updated_at !== null) snapshot.updatedAt = row.updated_at
+
+  return snapshot
 }
 
 // Payload guardado en `payload_json`.
@@ -34,15 +66,10 @@ type SubmissionPayloadV1 =
   | SubmissionDraft
   | {
       draft: SubmissionDraft
-      projectId?: string | null
-      facilityId?: string | null
-      version?: string | null
+      projectId?: string | null | undefined
+      facilityId?: string | null | undefined
+      version?: string | null | undefined
     }
-
-type LocalPhotoLike = {
-  uri?: string
-  localUri?: string
-}
 
 function normalizeLegacyDraftAnswers(
   answers: Record<string, SubmissionAnswer> | null | undefined,
@@ -78,9 +105,9 @@ function normalizeLegacyDraftAnswers(
 
 function parsePayload(row: SubmissionRow): {
   draft: SubmissionDraft
-  projectId?: string
-  facilityId?: string
-  version?: string
+  projectId?: string | undefined
+  facilityId?: string | undefined
+  version?: string | undefined
 } {
   let raw: unknown
   try {
@@ -95,10 +122,11 @@ function parsePayload(row: SubmissionRow): {
   let version: string | undefined
 
   if (raw && typeof raw === 'object' && 'draft' in raw) {
-    draft = raw.draft as SubmissionDraft
-    projectId = raw.projectId ?? undefined
-    facilityId = raw.facilityId ?? undefined
-    version = raw.version ?? undefined
+    const wrapped = raw as Extract<SubmissionPayloadV1, { draft: SubmissionDraft }>
+    draft = wrapped.draft
+    projectId = wrapped.projectId ?? undefined
+    facilityId = wrapped.facilityId ?? undefined
+    version = wrapped.version ?? undefined
   } else {
     draft = (raw || {}) as SubmissionDraft
   }
@@ -124,43 +152,18 @@ function parsePayload(row: SubmissionRow): {
   return { draft, projectId, facilityId, version }
 }
 
-function asLocalPhotoLike(value: unknown): LocalPhotoLike | null {
-  if (!value || typeof value !== 'object') return null
-  return value as LocalPhotoLike
-}
-
 /**
  * Detecta si el draft tiene al menos una foto local (file://)
  * buscando en values.photo / values.photos de las respuestas de tipo Form.
  */
 function hasDraftFiles(draft: SubmissionDraft): boolean {
-  const answers = draft.answers ?? {}
-  for (const ans of Object.values<SubmissionAnswer>(answers)) {
+  for (const ans of Object.values<SubmissionAnswer>(draft.answers ?? {})) {
     if (!ans || ans.type !== 'Form') continue
     const form = ans as FormAnswer
-    const values = form.values ?? {}
-
-    const maybePhotos: unknown[] = []
-
-    const vPhoto = values.photo
-    const vPhotos = values.photos
-
-    if (Array.isArray(vPhoto)) maybePhotos.push(...vPhoto)
-    if (Array.isArray(vPhotos)) maybePhotos.push(...vPhotos)
-
-    if (!maybePhotos.length) continue
-
-    const hasLocal = maybePhotos.some(p => {
-      if (typeof p === 'string') return p.startsWith('file://')
-      if (p && typeof p === 'object') {
-        const photo = asLocalPhotoLike(p)
-        const uri = photo?.uri || photo?.localUri
-        return typeof uri === 'string' && uri.startsWith('file://')
-      }
-      return false
-    })
-
-    if (hasLocal) return true
+    const photos = [
+      ...PHOTO_FIELD_KEYS.flatMap(k => (Array.isArray(form.values?.[k]) ? form.values[k] : [])),
+    ] as unknown[]
+    if (photos.some(p => photoUriOf(p).startsWith('file://'))) return true
   }
   return false
 }
@@ -179,7 +182,13 @@ function buildPayload(input: SaveDraftInput): SubmissionPayloadV1 {
   }
 }
 
-export const sqliteSubmissionRepo: SubmissionRepo = {
+export type FailedSubmissionSummary = { id: string; title: string; lastError: string | null }
+
+export const sqliteSubmissionRepo: SubmissionRepo & {
+  assignOwner(userId: string): Promise<void>
+  listFailedSummaries(userId: string): Promise<FailedSubmissionSummary[]>
+  listPendingWithFiles(status: SubmissionStatus): Promise<SubmissionSnapshot[]>
+} = {
   async saveDraft(input: SaveDraftInput): Promise<{ id: SubmissionId }> {
     const id: SubmissionId = input.id ?? generateId()
     const payload = buildPayload(input)
@@ -190,7 +199,9 @@ export const sqliteSubmissionRepo: SubmissionRepo = {
         ? input.draft.createdAt
         : Date.now()
 
-    // Si viene id, intentamos UPDATE primero (manteniendo created_at original)
+    const now = Date.now()
+
+    // Si viene id, intentamos UPDATE primero (manteniendo created_at y status originales)
     if (input.id) {
       const updateRes = await run(
         `
@@ -200,10 +211,11 @@ export const sqliteSubmissionRepo: SubmissionRepo = {
           step_id = ?,
           payload_json = ?,
           has_files = ?,
-          synced = 0
+          synced = 0,
+          updated_at = ?
         WHERE id = ?
         `,
-        [input.draft.flowId, STEP_ID_ALL, JSON.stringify(payload), hasFiles, input.id],
+        [input.draft.flowId, STEP_ID_ALL, JSON.stringify(payload), hasFiles, now, input.id],
       )
 
       if (updateRes.changes > 0) {
@@ -221,10 +233,22 @@ export const sqliteSubmissionRepo: SubmissionRepo = {
           payload_json,
           has_files,
           synced,
-          created_at
-        ) VALUES (?, ?, ?, ?, ?, 0, ?)
+          created_at,
+          status,
+          user_id,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, 0, ?, 'draft', ?, ?)
       `,
-      [id, input.draft.flowId, STEP_ID_ALL, JSON.stringify(payload), hasFiles, createdAt],
+      [
+        id,
+        input.draft.flowId,
+        STEP_ID_ALL,
+        JSON.stringify(payload),
+        hasFiles,
+        createdAt,
+        input.userId ?? null,
+        now,
+      ],
     )
 
     return { id }
@@ -232,28 +256,92 @@ export const sqliteSubmissionRepo: SubmissionRepo = {
 
   async getById(id: SubmissionId): Promise<SubmissionSnapshot | null> {
     const rows = await query<SubmissionRow>(
-      'SELECT id, flow_id, step_id, payload_json, has_files, synced, created_at FROM submissions WHERE id = ?',
+      `SELECT ${SUBMISSION_COLUMNS} FROM submissions WHERE id = ?`,
       [id],
     )
     const row = rows[0]
-    if (!row) return null
+    return row ? rowToSnapshot(row) : null
+  },
 
-    const { draft, projectId, facilityId, version } = parsePayload(row)
+  async listByStatus(status: SubmissionStatus, userId?: string): Promise<SubmissionSnapshot[]> {
+    const rows = userId
+      ? await query<SubmissionRow>(
+          `SELECT ${SUBMISSION_COLUMNS} FROM submissions
+           WHERE status = ? AND user_id = ?
+           ORDER BY created_at DESC`,
+          [status, userId],
+        )
+      : await query<SubmissionRow>(
+          `SELECT ${SUBMISSION_COLUMNS} FROM submissions
+           WHERE status = ?
+           ORDER BY created_at DESC`,
+          [status],
+        )
+    return rows.map(rowToSnapshot)
+  },
 
-    const snapshot: SubmissionSnapshot = {
-      id: row.id,
-      flowId: draft.flowId,
-      title: draft.title,
-      createdAt: draft.createdAt,
-      answers: draft.answers,
-      projectId,
-      facilityId,
-      version,
-      synced: !!row.synced,
-      hasFiles: !!row.has_files,
+  async findDraft(params: {
+    flowId: string
+    projectId?: string
+    facilityId?: string
+    userId?: string
+  }): Promise<SubmissionSnapshot | null> {
+    // projectId/facilityId viven en el payload (se guardan '' cuando no hay)
+    const args: (string | number)[] = [
+      params.flowId,
+      params.projectId ?? '',
+      params.facilityId ?? '',
+    ]
+    let userClause = ''
+    if (params.userId) {
+      userClause = 'AND user_id = ?'
+      args.push(params.userId)
     }
 
-    return snapshot
+    const rows = await query<SubmissionRow>(
+      `SELECT ${SUBMISSION_COLUMNS} FROM submissions
+       WHERE status = 'draft' AND flow_id = ?
+         AND COALESCE(json_extract(payload_json, '$.projectId'), '') = ?
+         AND COALESCE(json_extract(payload_json, '$.facilityId'), '') = ?
+         ${userClause}
+       ORDER BY COALESCE(updated_at, created_at) DESC
+       LIMIT 1`,
+      args,
+    )
+    const row = rows[0]
+    return row ? rowToSnapshot(row) : null
+  },
+
+  /** Fallidas del usuario sin parsear el payload completo (sólo título y último error). */
+  async listFailedSummaries(userId: string): Promise<FailedSubmissionSummary[]> {
+    const rows = await query<{ id: string; title: string | null; last_error: string | null }>(
+      `SELECT id, json_extract(payload_json, '$.draft.title') AS title, last_error
+         FROM submissions
+        WHERE status = 'failed' AND user_id = ?
+        ORDER BY created_at DESC`,
+      [userId],
+    )
+    return rows.map(r => ({ id: r.id, title: r.title ?? '', lastError: r.last_error }))
+  },
+
+  /** Submissions con fotos locales en el estado dado (evita parsear las que no tienen archivos). */
+  async listPendingWithFiles(status: SubmissionStatus): Promise<SubmissionSnapshot[]> {
+    const rows = await query<SubmissionRow>(
+      `SELECT ${SUBMISSION_COLUMNS} FROM submissions
+        WHERE status = ? AND has_files = 1
+        ORDER BY created_at DESC`,
+      [status],
+    )
+    return rows.map(rowToSnapshot)
+  },
+
+  async markStatus(id: SubmissionId, status: SubmissionStatus, lastError?: string): Promise<void> {
+    await run('UPDATE submissions SET status = ?, last_error = ?, updated_at = ? WHERE id = ?', [
+      status,
+      lastError ?? null,
+      Date.now(),
+      id,
+    ])
   },
 
   async markSynced(id: SubmissionId): Promise<void> {
@@ -262,5 +350,10 @@ export const sqliteSubmissionRepo: SubmissionRepo = {
 
   async delete(id: SubmissionId): Promise<void> {
     await run('DELETE FROM submissions WHERE id = ?', [id])
+  },
+
+  /** Backfill: asigna al usuario las submissions sin dueño (filas previas a la migración 4). */
+  async assignOwner(userId: string): Promise<void> {
+    await run('UPDATE submissions SET user_id = ? WHERE user_id IS NULL', [userId])
   },
 }

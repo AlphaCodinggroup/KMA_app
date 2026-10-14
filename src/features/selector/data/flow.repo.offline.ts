@@ -1,7 +1,7 @@
 import type { FlowRepo, FlowsQuery } from '@entities/flow/ports'
 import type { Flow, FlowSummary } from '@entities/flow/model'
 import type { FlowDetail } from '@shared/validation/steps.schema'
-import { createHttpFlowRepo } from './flow.repo.http'
+import { HttpFlowRepo } from './flow.repo.http'
 import { sqliteFlowRepo } from '@core/repos/sqliteFlowRepo'
 import { isOnlineOnce } from '@shared/lib/network'
 
@@ -15,10 +15,10 @@ import { isOnlineOnce } from '@shared/lib/network'
  *    - reconstruye desde SQLite (flows + steps)
  */
 class OfflineFirstFlowRepo implements FlowRepo {
-  private readonly httpRepo: FlowRepo
+  private readonly httpRepo: HttpFlowRepo
 
   constructor() {
-    this.httpRepo = createHttpFlowRepo()
+    this.httpRepo = new HttpFlowRepo()
   }
 
   /**
@@ -39,16 +39,7 @@ class OfflineFirstFlowRepo implements FlowRepo {
         : undefined
 
       try {
-        const remoteFlows = await this.httpRepo.getAll(requestQuery)
-
-        // Best-effort: sincronizar cache local
-        try {
-          await this.cacheRemoteFlows(remoteFlows)
-        } catch (err) {
-          if (__DEV__) {
-            console.warn('[OfflineFirstFlowRepo.getAll] cache sync failed', err)
-          }
-        }
+        const remoteFlows = await this.fetchRemoteCatalog(requestQuery)
 
         return applyFlowQuery(remoteFlows, query)
       } catch (err) {
@@ -89,7 +80,8 @@ class OfflineFirstFlowRepo implements FlowRepo {
           }
         }
 
-        return flow
+        // Si el flow vino inválido (descartado) o no está en el remoto, probamos la última versión cacheada
+        return flow ?? (await this.getFromCacheById(id))
       } catch (err) {
         if (__DEV__) {
           console.warn('[OfflineFirstFlowRepo.getById] remote failed, trying cache', id, err)
@@ -119,16 +111,7 @@ class OfflineFirstFlowRepo implements FlowRepo {
         : undefined
 
       try {
-        const remoteFlows = await this.httpRepo.getAll(requestQuery)
-
-        // Best-effort: sincronizar cache local
-        try {
-          await this.cacheRemoteFlows(remoteFlows)
-        } catch (err) {
-          if (__DEV__) {
-            console.warn('[OfflineFirstFlowRepo.getSummaries] cache sync failed', err)
-          }
-        }
+        const remoteFlows = await this.fetchRemoteCatalog(requestQuery)
 
         const filtered = applyFlowQuery(remoteFlows, query)
         return filtered.map(flowToSummary)
@@ -146,18 +129,56 @@ class OfflineFirstFlowRepo implements FlowRepo {
   // Helpers internos (cache / reconstrucción desde SQLite)
 
   /**
+   * Trae el catálogo remoto (validado por flow), sincroniza SQLite (best-effort) y devuelve los flows
+   * válidos más la última versión cacheada de los que se descartaron por inválidos.
+   */
+  private async fetchRemoteCatalog(query?: FlowsQuery): Promise<Flow[]> {
+    const { flows, discarded } = await this.httpRepo.fetchCatalog(query)
+    const keepIds = discarded.map(d => d.id).filter((id): id is string => !!id)
+
+    try {
+      await this.cacheRemoteFlows(flows, keepIds)
+    } catch (err) {
+      if (__DEV__) {
+        console.warn('[OfflineFirstFlowRepo.fetchRemoteCatalog] cache sync failed', err)
+      }
+    }
+
+    const kept: Flow[] = []
+    for (const id of keepIds) {
+      const cached = await this.getFromCacheById(id).catch(() => null)
+      if (cached) kept.push(cached)
+    }
+
+    return [...flows, ...kept]
+  }
+
+  /**
    * Sincroniza catálogo + detalle completo en SQLite a partir de los flows remotos.
    * - Guarda catálogo completo (prune de los que ya no existen).
    * - Guarda detalle (steps) de cada flow.
    */
-  private async cacheRemoteFlows(flows: Flow[]): Promise<void> {
+  private async cacheRemoteFlows(flows: Flow[], keepIds: string[] = []): Promise<void> {
+    // La firma se lee ANTES de `saveCatalog`, que pisa version/updatedAt del catálogo
+    const cached = await sqliteFlowRepo.getCachedSignatures()
+
     const catalog: { flows: FlowSummary[] } = {
       flows: flows.map(flowToSummary),
     }
 
-    await sqliteFlowRepo.saveCatalog(catalog)
+    await sqliteFlowRepo.saveCatalog(catalog, { keepIds })
 
     for (const flow of flows) {
+      // Sin cambios (misma versión, updatedAt y steps completos): no reescribimos los steps
+      const sig = cached.get(flow.flowId)
+      const unchanged =
+        !!sig &&
+        sig.version === String(flow.version) &&
+        (sig.updatedAt ?? '') === (flow.updatedAt ?? '') &&
+        sig.stepsCount === flow.steps.length &&
+        sig.stored === flow.steps.length
+      if (unchanged) continue
+
       await this.cacheFlowDetail(flow)
     }
   }

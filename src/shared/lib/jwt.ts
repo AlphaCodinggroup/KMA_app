@@ -9,7 +9,7 @@ export function decodeJwtPayload(token?: string | null): JwtClaims {
   if (parts.length < 2) return null
 
   try {
-    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const base64 = (parts[1] ?? '').replace(/-/g, '+').replace(/_/g, '/')
     const padded = base64 + '='.repeat((4 - (base64.length % 4 || 4)) % 4)
     const raw = typeof globalThis.atob === 'function' ? globalThis.atob(padded) : null
     if (!raw) return null
