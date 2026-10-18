@@ -50,6 +50,24 @@
       "autoIncrement": true,
       "pnpm": "10.24.0"
     },
+    "qa": {
+      "distribution": "internal",
+      "ios": { "enterpriseProvisioning": "adhoc", "simulator": false },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://0s46o3anuj.execute-api.us-east-1.amazonaws.com/api",
+        "EXPO_PUBLIC_COGNITO_BASE_URL": "https://cognito-idp.us-east-1.amazonaws.com",
+        "EXPO_PUBLIC_COGNITO_REGION": "us-east-1",
+        "EXPO_PUBLIC_COGNITO_CLIENT_ID": "759sd5d7egpd869r7g7ssn86eu",
+        "EXPO_PUBLIC_RETRY_MAX_ATTEMPTS": "3",
+        "EXPO_PUBLIC_RETRY_BASE_DELAY_MS": "600",
+        "EXPO_PUBLIC_SYNC_BATCH_SIZE": "10",
+        "EXPO_PUBLIC_AUDITS_V2": "true",
+        "EXPO_PUBLIC_PHOTO_BG_UPLOAD": "true",
+        "EAS_PROJECT_ID": "1b6bf518-a922-462a-814e-460280053abf"
+      },
+      "autoIncrement": true,
+      "pnpm": "10.24.0"
+    },
     "production-apk": {
       "extends": "production",
       "distribution": "internal",
