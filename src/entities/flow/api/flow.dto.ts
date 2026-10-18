@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { lenientBoolean, lenientNumber } from '@shared/validation/optionalFields'
 
 /**
  * DTOs Zod para GET /flows
@@ -13,6 +14,10 @@ export const StepFieldDtoSchema = z.object({
   label: z.string(),
   unit: z.string().optional(),
   placeholder: z.string().optional(),
+  // Opcionales: backend los incorpora de forma gradual. null se trata como ausente.
+  required: lenientBoolean,
+  multiline: lenientBoolean,
+  order: lenientNumber,
 })
 export type StepFieldDTO = z.infer<typeof StepFieldDtoSchema>
 

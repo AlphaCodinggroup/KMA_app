@@ -18,6 +18,9 @@ export interface Field {
   label: string
   unit?: string | undefined
   placeholder?: string | undefined
+  required?: boolean | undefined
+  multiline?: boolean | undefined
+  order?: number | undefined
 }
 
 export interface OptionCondition {

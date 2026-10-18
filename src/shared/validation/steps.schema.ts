@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { lenientBoolean, lenientNumber } from './optionalFields'
 import { QUESTION_ANSWER_VALUES, normalizeQuestionAnswerValue } from '@shared/lib/questionAnswers'
 
 /**
@@ -15,6 +16,9 @@ export const FormFieldSchema = z.object({
   label: z.string(),
   unit: z.string().optional(),
   placeholder: z.string().optional(),
+  required: lenientBoolean,
+  multiline: lenientBoolean,
+  order: lenientNumber,
 })
 export type FormField = z.infer<typeof FormFieldSchema>
 

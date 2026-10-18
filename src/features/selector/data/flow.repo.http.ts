@@ -95,16 +95,7 @@ export class HttpFlowRepo implements FlowRepo {
   async getAll(query?: FlowsQuery): Promise<Flow[]> {
     let { flows } = await this.fetchCatalog(query)
 
-    // Filtros/paginación client-side
-    const anyQuery = query as any
-
-    //    - Filtrado por primera letra del flowType
-    if (anyQuery?.flowTypeStartsWith) {
-      const letter = String(anyQuery.flowTypeStartsWith).toUpperCase()
-      flows = flows.filter(f => (f.flowType?.[0]?.toUpperCase() ?? '') === letter)
-    }
-
-    //    - offset / limit
+    // Paginación client-side (offset / limit)
     if (typeof query?.offset === 'number' || typeof query?.limit === 'number') {
       const start = query?.offset ?? 0
       const limit = query?.limit

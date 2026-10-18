@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { Flow, FlowSummary } from '@entities/flow/model'
@@ -6,8 +6,13 @@ import { styles } from './styles/selector.styles'
 import FlowList, { type FlowListItem } from './FlowList'
 import SubHeadline from '@shared/ui/subheadline/subHeadline'
 import Loader from '@shared/ui/loader/Loader'
-import { filterItemsByLetter, getAvailableLetters, type LetterKey } from '@shared/lib/alphaFilter'
+import type { LetterKey } from '@shared/lib/alphaFilter'
 import LetterFilter from '@shared/ui/filters/LetterFilter'
+import {
+  filterSectionsByLetter,
+  getSectionLetters,
+  groupFlowsByCategory,
+} from '../lib/groupFlowsByCategory'
 import { useFlows } from '../application/useFlows'
 import { FailedAuditsBanner } from '@features/failed-audits'
 import { EntityErrorState } from '@shared/ui/states/EntityErrorState'
@@ -27,9 +32,9 @@ const SelectorScreen: React.FC = () => {
     () =>
       flows.map(f => {
         const description = f.description ?? ''
-        const rawFlowType = f.flowType ?? ''
-        const normalizedFlowType =
-          typeof rawFlowType === 'string' && rawFlowType.trim().length > 0 ? rawFlowType : f.title
+        // Sin categoría queda vacío: el agrupador la manda a "Other"
+        const rawFlowType = f.flowType
+        const normalizedFlowType = typeof rawFlowType === 'string' ? rawFlowType.trim() : ''
 
         return {
           id: f.flowId,
@@ -72,16 +77,24 @@ const SelectorScreen: React.FC = () => {
     [facilityId, flows, projectId, router],
   )
 
-  // Letras únicas disponibles (derivadas del backend / cache)
-  const availableLetters = useMemo<string[]>(
-    () => getAvailableLetters(summaries, it => it.title),
-    [summaries],
-  )
+  const sections = useMemo(() => groupFlowsByCategory(summaries), [summaries])
 
-  // Lista filtrada por letra
-  const filteredItems = useMemo<FlowSummary[]>(
-    () => filterItemsByLetter(summaries, selectedLetter, it => it.title),
-    [summaries, selectedLetter],
+  // Letras = iniciales de categoría
+  const availableLetters = useMemo<string[]>(() => getSectionLetters(sections), [sections])
+
+  // Si tras un refresh la letra elegida ya no existe, se vuelve a "All" (evita lista vacía sin salida)
+  const effectiveLetter: LetterKey = availableLetters.includes(selectedLetter)
+    ? selectedLetter
+    : 'ALL'
+
+  // Resetear el estado también, para que la letra no se reaplique sola si la categoría vuelve
+  useEffect(() => {
+    if (selectedLetter !== effectiveLetter) setSelectedLetter('ALL')
+  }, [selectedLetter, effectiveLetter])
+
+  const filteredSections = useMemo(
+    () => filterSectionsByLetter(sections, effectiveLetter),
+    [sections, effectiveLetter],
   )
 
   if (loading) return <Loader loading={loading} />
@@ -105,11 +118,11 @@ const SelectorScreen: React.FC = () => {
       <SubHeadline text="Select a flow" stylesText={styles.text} />
       <LetterFilter
         letters={availableLetters}
-        selected={selectedLetter}
+        selected={effectiveLetter}
         onSelect={setSelectedLetter}
       />
       <FlowList
-        items={filteredItems}
+        sections={filteredSections}
         onPressItem={onPressItem}
         refreshing={refreshing}
         onRefresh={refresh}

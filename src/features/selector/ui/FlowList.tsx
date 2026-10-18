@@ -1,14 +1,15 @@
 import React, { memo, useCallback } from 'react'
-import type { StyleProp, ViewStyle } from 'react-native'
+import { SectionList, Text, View, type StyleProp, type ViewStyle } from 'react-native'
 import type { FlowSummary, Flow } from '@entities/flow/model'
-import EntityList from '@shared/ui/list/EntityList'
 import FlowCard from './FlowCard'
+import type { FlowSection } from '../lib/groupFlowsByCategory'
+import { styles } from './styles/selector.styles'
 
 // Permite usar el resumen actual o el flow completo
 export type FlowListItem = FlowSummary | Flow
 
 export interface FlowListProps {
-  items: ReadonlyArray<FlowListItem>
+  sections: ReadonlyArray<FlowSection>
   onPressItem: (item: FlowListItem) => void
   contentContainerStyle?: StyleProp<ViewStyle>
   refreshing?: boolean
@@ -21,7 +22,7 @@ const isFlow = (item: FlowListItem): item is Flow =>
   (item as Flow).flowId !== undefined
 
 const FlowList: React.FC<FlowListProps> = ({
-  items,
+  sections,
   onPressItem,
   contentContainerStyle,
   refreshing = false,
@@ -55,17 +56,30 @@ const FlowList: React.FC<FlowListProps> = ({
   )
 
   return (
-    <EntityList<FlowListItem>
-      items={items}
-      renderItem={renderItem}
+    <SectionList<FlowListItem, FlowSection>
+      testID={testID}
+      sections={sections as FlowSection[]}
+      renderItem={({ item }) => renderItem(item)}
+      renderSectionHeader={({ section }) => (
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionBar} />
+          <Text style={styles.sectionTitle} accessibilityRole="header">
+            {section.title}
+          </Text>
+        </View>
+      )}
       keyExtractor={keyExtractor}
+      ItemSeparatorComponent={Separator}
+      stickySectionHeadersEnabled={false}
+      contentContainerStyle={[styles.listContent, contentContainerStyle]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
       refreshing={refreshing}
-      {...(onRefresh ? { onRefresh } : {})}
-      {...(contentContainerStyle ? { contentContainerStyle } : {})}
-      {...(testID ? { testID } : {})}
-      itemSpacing={12}
+      onRefresh={onRefresh}
     />
   )
 }
+
+const Separator = () => <View style={styles.itemSeparator} accessibilityElementsHidden />
 
 export default memo(FlowList)

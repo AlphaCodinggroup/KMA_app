@@ -311,20 +311,12 @@ function detailToFlow(detail: FlowDetail, summary?: FlowSummary): Flow {
 
 /**
  * Aplica filtros/paginación sobre Flow[] en memoria.
- * Mantiene compatibilidad con HttpFlowRepo:
- *  - flowTypeStartsWith (no tipeado, viene en query como any)
- *  - offset / limit
+ * Mantiene compatibilidad con HttpFlowRepo (offset / limit).
  */
 function applyFlowQuery(flows: Flow[], query?: FlowsQuery): Flow[] {
   if (!query) return flows
 
-  const anyQuery = query as any
   let out = flows
-
-  if (anyQuery.flowTypeStartsWith) {
-    const letter = String(anyQuery.flowTypeStartsWith).toUpperCase()
-    out = out.filter(f => (f.flowType?.[0]?.toUpperCase() ?? '') === letter)
-  }
 
   if (typeof query.offset === 'number' || typeof query.limit === 'number') {
     const start = query.offset ?? 0
@@ -335,25 +327,11 @@ function applyFlowQuery(flows: Flow[], query?: FlowsQuery): Flow[] {
   return out
 }
 
-/**
- * Versión de applyFlowQuery para FlowSummary[].
- * Si no tenemos flowType en cache, se usa la primera letra del title como fallback.
- */
+/** Versión de applyFlowQuery para FlowSummary[]. */
 function applySummaryQuery(summaries: FlowSummary[], query?: FlowsQuery): FlowSummary[] {
   if (!query) return summaries
 
-  const anyQuery = query as any
   let out = summaries
-
-  if (anyQuery.flowTypeStartsWith) {
-    const letter = String(anyQuery.flowTypeStartsWith).toUpperCase()
-
-    out = out.filter(s => {
-      const base = s.flowType || s.title || ''
-      const trimmed = base.trim()
-      return (trimmed[0]?.toUpperCase() ?? '') === letter
-    })
-  }
 
   if (typeof query.offset === 'number' || typeof query.limit === 'number') {
     const start = query.offset ?? 0
