@@ -25,6 +25,7 @@ import {
 } from './usecases'
 import { recordAnswerDelta } from './auditDeltas'
 import { finalizeAudit } from './auditSubmit'
+import { discardPrunedPhotos } from './photoUploads'
 import { END_ID, mapById, parseStepsParam, resolveInitialStepId } from '../lib/helpers'
 import {
   appendVisibleId,
@@ -299,6 +300,7 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
       // Pasos que la nueva respuesta deja afuera (rama abandonada): V2 los borra también en el server
       const removedStepIds = getStepIdsAfter(visibleIdsRef.current, currentStepId)
       pruneAnswersAfter(currentStepId)
+      await discardPrunedPhotos(submissionIdRef.current, removedStepIds)
       await persistAll()
       // V2: marca el paso como pendiente y encola el delta (no-op si la corrida es v1)
       await recordAnswerDelta({

@@ -202,4 +202,32 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_submissions_audit ON submissions(audit_id);
     `,
   },
+  {
+    id: 7,
+    name: 'add_photo_uploads_v1',
+    up: `
+      -- Una fila por foto capturada (8.M). Registra el archivo local y su estado de subida.
+      CREATE TABLE IF NOT EXISTS photo_uploads (
+        id TEXT PRIMARY KEY,
+        submission_id TEXT NOT NULL,
+        audit_id TEXT,
+        step_id TEXT NOT NULL,
+        field_id TEXT NOT NULL,
+        local_uri TEXT NOT NULL,
+        upload_name TEXT NOT NULL,
+        remote_url TEXT,
+        s3_key TEXT,
+        upload_url TEXT,
+        expires_at INTEGER,              -- ms (backend lo envía en segundos)
+        status TEXT NOT NULL,            -- pending | uploading | uploaded | failed
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_photo_uploads_status ON photo_uploads(status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_photo_uploads_submission ON photo_uploads(submission_id);
+    `,
+  },
 ]

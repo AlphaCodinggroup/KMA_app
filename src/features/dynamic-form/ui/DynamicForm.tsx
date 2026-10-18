@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import type { FormField, FormStep } from '@shared/validation/steps.schema'
 import { styles } from './styles/dynamicForm.styles'
 import PhotoField from './fields/PhotoField'
+import type { PhotoBadgeStatus } from '@shared/ui/photo/PhotoSyncBadge'
 import { sortFields } from '../lib/sortFields'
 import { buildFieldsSchema, countPhotos, hasRequiredFields } from '../lib/buildFieldsSchema'
 
@@ -23,7 +24,10 @@ type Props = {
   onSubmit: (values: Record<string, unknown>) => void
   /** Valores previos (reanudar un draft): pisan los defaults de cada campo. */
   initialValues?: Record<string, unknown> | undefined
-  capturePhoto?: () => Promise<string | null>
+  /** Captura una foto para ese campo; el contexto permite registrarla (step + field). */
+  capturePhoto?: (ctx: { stepId: string; fieldId: string }) => Promise<string | null>
+  /** Estado de backup por URI de foto (auditorías V2); sin entrada no se muestra badge. */
+  photoStatusByUri?: Readonly<Record<string, PhotoBadgeStatus>> | undefined
   /** Borra el archivo local de una foto quitada del form. */
   discardPhoto?: (uri: string) => Promise<void>
 }
@@ -32,7 +36,14 @@ type Props = {
  * - Orquesta el render de cada field y delega UI específica a subcomponentes.
  * - Compatibilidad: si `photo` viniera como string desde datos antiguos, se normaliza a string[] solo en UI.
  */
-function DynamicFormBase({ step, onSubmit, capturePhoto, discardPhoto, initialValues }: Props) {
+function DynamicFormBase({
+  step,
+  onSubmit,
+  capturePhoto,
+  discardPhoto,
+  initialValues,
+  photoStatusByUri,
+}: Props) {
   // Orden configurado por el admin (defensa por `order`; normalmente ya viene ordenado)
   const fields = useMemo(() => sortFields(step.fields), [step.fields])
 
@@ -210,7 +221,7 @@ function DynamicFormBase({ step, onSubmit, capturePhoto, discardPhoto, initialVa
 
         const onAdd = async () => {
           if (!capturePhoto) return null
-          const uri = await capturePhoto()
+          const uri = await capturePhoto({ stepId: step.id, fieldId: field.id })
           if (uri) rhf.onChange([...list, uri])
           return uri ?? null
         }
@@ -233,6 +244,7 @@ function DynamicFormBase({ step, onSubmit, capturePhoto, discardPhoto, initialVa
               value={list}
               onAdd={onAdd}
               onRemoveAt={onRemoveAt}
+              statusByUri={photoStatusByUri}
               addButtonText="Add another photo"
               removeButtonText="Remove"
               testID={`photo-field-${field.id}`}

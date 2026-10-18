@@ -16,6 +16,7 @@ import {
   submitAuditOnlineFromSnapshot,
 } from '@features/flow-runner/application/usecases'
 import { syncAuditDeltas } from '@features/flow-runner/application/auditDeltas'
+import { uploadPhotoItem } from '@features/flow-runner/application/photoUploads'
 import {
   enqueueAuditSubmitChain,
   submitRemoteAudit,
@@ -24,6 +25,7 @@ import {
   AUDIT_CREATE_ENDPOINT,
   AUDIT_DELTA_ENDPOINT,
   AUDIT_SUBMIT_ENDPOINT,
+  PHOTO_UPLOAD_ENDPOINT,
 } from '@features/flow-runner/lib/auditOutbox'
 import { syncAllCatalogs } from '@processes/catalog-sync'
 import { coldSyncAllFlows } from '@features/selector/application/usecases'
@@ -31,6 +33,9 @@ import { registerOutboxSyncTrigger } from '@processes/sync/outboxTrigger'
 import { notifyFailedAuditsChanged } from '@processes/sync/failedAuditsSignal'
 import { PHOTOS_ROOT, discardPhotoGroup } from '@features/camera'
 import { migrateCachedPhotos } from './migratePhotos'
+import { registerPendingPhotoUploads } from './registerPhotoUploads'
+import { runPhotoRetention } from '@processes/retention/photoRetention'
+import { sqlitePhotoUploadRepo } from '@core/repos/sqlitePhotoUploadRepo'
 import { initNetworkWatcher, isOnlineOnce } from '@shared/lib/network'
 
 let _bootPromise: Promise<void> | null = null
@@ -44,6 +49,7 @@ const SUBMISSION_ITEM_TYPES = new Set<string>([
   AUDIT_CREATE_ENDPOINT,
   AUDIT_DELTA_ENDPOINT,
   AUDIT_SUBMIT_ENDPOINT,
+  PHOTO_UPLOAD_ENDPOINT,
 ])
 
 type AuditSubmissionOutboxPayload = {
@@ -61,6 +67,7 @@ function createOutboxDispatcher() {
     if (item.type === AUDIT_CREATE_ENDPOINT) return handleAuditCreateItem(item)
     if (item.type === AUDIT_DELTA_ENDPOINT) return handleAuditDeltaItem(item)
     if (item.type === AUDIT_SUBMIT_ENDPOINT) return handleAuditSubmitItem(item)
+    if (item.type === PHOTO_UPLOAD_ENDPOINT) return handlePhotoUploadItem(item)
 
     // Tipo que esta versión no sabe procesar (p. ej. creado por un build más nuevo): se posterga
     // sin sumar intentos ni borrarlo, para que lo procese la versión que lo entienda.
@@ -118,6 +125,25 @@ async function handleAuditDeltaItem(
 }
 
 /**
+ * Maneja un item de outbox de tipo PHOTO_UPLOAD (una foto de una auditoría V2).
+ */
+async function handlePhotoUploadItem(
+  item: OutboxItem,
+): Promise<'success' | 'retry' | 'fail' | 'drop'> {
+  const photoId = (item.payload as { photoId?: string } | null)?.photoId
+  if (!photoId) return 'drop'
+
+  try {
+    return await uploadPhotoItem(photoId)
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[SyncService] PHOTO_UPLOAD error, retry', err)
+    }
+    return 'retry'
+  }
+}
+
+/**
  * Maneja un item de outbox de tipo AUDIT_SUBMIT (cierre de una auditoría V2).
  * Tras el 2xx se borran las fotos locales y la fila queda `submitted` con su `server_version`.
  */
@@ -134,11 +160,12 @@ async function handleAuditSubmitItem(
     const result = await submitRemoteAudit(snapshot)
 
     if (result === 'success') {
-      await cleanupSubmissionFiles(snapshot)
+      // Las fotos NO se borran acá: se conservan 7 días (o menos con poco espacio) para revisar o
+      // editar offline lo reciente. De la limpieza se ocupa `runPhotoRetention`.
       await sqliteSubmissionRepo.markStatus(submissionId, 'submitted')
 
       if (__DEV__) {
-        console.log('[SyncService] AUDIT_SUBMIT submitted & cleaned', submissionId)
+        console.log('[SyncService] AUDIT_SUBMIT submitted', submissionId)
       }
     }
 
@@ -300,6 +327,7 @@ async function cleanupSubmissionFiles(snapshot: SubmissionSnapshot): Promise<voi
 
   // El directorio de la submission se borra completo (incluye fotos descartadas que hayan quedado)
   await discardPhotoGroup(snapshot.id)
+  await sqlitePhotoUploadRepo.deleteBySubmission(snapshot.id).catch(() => undefined)
 
   // Fotos de la 1.0.8 en directorios ajenos: se borran si quedaron vacíos
   const dirs = new Set([...fileUris].map(u => u.slice(0, u.lastIndexOf('/'))))
@@ -327,6 +355,9 @@ export async function bootstrapApp(): Promise<void> {
     await initSession()
     await claimOrphanRows()
     await migrateCachedPhotos()
+    await registerPendingPhotoUploads()
+    // Una subida que quedó `uploading` con el proceso muerto vuelve a la cola (el PUT es idempotente)
+    await sqlitePhotoUploadRepo.resetUploading().catch(() => undefined)
 
     const outbox: OutboxRepo = sqliteOutboxRepo
     const sync = new SyncService({
@@ -377,6 +408,9 @@ export async function bootstrapApp(): Promise<void> {
         })
     }
 
+    // Limpieza de fotos ya respaldadas: no bloquea el arranque y corre como máximo una vez por día
+    void runPhotoRetention()
+
     const handleAppStateChange = (state: AppStateStatus) => {
       if (state === 'active') {
         // Foreground: respeta el backoff persistido. El reset queda para red recuperada,
@@ -384,6 +418,7 @@ export async function bootstrapApp(): Promise<void> {
         queueOutboxSync()
         queueCatalogSync()
         queueFlowsSync()
+        void runPhotoRetention()
       }
     }
     const appStateSub = AppState.addEventListener('change', handleAppStateChange)

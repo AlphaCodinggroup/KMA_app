@@ -12,6 +12,7 @@ import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
 import { logoutUseCase } from '@features/auth/application/logout'
 import { decodeJwtPayload, type JwtClaims } from '@shared/lib/jwt'
 import { FailedAuditsSection } from '@features/failed-audits'
+import { PhotoSyncIndicator } from '@features/photo-sync'
 import { styles } from './styles/profile.styles'
 
 export const ProfileScreen: React.FC = () => {
@@ -108,6 +109,7 @@ export const ProfileScreen: React.FC = () => {
       </View>
 
       <FailedAuditsSection />
+      <PhotoSyncIndicator />
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 

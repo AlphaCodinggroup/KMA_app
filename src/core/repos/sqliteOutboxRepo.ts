@@ -70,6 +70,7 @@ export const sqliteOutboxRepo: OutboxRepo & {
   requeue(id: string): Promise<void>
   requeueBySubmissionId(submissionId: string): Promise<boolean>
   hasSubmissionItem(submissionId: string, endpoint: string): Promise<boolean>
+  wakeSubmissionItems(submissionId: string): Promise<void>
   markFailedBySubmissionId(submissionId: string, reason: string): Promise<boolean>
   countPending(userId?: string): Promise<number>
   assignOwner(userId: string): Promise<void>
@@ -280,6 +281,20 @@ export const sqliteOutboxRepo: OutboxRepo & {
       [submissionId],
     )
     return res.changes > 0
+  },
+
+  /**
+   * Quita el backoff del delta y del submit de la submission (p. ej. al terminar una foto). Las
+   * otras fotos en backoff conservan el suyo: un éxito no debe castigar al endpoint que falla.
+   */
+  async wakeSubmissionItems(submissionId: string): Promise<void> {
+    await run(
+      `UPDATE outbox SET next_attempt_at = NULL
+        WHERE status = 'pending'
+          AND endpoint IN ('AUDIT_DELTA', 'AUDIT_SUBMIT')
+          AND json_extract(payload_json, '$.submissionId') = ?`,
+      [submissionId],
+    )
   },
 
   /** ¿Hay un item (en cualquier estado) de ese tipo para la submission? */

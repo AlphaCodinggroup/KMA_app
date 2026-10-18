@@ -29,6 +29,7 @@ const BuildEnvSchema = z.object({
   EXPO_PUBLIC_RETRY_BASE_DELAY_MS: z.string().optional(),
   EXPO_PUBLIC_SYNC_BATCH_SIZE: z.string().optional(),
   EXPO_PUBLIC_AUDITS_V2: z.string().optional(),
+  EXPO_PUBLIC_PHOTO_BG_UPLOAD: z.string().optional(),
   EAS_PROJECT_ID: z.string().optional(),
 })
 
@@ -126,6 +127,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       EXPO_PUBLIC_RETRY_BASE_DELAY_MS: env.EXPO_PUBLIC_RETRY_BASE_DELAY_MS ?? '600',
       EXPO_PUBLIC_SYNC_BATCH_SIZE: env.EXPO_PUBLIC_SYNC_BATCH_SIZE ?? '10',
       EXPO_PUBLIC_AUDITS_V2: env.EXPO_PUBLIC_AUDITS_V2 ?? 'false',
+      EXPO_PUBLIC_PHOTO_BG_UPLOAD: env.EXPO_PUBLIC_PHOTO_BG_UPLOAD ?? 'false',
       eas: {
         ...config.extra?.eas,
         projectId: env.EAS_PROJECT_ID || '1b6bf518-a922-462a-814e-460280053abf',

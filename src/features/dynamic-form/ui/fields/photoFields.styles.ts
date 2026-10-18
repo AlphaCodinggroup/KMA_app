@@ -39,6 +39,7 @@ export const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: setResponsiveSize({ size: 10 }),
   },
+  badgeSlot: { position: 'absolute', top: RFValue(6), left: RFValue(6) },
   scrollview: { marginVertical: RFValue(8) },
   containerImage: {
     marginRight: RFValue(12),

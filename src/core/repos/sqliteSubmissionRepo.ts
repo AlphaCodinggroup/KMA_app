@@ -192,11 +192,15 @@ function buildPayload(input: SaveDraftInput): SubmissionPayloadV1 {
   }
 }
 
+export type SubmittedSubmission = { id: string; confirmedAt: number }
+
 export type FailedSubmissionSummary = { id: string; title: string; lastError: string | null }
 
 export const sqliteSubmissionRepo: SubmissionRepo & {
   assignOwner(userId: string): Promise<void>
   listFailedSummaries(userId: string): Promise<FailedSubmissionSummary[]>
+  listSubmittedForRetention(): Promise<SubmittedSubmission[]>
+  replaceAnswers(id: string, answers: Record<string, SubmissionAnswer>): Promise<void>
   listPendingWithFiles(status: SubmissionStatus): Promise<SubmissionSnapshot[]>
 } = {
   async saveDraft(input: SaveDraftInput): Promise<{ id: SubmissionId }> {
@@ -338,6 +342,54 @@ export const sqliteSubmissionRepo: SubmissionRepo & {
       [userId],
     )
     return rows.map(r => ({ id: r.id, title: r.title ?? '', lastError: r.last_error }))
+  },
+
+  /**
+   * Reemplaza sólo las respuestas del payload (p. ej. URIs locales → `s3://` al purgar fotos) sin
+   * tocar `updated_at`, `status` ni `synced`: no reinicia el plazo de retención ni cuenta como edición.
+   */
+  async replaceAnswers(id: string, answers: Record<string, SubmissionAnswer>): Promise<void> {
+    const rows = await query<{ payload_json: string }>(
+      `SELECT payload_json FROM submissions WHERE id = ?`,
+      [id],
+    )
+    const row = rows[0]
+    if (!row) return
+
+    let raw: unknown
+    try {
+      raw = JSON.parse(row.payload_json)
+    } catch {
+      return
+    }
+    if (!raw || typeof raw !== 'object' || !('draft' in raw)) return
+
+    const wrapped = raw as { draft: SubmissionDraft }
+    wrapped.draft = { ...wrapped.draft, answers }
+
+    await run(`UPDATE submissions SET payload_json = ?, has_files = ? WHERE id = ?`, [
+      JSON.stringify(wrapped),
+      hasDraftFiles(wrapped.draft) ? 1 : 0,
+      id,
+    ])
+  },
+
+  /**
+   * Auditorías V2 confirmadas por el backend (`submitted`) que no tienen ningún item en el outbox
+   * (una edición pendiente las excluye), de la más vieja a la más nueva. `confirmedAt` es la última
+   * escritura local, que coincide con el 2xx del submit.
+   */
+  async listSubmittedForRetention(): Promise<SubmittedSubmission[]> {
+    const rows = await query<{ id: string; ts: number }>(
+      `SELECT s.id AS id, COALESCE(s.updated_at, s.created_at) AS ts
+         FROM submissions s
+        WHERE s.status = 'submitted'
+          AND NOT EXISTS (
+            SELECT 1 FROM outbox o WHERE json_extract(o.payload_json, '$.submissionId') = s.id
+          )
+        ORDER BY ts ASC`,
+    )
+    return rows.map(r => ({ id: r.id, confirmedAt: r.ts }))
   },
 
   /** Submissions con fotos locales en el estado dado (evita parsear las que no tienen archivos). */

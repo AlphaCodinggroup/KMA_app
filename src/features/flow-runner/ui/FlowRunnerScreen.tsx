@@ -4,10 +4,12 @@ import { View, Text, ScrollView, Platform } from 'react-native'
 import type { SelectStep } from '@shared/validation/steps.schema'
 import { QuestionCard } from '@features/question'
 import { DynamicForm } from '@features/dynamic-form'
-import { discardPhoto, pickOrCapturePhoto } from '@features/camera'
+import { pickOrCapturePhoto } from '@features/camera'
+import { PhotoEvidenceSection, usePhotoSyncStatus } from '@features/photo-sync'
 import Loader from '@shared/ui/loader/Loader'
 
 import { useFlowRunner } from '../application/useFlowRunner'
+import { discardCapturedPhoto, registerCapturedPhoto } from '../application/photoUploads'
 import EndView from './EndView'
 import StepIllustration from './StepIllustration'
 import { END_ID, toVirtualQuestion } from '../lib/helpers'
@@ -33,8 +35,19 @@ const FlowRunnerScreen: React.FC = () => {
     onFinish,
   } = useFlowRunner()
 
+  // Estado de backup de cada foto de la corrida (sólo auditorías V2; vacío en v1)
+  const { badgeByUri } = usePhotoSyncStatus(submissionId)
+
   // Las fotos de la corrida viven en un directorio propio: kma/photos/<submissionId>
-  const capturePhoto = useCallback(() => pickOrCapturePhoto(submissionId), [submissionId])
+  // y cada foto se registra en `photo_uploads` (step + field) apenas se captura
+  const capturePhoto = useCallback(
+    async (ctx: { stepId: string; fieldId: string }) => {
+      const uri = await pickOrCapturePhoto(submissionId)
+      if (uri) await registerCapturedPhoto({ submissionId, ...ctx, uri })
+      return uri
+    },
+    [submissionId],
+  )
 
   const renderSelectStep = useCallback(
     (step: SelectStep) => {
@@ -116,13 +129,25 @@ const FlowRunnerScreen: React.FC = () => {
                   onSubmit={values => onSubmitForm(step, values)}
                   initialValues={getStoredFormValues(step.id)}
                   capturePhoto={capturePhoto}
-                  discardPhoto={discardPhoto}
+                  discardPhoto={discardCapturedPhoto}
+                  photoStatusByUri={badgeByUri}
                 />
               )}
 
               {step.type === 'Select' && renderSelectStep(step)}
 
-              {step.type === 'End' && <EndView onFinish={onFinish} loading={submitting} />}
+              {step.type === 'End' && (
+                <>
+                  <PhotoEvidenceSection
+                    submissionId={submissionId}
+                    stepTitleOf={stepId => {
+                      const s = stepsById[stepId]
+                      return s && 'title' in s ? s.title : undefined
+                    }}
+                  />
+                  <EndView onFinish={onFinish} loading={submitting} />
+                </>
+              )}
             </View>
           )
         })}

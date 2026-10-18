@@ -51,6 +51,38 @@ export function withPhotoUri(p: PhotoValue, uri: string): PhotoValue {
   return out
 }
 
+/** Nombre del archivo local (sin query), p. ej. `abc123.jpg`. */
+function fileNameOf(localUri: string): string {
+  return localUri.split('?')[0]?.split('/').pop() ?? ''
+}
+
+/** Id de una foto: nombre base de su archivo local (sin query ni extensión). */
+export function photoIdFromUri(localUri: string): string {
+  const file = fileNameOf(localUri)
+  const dot = file.lastIndexOf('.')
+  return (dot > 0 ? file.slice(0, dot) : file) || 'photo'
+}
+
+/**
+ * Id de la fila de `photo_uploads` (y del item `PHOTO_UPLOAD`). Incluye la submission: dos auditorías
+ * pueden tener archivos con el mismo nombre (p. ej. `IMG_0001` migrado de la caché de la 1.0.8).
+ */
+export function photoRowId(submissionId: string, localUri: string): string {
+  return `${submissionId}__${photoIdFromUri(localUri)}`
+}
+
+/**
+ * Nombre de subida estable: `<stepId>_<fieldId>_<photoId>.<ext>` (BE-5).
+ * `photoId` sale del nombre del archivo local (único por foto, lo genera `persistPhoto`), así que
+ * reintentar un envío reutiliza el mismo nombre y no depende del orden del array ni de la hora.
+ */
+export function photoUploadName(stepId: string, fieldId: string, localUri: string): string {
+  const file = fileNameOf(localUri)
+  const dot = file.lastIndexOf('.')
+  const ext = (dot > 0 ? file.slice(dot + 1) : 'jpg').toLowerCase() || 'jpg'
+  return `${stepId}_${fieldId}_${photoIdFromUri(localUri)}.${ext}`
+}
+
 export function isLocalFileUri(uri: string): boolean {
   return uri.startsWith('file')
 }

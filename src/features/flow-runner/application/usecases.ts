@@ -6,6 +6,7 @@ import type { FlowRepo } from '@entities/flow/ports'
 import {
   extractPhotoArray,
   photoFieldKey,
+  photoUploadName,
   photoUriOf,
   type PhotoValueObject,
 } from '@entities/submission/lib/photos'
@@ -17,6 +18,7 @@ import { createOfflineFirstFlowRepo } from '@features/selector/data/flow.repo.of
 import { showAuditCreatedToast, showAuditProcessingToast } from '@shared/ui/toast/AppToast'
 import { triggerOutboxSync } from '@processes/sync/outboxTrigger'
 import { discardPhotoGroup } from '@features/camera'
+import { sqlitePhotoUploadRepo } from '@core/repos/sqlitePhotoUploadRepo'
 import { isOnlineOnce } from '@shared/lib/network'
 import { getCurrentUserId } from '@shared/session/session'
 import { Env } from '@shared/config/env'
@@ -53,12 +55,14 @@ type PresignRequestFile = {
   step_id: string
 }
 
-type PresignResponse = {
+export type PresignResponse = {
   audit_id: string
   urls: Array<{
     file_name: string
     upload_url: string
     file_url: string
+    /** Unix en segundos (BE-2). */
+    expires_at?: number
   }>
 }
 
@@ -139,6 +143,7 @@ export async function discardDraft(submissionId: string): Promise<void> {
     if (__DEV__) console.warn('[discardDraft] No se pudo borrar el draft', submissionId, err)
   }
   await discardPhotoGroup(submissionId)
+  await sqlitePhotoUploadRepo.deleteBySubmission(submissionId).catch(() => undefined)
 }
 
 /**
@@ -311,6 +316,7 @@ export async function persistDraft(params: {
     if (__DEV__) {
       console.warn('[persistDraft] Failed to save draft', err)
     }
+    return
   }
 }
 
@@ -601,19 +607,6 @@ function mapStepToDetail(step: Step): FlowDetail['steps'][number] {
 }
 
 /**
- * Nombre de subida estable: `<stepId>_<fieldId>_<photoId>.<ext>` (BE-5).
- * `photoId` sale del nombre del archivo local (único por foto, lo genera `persistPhoto`), así que
- * reintentar un envío reutiliza el mismo nombre y no depende del orden del array ni de la hora.
- */
-function photoUploadName(stepId: string, fieldId: string, localUri: string): string {
-  const file = localUri.split('?')[0]?.split('/').pop() ?? ''
-  const dot = file.lastIndexOf('.')
-  const photoId = (dot > 0 ? file.slice(0, dot) : file) || 'photo'
-  const ext = (dot > 0 ? file.slice(dot + 1) : 'jpg').toLowerCase() || 'jpg'
-  return `${stepId}_${fieldId}_${photoId}.${ext}`
-}
-
-/**
  * Recorre todas las respuestas y junta las fotos locales (file://...) que haya que subir.
  */
 function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): PhotoToUpload[] {
@@ -648,7 +641,7 @@ function collectLocalPhotos(answers: Record<string, SubmissionAnswer>): PhotoToU
 /**
  * Inferencia MIME básica.
  */
-function guessMimeFromExt(ext: string): string {
+export function guessMimeFromExt(ext: string): string {
   const lower = ext.toLowerCase()
   if (lower === 'jpg' || lower === 'jpeg') return 'image/jpeg'
   if (lower === 'png') return 'image/png'

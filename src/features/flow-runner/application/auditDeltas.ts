@@ -1,5 +1,5 @@
 import type { SubmissionAnswer } from '@entities/submission/model'
-import { extractPhotoArray, photoUriOf } from '@entities/submission/lib/photos'
+import { sqlitePhotoUploadRepo } from '@core/repos/sqlitePhotoUploadRepo'
 import { request } from '@core/http/http'
 import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
 import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
@@ -18,6 +18,7 @@ import {
   type RemoteAuditResponse,
 } from './usecases'
 import { AUDIT_DELTA_ENDPOINT, auditCreateItemId, auditDeltaItemId } from '../lib/auditOutbox'
+import { buildUploadMap, hasUnuploadedPhotos, indexByLocalUri } from '../lib/photoReadiness'
 import {
   diffDeletedStepIds,
   getPendingAnswers,
@@ -52,12 +53,6 @@ const serializeIds = (ids: string[]): string | null => (ids.length > 0 ? JSON.st
 function ownerFields(): { userId?: string } {
   const userId = getCurrentUserId()
   return userId ? { userId } : {}
-}
-
-/** Un paso con fotos todavía locales no se puede enviar: espera a que D2 las suba. */
-export function hasLocalPhotos(answer: SubmissionAnswer | undefined): boolean {
-  if (!answer || answer.type !== 'Form') return false
-  return extractPhotoArray(answer.values).some(p => photoUriOf(p).startsWith('file'))
 }
 
 // -----------------------------------------------------------------------------
@@ -162,12 +157,14 @@ export async function getUnsyncedSteps(submissionId: string): Promise<{
     const state = await sqliteSubmissionRepo.getSyncState(submissionId)
     const answers = (snapshot?.answers ?? {}) as Record<string, SubmissionAnswer>
 
+    const byLocalUri = indexByLocalUri(await sqlitePhotoUploadRepo.listBySubmission(submissionId))
+
     const sendable: string[] = []
     const blockedByPhotos: string[] = []
     for (const id of getPendingAnswers(parseAnswerSync(state?.answerSyncJson))) {
       const answer = answers[id]
       if (!answer) continue
-      if (hasLocalPhotos(answer)) blockedByPhotos.push(id)
+      if (hasUnuploadedPhotos(answer, byLocalUri)) blockedByPhotos.push(id)
       else sendable.push(id)
     }
 
@@ -210,9 +207,13 @@ async function buildDeltaPlan(
   const deleted = parseDeletedStepIds(state?.deletedStepIdsJson)
   const answers = snapshot.answers as Record<string, SubmissionAnswer>
 
+  // Un paso con fotos que todavía no están en S3 espera: se envía en cuanto terminen de subirse
+  const photoRows = await sqlitePhotoUploadRepo.listBySubmission(submissionId)
+  const byLocalUri = indexByLocalUri(photoRows)
+
   const sentStepIds = getPendingAnswers(syncMap).filter(id => {
     const answer = answers[id]
-    return !!answer && !hasLocalPhotos(answer)
+    return !!answer && !hasUnuploadedPhotos(answer, byLocalUri)
   })
   if (sentStepIds.length === 0 && deleted.length === 0) return null
 
@@ -229,7 +230,7 @@ async function buildDeltaPlan(
     auditId: snapshot.auditId,
     body: {
       version: snapshot.serverVersion,
-      answers: buildAnswersForApi({ answers: subset, uploadMap: {} }),
+      answers: buildAnswersForApi({ answers: subset, uploadMap: buildUploadMap(photoRows) }),
       ...(deleted.length > 0 ? { deleted_step_ids: deleted } : {}),
     },
     sentStepIds,

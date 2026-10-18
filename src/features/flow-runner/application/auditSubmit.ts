@@ -18,6 +18,7 @@ import {
   type RemoteAuditResponse,
 } from './usecases'
 import { ensureDeltaQueued, getUnsyncedSteps, reconcileAnswerSync } from './auditDeltas'
+import { enqueuePhotoUploads } from './photoUploads'
 import { AUDIT_SUBMIT_ENDPOINT, auditDeltaItemId, auditSubmitItemId } from '../lib/auditOutbox'
 
 type SubmitRemoteResult = 'success' | 'retry' | 'fail' | 'defer'
@@ -65,6 +66,9 @@ async function finishAuditV2(params: FinalizeParams): Promise<boolean> {
 
   // Red de seguridad: lo respondido que no pasó por `recordAnswerDelta` se marca pendiente
   await reconcileAnswerSync(submissionId, draft.answers)
+
+  // Sin subida en background, las fotos suben ahora (con background ya estarán `uploaded`)
+  await enqueuePhotoUploads(submissionId)
 
   await enqueueAuditSubmitChain(submissionId)
   return true
@@ -120,7 +124,12 @@ export async function submitRemoteAudit(snapshot: SubmissionSnapshot): Promise<S
     await ensureDeltaQueued(snapshot.id)
     return 'retry'
   }
-  if (pending.blockedByPhotos.length > 0) return 'defer'
+  if (pending.blockedByPhotos.length > 0) {
+    // Espera a las fotos sin gastar intentos; cada foto que termina despierta este item.
+    // Si alguna no tuviera su subida encolada, se encola ahora.
+    await enqueuePhotoUploads(snapshot.id)
+    return 'defer'
+  }
 
   try {
     const res = await request<RemoteAuditResponse | undefined>({
