@@ -5,6 +5,7 @@ import PrimaryButton from '@shared/ui/buttons/PrimaryButton'
 import Loader from '@shared/ui/loader/Loader'
 import { styles } from './login.styles'
 import { useLogin } from '@features/auth/application/useLogin'
+import { Env } from '@shared/config/env'
 
 const LoginScreen: React.FC = () => {
   const {
@@ -78,7 +79,7 @@ const LoginScreen: React.FC = () => {
         {submitError && <Text style={styles.errorText}>{submitError}</Text>}
       </View>
 
-      <Text style={styles.footerText}>v1.0.10</Text>
+      {Env.app.version ? <Text style={styles.footerText}>v{Env.app.version}</Text> : null}
     </KeyboardAvoidingView>
   )
 }
