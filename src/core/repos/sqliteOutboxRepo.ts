@@ -46,6 +46,8 @@ export type EnqueueParams = {
   id?: string
   /** Usuario dueño del item (para filtrar al cambiar de sesión). */
   userId?: string
+  /** Id de otro item del outbox: este no se procesa mientras aquel siga en la tabla. */
+  dependsOn?: string
 }
 
 /** Id simple sin dependencias externas. Alcanzan unicidad y orden aproximado. */
@@ -64,8 +66,10 @@ function safeStringify(value: unknown): string {
 
 export const sqliteOutboxRepo: OutboxRepo & {
   enqueue(params: EnqueueParams): Promise<string>
+  enqueueUnique(params: EnqueueParams & { id: string }): Promise<void>
   requeue(id: string): Promise<void>
   requeueBySubmissionId(submissionId: string): Promise<boolean>
+  hasSubmissionItem(submissionId: string, endpoint: string): Promise<boolean>
   markFailedBySubmissionId(submissionId: string, reason: string): Promise<boolean>
   countPending(userId?: string): Promise<number>
   assignOwner(userId: string): Promise<void>
@@ -94,13 +98,57 @@ export const sqliteOutboxRepo: OutboxRepo & {
           attempts,
           last_error,
           created_at,
-          user_id
-        ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?)
+          user_id,
+          depends_on
+        ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)
       `,
-      [id, params.endpoint, method, payloadJson, filePathsJson, now, params.userId ?? null],
+      [
+        id,
+        params.endpoint,
+        method,
+        payloadJson,
+        filePathsJson,
+        now,
+        params.userId ?? null,
+        params.dependsOn ?? null,
+      ],
     )
 
     return id
+  },
+
+  /**
+   * Encola un item con id fijo sin duplicarlo (coalesce): si ya existe y está `pending` no hace
+   * nada (el que está en cola lee el estado más reciente al correr); si quedó `failed`, lo
+   * re-arma para que un cambio nuevo vuelva a intentarse.
+   */
+  async enqueueUnique(params: EnqueueParams & { id: string }): Promise<void> {
+    const read = async () => {
+      const rows = await query<{ status: string }>(`SELECT status FROM outbox WHERE id = ?`, [
+        params.id,
+      ])
+      return rows[0]
+    }
+
+    let existing = await read()
+
+    if (!existing) {
+      try {
+        await this.enqueue(params)
+        return
+      } catch (err) {
+        // Otra llamada concurrente insertó el mismo id entre la lectura y el INSERT: se trata
+        // como "ya existe". Si la fila sigue sin estar, el error era otro.
+        existing = await read()
+        if (!existing) throw err
+      }
+    }
+    if (existing.status === 'failed') {
+      await run(
+        `UPDATE outbox SET status = 'pending', attempts = 0, next_attempt_at = NULL WHERE id = ?`,
+        [params.id],
+      )
+    }
   },
 
   /**
@@ -119,6 +167,10 @@ export const sqliteOutboxRepo: OutboxRepo & {
         WHERE status = 'pending'
           AND user_id = ?
           AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+          AND (
+            depends_on IS NULL
+            OR NOT EXISTS (SELECT 1 FROM outbox dep WHERE dep.id = outbox.depends_on)
+          )
         ORDER BY created_at ASC
         LIMIT ?
       `,
@@ -194,7 +246,7 @@ export const sqliteOutboxRepo: OutboxRepo & {
       `
         UPDATE outbox
         SET status = 'failed', last_error = ?
-        WHERE endpoint = 'AUDIT_SUBMISSION'
+        WHERE endpoint IN ('AUDIT_SUBMISSION', 'AUDIT_SUBMIT')
           AND json_extract(payload_json, '$.submissionId') = ?
       `,
       [reason, submissionId],
@@ -223,12 +275,21 @@ export const sqliteOutboxRepo: OutboxRepo & {
       `
         UPDATE outbox
         SET status = 'pending', attempts = 0, next_attempt_at = NULL
-        WHERE endpoint = 'AUDIT_SUBMISSION'
-          AND json_extract(payload_json, '$.submissionId') = ?
+        WHERE json_extract(payload_json, '$.submissionId') = ?
       `,
       [submissionId],
     )
     return res.changes > 0
+  },
+
+  /** ¿Hay un item (en cualquier estado) de ese tipo para la submission? */
+  async hasSubmissionItem(submissionId: string, endpoint: string): Promise<boolean> {
+    const rows = await query<{ n: number }>(
+      `SELECT 1 AS n FROM outbox
+        WHERE endpoint = ? AND json_extract(payload_json, '$.submissionId') = ? LIMIT 1`,
+      [endpoint, submissionId],
+    )
+    return rows.length > 0
   },
 
   /** Backfill: asigna al usuario los items sin dueño (filas previas a la migración 4). */

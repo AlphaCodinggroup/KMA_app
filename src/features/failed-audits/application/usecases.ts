@@ -38,8 +38,12 @@ export async function listFailedAudits(): Promise<FailedAudit[]> {
 
 /** Vuelve a encolar una auditoría fallida y dispara el sync. */
 export async function retryFailedAudit(submissionId: string): Promise<void> {
+  // Re-arma todos los items de la submission (create / delta / submit o AUDIT_SUBMISSION)
   const requeued = await sqliteOutboxRepo.requeueBySubmissionId(submissionId)
-  if (!requeued) {
+  const syncState = await sqliteSubmissionRepo.getSyncState(submissionId)
+  const isV2 = syncState?.pipeline === 'v2'
+
+  if (!requeued && !isV2) {
     // Sin fila en outbox (no debería pasar): se crea una nueva.
     await sqliteOutboxRepo.enqueue({
       endpoint: 'AUDIT_SUBMISSION',
@@ -47,7 +51,10 @@ export async function retryFailedAudit(submissionId: string): Promise<void> {
       payload: { submissionId },
     })
   }
-  await sqliteSubmissionRepo.markStatus(submissionId, 'queued')
+
+  // Una V2 que falló antes de darle "Finish" sigue siendo un borrador en edición
+  const finished = !isV2 || (await sqliteOutboxRepo.hasSubmissionItem(submissionId, 'AUDIT_SUBMIT'))
+  await sqliteSubmissionRepo.markStatus(submissionId, finished ? 'queued' : 'draft')
   notifyFailedAuditsChanged()
   triggerOutboxSync()
 }

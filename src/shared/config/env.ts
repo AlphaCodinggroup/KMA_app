@@ -42,6 +42,12 @@ const EnvSchema = z.object({
 
   EXPO_PUBLIC_SYNC_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(10),
 
+  // Ciclo de vida V2 de auditorías (create temprano + deltas + submit). Apagado por defecto.
+  EXPO_PUBLIC_AUDITS_V2: z
+    .string()
+    .optional()
+    .transform(v => ['true', '1'].includes((v ?? '').trim().toLowerCase())),
+
   EAS_PROJECT_ID: z.string().optional(),
 })
 
@@ -58,6 +64,7 @@ const raw = {
   EXPO_PUBLIC_RETRY_MAX_ATTEMPTS: readEnv('EXPO_PUBLIC_RETRY_MAX_ATTEMPTS'),
   EXPO_PUBLIC_RETRY_BASE_DELAY_MS: readEnv('EXPO_PUBLIC_RETRY_BASE_DELAY_MS'),
   EXPO_PUBLIC_SYNC_BATCH_SIZE: readEnv('EXPO_PUBLIC_SYNC_BATCH_SIZE'),
+  EXPO_PUBLIC_AUDITS_V2: readEnv('EXPO_PUBLIC_AUDITS_V2'),
 
   EAS_PROJECT_ID: readEnv('EAS_PROJECT_ID'),
 }
@@ -81,6 +88,8 @@ if (!parsed.success) {
       `  EXPO_PUBLIC_RETRY_BASE_DELAY_MS -> backoff base ms (default 600)\n\n` +
       `Sync offline:\n` +
       `  EXPO_PUBLIC_SYNC_BATCH_SIZE     -> tamaño de batch para sync offline (default 10)\n\n` +
+      `Flags:\n` +
+      `  EXPO_PUBLIC_AUDITS_V2           -> "true" activa el ciclo de vida V2 de auditorías (default false)\n\n` +
       `Build:\n` +
       `  EAS_PROJECT_ID                  -> usado por EAS (opcional en runtime)\n`,
   )
@@ -105,6 +114,9 @@ export const Env = Object.freeze({
   },
   sync: {
     batchSize: parsed.data.EXPO_PUBLIC_SYNC_BATCH_SIZE,
+  },
+  flags: {
+    auditsV2: parsed.data.EXPO_PUBLIC_AUDITS_V2,
   },
   eas: {
     projectId: parsed.data.EAS_PROJECT_ID ?? null,

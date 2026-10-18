@@ -5,6 +5,8 @@ import type {
   SaveDraftInput,
   SubmissionSnapshot,
   SubmissionStatus,
+  SubmissionPipeline,
+  SubmissionSyncState,
 } from '@entities/submission/ports'
 import type {
   SubmissionDraft,
@@ -33,10 +35,14 @@ type SubmissionRow = {
   last_error: string | null
   user_id: string | null
   updated_at: number | null
+  audit_id: string | null
+  server_version: number | null
+  server_status: string | null
+  pipeline: SubmissionPipeline
 }
 
 const SUBMISSION_COLUMNS =
-  'id, flow_id, step_id, payload_json, has_files, synced, created_at, status, last_error, user_id, updated_at'
+  'id, flow_id, step_id, payload_json, has_files, synced, created_at, status, last_error, user_id, updated_at, audit_id, server_version, server_status, pipeline'
 
 function rowToSnapshot(row: SubmissionRow): SubmissionSnapshot {
   const { draft, projectId, facilityId, version } = parsePayload(row)
@@ -53,10 +59,14 @@ function rowToSnapshot(row: SubmissionRow): SubmissionSnapshot {
     synced: !!row.synced,
     hasFiles: !!row.has_files,
     status: row.status,
+    pipeline: row.pipeline === 'v2' ? 'v2' : 'v1',
   }
   if (row.last_error !== null) snapshot.lastError = row.last_error
   if (row.user_id !== null) snapshot.userId = row.user_id
   if (row.updated_at !== null) snapshot.updatedAt = row.updated_at
+  if (row.audit_id !== null) snapshot.auditId = row.audit_id
+  if (row.server_version !== null) snapshot.serverVersion = row.server_version
+  if (row.server_status !== null) snapshot.serverStatus = row.server_status
 
   return snapshot
 }
@@ -236,8 +246,11 @@ export const sqliteSubmissionRepo: SubmissionRepo & {
           created_at,
           status,
           user_id,
-          updated_at
-        ) VALUES (?, ?, ?, ?, ?, 0, ?, 'draft', ?, ?)
+          updated_at,
+          audit_id,
+          server_status,
+          pipeline
+        ) VALUES (?, ?, ?, ?, ?, 0, ?, 'draft', ?, ?, ?, ?, ?)
       `,
       [
         id,
@@ -248,6 +261,9 @@ export const sqliteSubmissionRepo: SubmissionRepo & {
         createdAt,
         input.userId ?? null,
         now,
+        input.auditId ?? null,
+        input.auditId ? 'audit_in_progress' : null,
+        input.auditId ? 'v2' : 'v1',
       ],
     )
 
@@ -342,6 +358,57 @@ export const sqliteSubmissionRepo: SubmissionRepo & {
       Date.now(),
       id,
     ])
+  },
+
+  async getSyncState(id: SubmissionId): Promise<SubmissionSyncState | null> {
+    const rows = await query<{
+      pipeline: SubmissionPipeline
+      server_version: number | null
+      answer_sync_json: string | null
+      deleted_step_ids_json: string | null
+    }>(
+      `SELECT pipeline, server_version, answer_sync_json, deleted_step_ids_json
+         FROM submissions WHERE id = ?`,
+      [id],
+    )
+    const row = rows[0]
+    if (!row) return null
+    return {
+      pipeline: row.pipeline === 'v2' ? 'v2' : 'v1',
+      serverVersion: row.server_version,
+      answerSyncJson: row.answer_sync_json,
+      deletedStepIdsJson: row.deleted_step_ids_json,
+    }
+  },
+
+  async saveSyncState(
+    id: SubmissionId,
+    state: { answerSyncJson?: string | null; deletedStepIdsJson?: string | null },
+  ): Promise<void> {
+    const sets: string[] = []
+    const args: (string | number | null)[] = []
+    if (state.answerSyncJson !== undefined) {
+      sets.push('answer_sync_json = ?')
+      args.push(state.answerSyncJson)
+    }
+    if (state.deletedStepIdsJson !== undefined) {
+      sets.push('deleted_step_ids_json = ?')
+      args.push(state.deletedStepIdsJson)
+    }
+    if (sets.length === 0) return
+    await run(`UPDATE submissions SET ${sets.join(', ')} WHERE id = ?`, [...args, id])
+  },
+
+  async markServerState(
+    id: SubmissionId,
+    state: { serverVersion: number; serverStatus?: string },
+  ): Promise<void> {
+    await run(
+      `UPDATE submissions
+          SET server_version = ?, server_status = COALESCE(?, server_status), updated_at = ?
+        WHERE id = ?`,
+      [state.serverVersion, state.serverStatus ?? null, Date.now(), id],
+    )
   },
 
   async markSynced(id: SubmissionId): Promise<void> {

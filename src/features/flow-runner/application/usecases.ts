@@ -19,6 +19,10 @@ import { triggerOutboxSync } from '@processes/sync/outboxTrigger'
 import { discardPhotoGroup } from '@features/camera'
 import { isOnlineOnce } from '@shared/lib/network'
 import { getCurrentUserId } from '@shared/session/session'
+import { Env } from '@shared/config/env'
+import { notifyFailedAuditsChanged } from '@processes/sync/failedAuditsSignal'
+import { newAuditId } from './auditId'
+import { AUDIT_CREATE_ENDPOINT, auditCreateItemId } from '../lib/auditOutbox'
 
 // Repos / singletons
 const flowRepo: FlowRepo = createOfflineFirstFlowRepo()
@@ -32,7 +36,7 @@ type PhotoToUpload = {
   mimeType: string
 }
 
-type AuditAnswerForApi =
+export type AuditAnswerForApi =
   | {
       step_id: string
       type: 'Question' | 'Select'
@@ -63,6 +67,16 @@ type AuditSubmissionOutboxPayload = {
 }
 
 type SubmitResult = 'success' | 'retry' | 'fail'
+
+type AuditCreateOutboxPayload = {
+  submissionId: string
+}
+
+/** Respuesta del create / detalle de auditoría: sólo lo que mobile necesita. */
+export type RemoteAuditResponse = {
+  version?: unknown
+  status?: unknown
+}
 
 /**
  * Campos que el backend considera numéricos opcionales:
@@ -125,6 +139,143 @@ export async function discardDraft(submissionId: string): Promise<void> {
     if (__DEV__) console.warn('[discardDraft] No se pudo borrar el draft', submissionId, err)
   }
   await discardPhotoGroup(submissionId)
+}
+
+/**
+ * V2: crea el borrador local con `audit_id` y encola el `AUDIT_CREATE`.
+ *
+ * - Sin el flag `AUDITS_V2` no hace nada y devuelve `false` (la corrida sigue por el pipeline v1).
+ * - Nunca bloquea al auditor: sin red el create queda en la cola y sale al reconectar.
+ * - Si no se puede dejar la fila + el item consistentes, revierte y devuelve `false`: la corrida
+ *   sigue por v1 (el primer `persistDraft` inserta una fila v1 normal).
+ */
+export async function startAuditDraft(params: {
+  submissionId: string
+  flowId: string
+  title: string
+  projectId?: string | undefined
+  facilityId?: string | undefined
+  version?: string | undefined
+}): Promise<boolean> {
+  if (!Env.flags.auditsV2) return false
+
+  try {
+    await submissionRepo.saveDraft({
+      id: params.submissionId,
+      draft: { flowId: params.flowId, title: params.title, createdAt: Date.now(), answers: {} },
+      projectId: params.projectId ?? '',
+      facilityId: params.facilityId ?? '',
+      version: params.version ?? '',
+      auditId: newAuditId(),
+      ...ownerFields(),
+    })
+  } catch (err) {
+    if (__DEV__) console.warn('[startAuditDraft] No se pudo crear el borrador', err)
+    return false
+  }
+
+  try {
+    const payload: AuditCreateOutboxPayload = { submissionId: params.submissionId }
+    await sqliteOutboxRepo.enqueue({
+      id: auditCreateItemId(params.submissionId),
+      endpoint: AUDIT_CREATE_ENDPOINT,
+      method: 'USECASE',
+      payload,
+      ...ownerFields(),
+    })
+  } catch (err) {
+    if (__DEV__) console.warn('[startAuditDraft] No se pudo encolar AUDIT_CREATE', err)
+    await submissionRepo.delete(params.submissionId).catch(() => undefined)
+    return false
+  }
+
+  triggerOutboxSync()
+  return true
+}
+
+/**
+ * Usecase del SyncService para `AUDIT_CREATE`: `POST /audits` con el borrador vacío (BE-1, BE-2).
+ *
+ * - `409` = ya existe (respuesta perdida / reintento) → éxito; la versión se lee con `GET`.
+ * - 5xx / red / 401 / 403 / 429 / 408 → 'retry'.
+ * - Otro 4xx → 'fail': el item queda `failed` y la submission pasa a `failed` con el mensaje del
+ *   backend (`failSubmission`), así se lista en la UI de fallidas con su Retry. El Retry de una V2
+ *   que todavía no se finalizó la devuelve a `draft`.
+ */
+export async function createRemoteAuditDraft(snapshot: SubmissionSnapshot): Promise<SubmitResult> {
+  const auditId = snapshot.auditId
+  if (snapshot.pipeline !== 'v2' || !auditId) return 'fail'
+
+  // Ya creado en una corrida anterior (se perdió el ack del item)
+  if (typeof snapshot.serverVersion === 'number') return 'success'
+
+  if (!(await isOnlineOnce())) return 'retry'
+
+  try {
+    let version: number | null = null
+    let status: string | undefined
+
+    try {
+      const res = await request<RemoteAuditResponse | undefined>({
+        method: 'POST',
+        url: '/audits',
+        data: {
+          id: auditId,
+          flow_id: snapshot.flowId,
+          flow_version: Number(snapshot.version) || 1,
+          project_id: snapshot.projectId ?? '',
+          facility_id: snapshot.facilityId ?? '',
+          answers: [],
+        },
+      })
+      version = readVersion(res)
+      status = readStatus(res)
+    } catch (err) {
+      if (extractStatus(err) !== 409) throw err
+      // Si el 409 trae la versión se usa; si no, GET.
+      version = readServerVersion(err)
+    }
+
+    if (version === null) {
+      const remote = await request<RemoteAuditResponse | undefined>({
+        method: 'GET',
+        url: `/audits/${encodeURIComponent(auditId)}`,
+      })
+      version = readVersion(remote)
+      status = readStatus(remote)
+    }
+
+    // Sin versión confiable no hay delta posible: se reintenta (POST → 409 → GET)
+    if (version === null) return 'retry'
+
+    await submissionRepo.markServerState(snapshot.id, {
+      serverVersion: version,
+      ...(status ? { serverStatus: status } : {}),
+    })
+    return 'success'
+  } catch (err) {
+    const httpStatus = extractStatus(err)
+    if (isRecoverableStatus(httpStatus)) {
+      if (__DEV__) console.warn('[createRemoteAuditDraft] retryable error', httpStatus, err)
+      return 'retry'
+    }
+    if (__DEV__) console.warn('[createRemoteAuditDraft] fail (4xx)', httpStatus, err)
+    await failSubmission(snapshot.id, err)
+    return 'fail'
+  }
+}
+
+/**
+ * Un rechazo no recuperable del backend (V2) deja la submission `failed` con el mensaje, para que
+ * se liste en la UI de fallidas con su botón Retry. Nunca lanza.
+ */
+export async function failSubmission(submissionId: string, err: unknown): Promise<void> {
+  try {
+    await submissionRepo.markStatus(submissionId, 'failed', buildLastError(err, extractStatus(err)))
+    notifyFailedAuditsChanged()
+  } catch (markErr) {
+    if (__DEV__) console.warn('[failSubmission] No se pudo marcar fallida', markErr)
+  }
 }
 
 /**
@@ -523,7 +674,23 @@ async function runWithConcurrency<T>(
   await Promise.all(workers)
 }
 
-function extractStatus(err: unknown): number | undefined {
+export function readVersion(res: RemoteAuditResponse | null | undefined): number | null {
+  const v = Number(res?.version)
+  return Number.isInteger(v) && v > 0 ? v : null
+}
+
+export function readStatus(res: RemoteAuditResponse | null | undefined): string | undefined {
+  return typeof res?.status === 'string' && res.status ? res.status : undefined
+}
+
+/** `server_version` del body de un 409, o null si no viene. */
+export function readServerVersion(err: unknown): number | null {
+  const data = (err as { response?: { data?: { server_version?: unknown } } })?.response?.data
+  const v = Number(data?.server_version)
+  return Number.isInteger(v) && v > 0 ? v : null
+}
+
+export function extractStatus(err: unknown): number | undefined {
   const maybe = err as { response?: { status?: number } }
   return maybe?.response?.status
 }
@@ -553,12 +720,12 @@ function buildLastError(err: unknown, status?: number): string {
 }
 
 /** `userId` de la sesión actual para persistir junto a la submission / item de outbox. */
-function ownerFields(): { userId?: string } {
+export function ownerFields(): { userId?: string } {
   const userId = getCurrentUserId()
   return userId ? { userId } : {}
 }
 
-function isRecoverableStatus(status?: number): boolean {
+export function isRecoverableStatus(status?: number): boolean {
   if (typeof status !== 'number') return true
   if (status === 429) return true
   if (status === 401 || status === 403) return true
@@ -571,7 +738,7 @@ function isRecoverableStatus(status?: number): boolean {
 /**
  * Convierte tus respuestas internas en lo que /audits espera.
  */
-function buildAnswersForApi(params: {
+export function buildAnswersForApi(params: {
   answers: Record<string, SubmissionAnswer>
   uploadMap: Record<string, string>
 }): AuditAnswerForApi[] {

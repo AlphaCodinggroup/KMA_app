@@ -12,8 +12,17 @@ export type SubmissionId = string
  * - queued: con item pendiente en el outbox.
  * - failed: el outbox agotó reintentos o recibió un error no recuperable.
  * - legacy: filas previas a la migración 4 sin item en outbox (no se muestran ni se borran).
+ * - submitted: auditoría V2 enviada y confirmada por el backend (2xx del submit). Se conserva la
+ *   fila (con `server_version`) para poder editarla después (E4); la limpieza llega con D4.
  */
-export type SubmissionStatus = 'draft' | 'queued' | 'failed' | 'legacy'
+export type SubmissionStatus = 'draft' | 'queued' | 'failed' | 'legacy' | 'submitted'
+
+/**
+ * Pipeline de envío con el que nació la submission (se decide al crearla y no cambia):
+ * - v1: `/uploads` → PUT S3 → `POST /audits` con todo (camino actual).
+ * - v2: create temprano del borrador en el backend + deltas + submit (RFC Auditorías V2).
+ */
+export type SubmissionPipeline = 'v1' | 'v2'
 
 /**
  * Snapshot completo de una submission guardada localmente.
@@ -54,6 +63,14 @@ export type SubmissionSnapshot = SubmissionDraft & {
   userId?: string
   /** Última modificación local (epoch ms). */
   updatedAt?: number
+  /** Pipeline de envío (filas anteriores a la migración 6 son `v1`). */
+  pipeline: SubmissionPipeline
+  /** Id de la auditoría en el backend (`audit_<uuid>_<ts>`); sólo en pipeline v2. */
+  auditId?: string
+  /** Versión confirmada por el backend; null/ausente hasta que el create se aplicó. */
+  serverVersion?: number
+  /** Estado de la auditoría en el backend (`audit_in_progress`, ...). */
+  serverStatus?: string
 }
 
 /**
@@ -69,6 +86,19 @@ export interface SaveDraftInput {
   facilityId?: string
   version?: string
   userId?: string
+  /**
+   * Id de auditoría V2. Sólo se escribe al INSERTAR: la fila nace con `pipeline = 'v2'` y
+   * `server_status = 'audit_in_progress'`. Un update posterior no lo toca.
+   */
+  auditId?: string
+}
+
+/** Estado de sync V2 de una submission (columnas de la migración 6). */
+export type SubmissionSyncState = {
+  pipeline: SubmissionPipeline
+  serverVersion: number | null
+  answerSyncJson: string | null
+  deletedStepIdsJson: string | null
 }
 
 /**
@@ -121,6 +151,29 @@ export interface SubmissionRepo {
   markStatus(id: SubmissionId, status: SubmissionStatus, lastError?: string): Promise<void>
 
   /**
+   * Estado de sync V2 sin parsear el payload de respuestas (lectura liviana).
+   * Devuelve null si la submission no existe.
+   */
+  getSyncState(id: SubmissionId): Promise<SubmissionSyncState | null>
+
+  /**
+   * Guarda el estado de sync por paso (JSON de `answer_sync_json` / `deleted_step_ids_json`).
+   * Los campos que no vienen no se tocan.
+   */
+  saveSyncState(
+    id: SubmissionId,
+    state: { answerSyncJson?: string | null; deletedStepIdsJson?: string | null },
+  ): Promise<void>
+
+  /**
+   * Guarda lo que el backend confirmó de una auditoría V2 (versión y, si viene, estado).
+   */
+  markServerState(
+    id: SubmissionId,
+    state: { serverVersion: number; serverStatus?: string },
+  ): Promise<void>
+
+  /**
    * Elimina completamente una submission local.
    * Útil para limpieza agresiva o para casos de error irrecuperable.
    */
@@ -153,6 +206,15 @@ export const SubmissionRepoNotImplemented: SubmissionRepo = {
   },
   async markStatus() {
     throw new Error('SubmissionRepo.markStatus no implementado')
+  },
+  async getSyncState() {
+    throw new Error('SubmissionRepo.getSyncState no implementado')
+  },
+  async saveSyncState() {
+    throw new Error('SubmissionRepo.saveSyncState no implementado')
+  },
+  async markServerState() {
+    throw new Error('SubmissionRepo.markServerState no implementado')
   },
   async delete() {
     throw new Error('SubmissionRepo.delete no implementado')

@@ -18,11 +18,13 @@ import type { QuestionAnswerValue } from '@shared/lib/questionAnswers'
 
 import {
   discardDraft,
-  finalizeSubmission,
   findResumableDraft,
   newSubmissionId,
   persistDraft,
+  startAuditDraft,
 } from './usecases'
+import { recordAnswerDelta } from './auditDeltas'
+import { finalizeAudit } from './auditSubmit'
 import { END_ID, mapById, parseStepsParam, resolveInitialStepId } from '../lib/helpers'
 import {
   appendVisibleId,
@@ -171,15 +173,23 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
       }
       if (token !== bootTokenRef.current) return
 
+      // Un borrador sin respuestas (p. ej. el que crea V2 al entrar) no vale la pena preguntarlo
+      const draftHasAnswers = !!draft && Object.keys(draft.answers ?? {}).length > 0
+
       if (draft && draft.version !== (version ?? '')) {
         // Cambió la versión del flow: el draft ya no es compatible
         await discardDraft(draft.id)
-        Alert.alert('Flow updated', 'This flow changed since you started, so you will start over.')
+        if (draftHasAnswers) {
+          Alert.alert(
+            'Flow updated',
+            'This flow changed since you started, so you will start over.',
+          )
+        }
         draft = null
       }
 
       if (draft) {
-        const choice = await askResumeDraft()
+        const choice = draftHasAnswers ? await askResumeDraft() : 'resume'
         if (token !== bootTokenRef.current) return
 
         if (choice === 'resume') {
@@ -198,7 +208,12 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
         await discardDraft(draft.id)
       }
 
-      startRun(steps, newSubmissionId(), {})
+      // Run nuevo. Con AUDITS_V2 apagado `startAuditDraft` no hace nada (pipeline v1 como siempre)
+      const newId = newSubmissionId()
+      await startAuditDraft({ submissionId: newId, flowId, title, projectId, facilityId, version })
+      if (token !== bootTokenRef.current) return
+
+      startRun(steps, newId, {})
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[useFlowRunner.boot] error reading steps from params', err)
@@ -207,7 +222,7 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
     } finally {
       if (token === bootTokenRef.current) setLoading(false)
     }
-  }, [facilityId, flowId, projectId, rawSteps, startRun, version])
+  }, [facilityId, flowId, projectId, rawSteps, startRun, title, version])
 
   // Sólo al montar o cuando cambian los params: volver a enfocar la pantalla no reinicia la corrida
   useEffect(() => {
@@ -281,8 +296,16 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
 
   const advanceFrom = useCallback(
     async (currentStepId: string, rawNext?: string | null) => {
+      // Pasos que la nueva respuesta deja afuera (rama abandonada): V2 los borra también en el server
+      const removedStepIds = getStepIdsAfter(visibleIdsRef.current, currentStepId)
       pruneAnswersAfter(currentStepId)
       await persistAll()
+      // V2: marca el paso como pendiente y encola el delta (no-op si la corrida es v1)
+      await recordAnswerDelta({
+        submissionId: submissionIdRef.current,
+        stepId: currentStepId,
+        removedStepIds,
+      })
       sliceAfter(currentStepId)
 
       const nextId = resolveNextId(rawNext)
@@ -337,7 +360,7 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
     try {
       setSubmitting(true)
 
-      const ok = await finalizeSubmission({
+      const ok = await finalizeAudit({
         submissionId: submissionIdRef.current,
         flowId: detail.flowId,
         title: detail.title,

@@ -11,7 +11,20 @@ import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
 import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
 import type { SubmissionSnapshot } from '@entities/submission/ports'
 import { extractPhotoArray, photoUriOf } from '@entities/submission/lib/photos'
-import { submitAuditOnlineFromSnapshot } from '@features/flow-runner/application/usecases'
+import {
+  createRemoteAuditDraft,
+  submitAuditOnlineFromSnapshot,
+} from '@features/flow-runner/application/usecases'
+import { syncAuditDeltas } from '@features/flow-runner/application/auditDeltas'
+import {
+  enqueueAuditSubmitChain,
+  submitRemoteAudit,
+} from '@features/flow-runner/application/auditSubmit'
+import {
+  AUDIT_CREATE_ENDPOINT,
+  AUDIT_DELTA_ENDPOINT,
+  AUDIT_SUBMIT_ENDPOINT,
+} from '@features/flow-runner/lib/auditOutbox'
 import { syncAllCatalogs } from '@processes/catalog-sync'
 import { coldSyncAllFlows } from '@features/selector/application/usecases'
 import { registerOutboxSyncTrigger } from '@processes/sync/outboxTrigger'
@@ -25,6 +38,14 @@ let _cleanup: (() => void) | null = null
 
 const AUDIT_SUBMISSION_ENDPOINT = 'AUDIT_SUBMISSION'
 
+/** Items del outbox que cuelgan de una submission (`payload.submissionId`). */
+const SUBMISSION_ITEM_TYPES = new Set<string>([
+  AUDIT_SUBMISSION_ENDPOINT,
+  AUDIT_CREATE_ENDPOINT,
+  AUDIT_DELTA_ENDPOINT,
+  AUDIT_SUBMIT_ENDPOINT,
+])
+
 type AuditSubmissionOutboxPayload = {
   submissionId: string
 }
@@ -34,7 +55,12 @@ type AuditSubmissionOutboxPayload = {
  */
 function createOutboxDispatcher() {
   return async (item: OutboxItem): Promise<'success' | 'retry' | 'fail' | 'drop' | 'defer'> => {
+    // Camino v1: se mantiene mientras existan dispositivos/outbox con auditorías v1. Se retira
+    // cuando backend confirme la fecha de corte; ver el checklist de C5 en el plan.
     if (item.type === AUDIT_SUBMISSION_ENDPOINT) return handleAuditSubmissionItem(item)
+    if (item.type === AUDIT_CREATE_ENDPOINT) return handleAuditCreateItem(item)
+    if (item.type === AUDIT_DELTA_ENDPOINT) return handleAuditDeltaItem(item)
+    if (item.type === AUDIT_SUBMIT_ENDPOINT) return handleAuditSubmitItem(item)
 
     // Tipo que esta versión no sabe procesar (p. ej. creado por un build más nuevo): se posterga
     // sin sumar intentos ni borrarlo, para que lo procese la versión que lo entienda.
@@ -46,6 +72,82 @@ function createOutboxDispatcher() {
     }
 
     return 'defer'
+  }
+}
+
+/**
+ * Maneja un item de outbox de tipo AUDIT_CREATE (create temprano del borrador V2).
+ * Si el borrador local ya no existe (descartado / enviado por v1) no hay nada que crear.
+ */
+async function handleAuditCreateItem(
+  item: OutboxItem,
+): Promise<'success' | 'retry' | 'fail' | 'drop'> {
+  const submissionId = (item.payload as { submissionId?: string } | null)?.submissionId
+  if (!submissionId) return 'drop'
+
+  const snapshot = await sqliteSubmissionRepo.getById(submissionId)
+  if (!snapshot || snapshot.pipeline !== 'v2' || !snapshot.auditId) return 'drop'
+
+  try {
+    return await createRemoteAuditDraft(snapshot)
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[SyncService] AUDIT_CREATE error, retry', err)
+    }
+    return 'retry'
+  }
+}
+
+/**
+ * Maneja un item de outbox de tipo AUDIT_DELTA (`PATCH` de respuestas de una auditoría V2).
+ */
+async function handleAuditDeltaItem(
+  item: OutboxItem,
+): Promise<'success' | 'retry' | 'fail' | 'drop'> {
+  const submissionId = (item.payload as { submissionId?: string } | null)?.submissionId
+  if (!submissionId) return 'drop'
+
+  try {
+    return await syncAuditDeltas(submissionId)
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[SyncService] AUDIT_DELTA error, retry', err)
+    }
+    return 'retry'
+  }
+}
+
+/**
+ * Maneja un item de outbox de tipo AUDIT_SUBMIT (cierre de una auditoría V2).
+ * Tras el 2xx se borran las fotos locales y la fila queda `submitted` con su `server_version`.
+ */
+async function handleAuditSubmitItem(
+  item: OutboxItem,
+): Promise<'success' | 'retry' | 'fail' | 'drop' | 'defer'> {
+  const submissionId = (item.payload as { submissionId?: string } | null)?.submissionId
+  if (!submissionId) return 'drop'
+
+  const snapshot = await sqliteSubmissionRepo.getById(submissionId)
+  if (!snapshot || snapshot.pipeline !== 'v2' || !snapshot.auditId) return 'drop'
+
+  try {
+    const result = await submitRemoteAudit(snapshot)
+
+    if (result === 'success') {
+      await cleanupSubmissionFiles(snapshot)
+      await sqliteSubmissionRepo.markStatus(submissionId, 'submitted')
+
+      if (__DEV__) {
+        console.log('[SyncService] AUDIT_SUBMIT submitted & cleaned', submissionId)
+      }
+    }
+
+    return result
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[SyncService] AUDIT_SUBMIT error, retry', err)
+    }
+    return 'retry'
   }
 }
 
@@ -75,6 +177,21 @@ async function handleAuditSubmissionItem(
       )
     }
     return 'drop'
+  }
+
+  // Una fila V2 nunca debe ir por el camino v1: `/uploads` generaría otro id y `POST /audits`
+  // crearía una segunda auditoría. Se la reencauza por la cadena V2 y se descarta este item.
+  if (snapshot.pipeline === 'v2') {
+    if (__DEV__) {
+      console.warn('[SyncService] AUDIT_SUBMISSION con fila v2, reencauzando', submissionId)
+    }
+    try {
+      await enqueueAuditSubmitChain(submissionId)
+      return 'drop'
+    } catch (err) {
+      if (__DEV__) console.warn('[SyncService] No se pudo reencauzar a V2, retry', err)
+      return 'retry'
+    }
   }
 
   try {
@@ -115,7 +232,7 @@ async function handleAuditSubmissionItem(
  * al agotar intentos hay que marcarla acá.
  */
 async function handleOutboxItemFailed(item: OutboxItem, reason: string): Promise<void> {
-  if (item.type !== AUDIT_SUBMISSION_ENDPOINT) return
+  if (!SUBMISSION_ITEM_TYPES.has(item.type)) return
 
   const payload = (item.payload ?? null) as Partial<AuditSubmissionOutboxPayload> | null
   const submissionId = payload?.submissionId

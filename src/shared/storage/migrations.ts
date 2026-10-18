@@ -183,4 +183,23 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions(status, flow_id);
     `,
   },
+  {
+    id: 6,
+    name: 'audit_v2_state_v1',
+    up: `
+      -- Estado local del ciclo de vida V2 (RFC Auditorías V2). Las filas existentes quedan en
+      -- pipeline 'v1': siguen por el camino actual. Nada escribe estas columnas con AUDITS_V2 apagado.
+      ALTER TABLE submissions ADD COLUMN audit_id TEXT;            -- id generado por el móvil (BE-7)
+      ALTER TABLE submissions ADD COLUMN server_version INTEGER;   -- versión confirmada por backend
+      ALTER TABLE submissions ADD COLUMN server_status TEXT;       -- audit_in_progress | draft_report_pending_review | ...
+      ALTER TABLE submissions ADD COLUMN pipeline TEXT NOT NULL DEFAULT 'v1'; -- v1 | v2
+      ALTER TABLE submissions ADD COLUMN answer_sync_json TEXT;    -- { [step_id]: 'pending' | 'synced' }
+      ALTER TABLE submissions ADD COLUMN deleted_step_ids_json TEXT; -- step_ids podados pendientes de confirmar
+
+      -- Dependencias entre items del outbox (las usa C4)
+      ALTER TABLE outbox ADD COLUMN depends_on TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_submissions_audit ON submissions(audit_id);
+    `,
+  },
 ]
