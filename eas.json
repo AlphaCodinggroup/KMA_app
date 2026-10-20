@@ -13,6 +13,8 @@
         "EXPO_PUBLIC_RETRY_MAX_ATTEMPTS": "3",
         "EXPO_PUBLIC_RETRY_BASE_DELAY_MS": "600",
         "EXPO_PUBLIC_SYNC_BATCH_SIZE": "10",
+        "EXPO_PUBLIC_AUDITS_V2": "true",
+        "EXPO_PUBLIC_PHOTO_BG_UPLOAD": "true",
         "EAS_PROJECT_ID": "1b6bf518-a922-462a-814e-460280053abf"
       },
       "autoIncrement": true,
@@ -29,6 +31,8 @@
         "EXPO_PUBLIC_RETRY_MAX_ATTEMPTS": "3",
         "EXPO_PUBLIC_RETRY_BASE_DELAY_MS": "600",
         "EXPO_PUBLIC_SYNC_BATCH_SIZE": "10",
+        "EXPO_PUBLIC_AUDITS_V2": "true",
+        "EXPO_PUBLIC_PHOTO_BG_UPLOAD": "true",
         "EAS_PROJECT_ID": "1b6bf518-a922-462a-814e-460280053abf"
       },
       "autoIncrement": true,
@@ -45,6 +49,8 @@
         "EXPO_PUBLIC_RETRY_MAX_ATTEMPTS": "3",
         "EXPO_PUBLIC_RETRY_BASE_DELAY_MS": "600",
         "EXPO_PUBLIC_SYNC_BATCH_SIZE": "10",
+        "EXPO_PUBLIC_AUDITS_V2": "true",
+        "EXPO_PUBLIC_PHOTO_BG_UPLOAD": "true",
         "EAS_PROJECT_ID": "1b6bf518-a922-462a-814e-460280053abf"
       },
       "autoIncrement": true,
