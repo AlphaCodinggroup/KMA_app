@@ -129,6 +129,11 @@ export const Env = Object.freeze({
     photoBackgroundUpload:
       parsed.data.EXPO_PUBLIC_AUDITS_V2 && parsed.data.EXPO_PUBLIC_PHOTO_BG_UPLOAD,
   },
+  app: {
+    // Versión que se muestra al usuario (login): sale de `version` en app.config.ts, la misma
+    // que usan iOS y Android, así que subirla no obliga a tocar la UI.
+    version: Constants.expoConfig?.version ?? '',
+  },
   eas: {
     projectId: parsed.data.EAS_PROJECT_ID ?? null,
   },

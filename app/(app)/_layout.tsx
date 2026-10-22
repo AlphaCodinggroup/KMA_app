@@ -59,7 +59,7 @@ const AppLayout: React.FC = () => {
         hitSlop={12}
         accessibilityRole="button"
         accessibilityLabel="Open profile"
-        style={{ paddingRight: RFValue(8), paddingLeft: RFValue(4), marginRight:RFValue(12)}}
+        style={{ paddingRight: RFValue(8), paddingLeft: RFValue(4), marginRight: RFValue(12) }}
       >
         <Icon name="person" color={AppColors.Primary} size={RFValue(18)} />
       </TouchableOpacity>
@@ -80,7 +80,11 @@ const AppLayout: React.FC = () => {
         >
           <Stack.Screen
             name="projects"
-            options={{ title: 'Select Project', headerBackVisible: false, headerRight: ProfileButton }}
+            options={{
+              title: 'Select Project',
+              headerBackVisible: false,
+              headerRight: ProfileButton,
+            }}
           />
 
           <Stack.Screen
@@ -124,13 +128,12 @@ const AppLayout: React.FC = () => {
 
         <ConfirmModal
           visible={exitAuditModalVisible}
-          title="Do you want to exit the audit?"
-          message="If you go back, you will lose all your progress."
+          title="Leave the audit?"
+          message="Your progress is saved. You can resume this audit later."
           cancelLabel="Stay here"
-          confirmLabel="Exit and lose everything"
+          confirmLabel="Leave"
           onCancel={closeExitModal}
           onConfirm={handleConfirmExitAudit}
-          destructive
         />
       </>
     </AuthGuard>
