@@ -214,3 +214,22 @@ export function replayPath(steps: Step[], answers: FlowRunnerAnswers): string[] 
 
   return path
 }
+
+/**
+ * Edición de una auditoría completada: aplica una respuesta nueva a un paso y recalcula el camino
+ * siguiendo las respuestas que ya existían. Los pasos posteriores conservan su respuesta mientras
+ * sigan en el camino; sólo se descartan los que la nueva respuesta deja afuera (rama distinta).
+ * Es lo contrario del modo crear, donde responder un paso corta todo lo que venía después.
+ */
+export function applyEditedAnswer(
+  steps: Step[],
+  answers: FlowRunnerAnswers,
+  stepId: string,
+  answer: SubmissionAnswer,
+): { answers: FlowRunnerAnswers; path: string[]; removedStepIds: string[] } {
+  const proposed: FlowRunnerAnswers = { ...answers, [stepId]: answer }
+  const path = replayPath(steps, proposed)
+  const removedStepIds = Object.keys(proposed).filter(id => !path.includes(id))
+  removeAnswers(proposed, removedStepIds)
+  return { answers: proposed, path, removedStepIds }
+}

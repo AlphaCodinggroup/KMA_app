@@ -73,8 +73,8 @@ const FacilityScreen: React.FC = () => {
   const handlePressItem = useCallback(
     (item: Facility) => {
       router.push({
-        pathname: '/(app)/selector',
-        params: { facilityId: item.id, projectId },
+        pathname: '/(app)/facility/[facilityId]',
+        params: { facilityId: item.id, projectId, facilityName: item.name ?? '' },
       })
     },
     [router, projectId],

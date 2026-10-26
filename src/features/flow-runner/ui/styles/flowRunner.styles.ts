@@ -18,6 +18,7 @@ export const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: AppColors.Primary,
   },
+  editHint: { fontSize: RFValue(12), color: AppColors.MutedText, marginTop: RFValue(4) },
   content: { padding: RFValue(12) },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   containerComponents: { marginBottom: RFValue(16) },

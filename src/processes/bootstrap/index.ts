@@ -17,6 +17,9 @@ import {
 } from '@features/flow-runner/application/usecases'
 import { syncAuditDeltas } from '@features/flow-runner/application/auditDeltas'
 import { uploadPhotoItem } from '@features/flow-runner/application/photoUploads'
+import { syncAuditUpdate } from '@features/flow-runner/application/auditUpdate'
+import { AUDIT_UPDATE_ENDPOINT } from '@features/audits/lib/outbox'
+import { sqliteAuditRepo } from '@core/repos/sqliteAuditRepo'
 import {
   enqueueAuditSubmitChain,
   submitRemoteAudit,
@@ -27,7 +30,7 @@ import {
   AUDIT_SUBMIT_ENDPOINT,
   PHOTO_UPLOAD_ENDPOINT,
 } from '@features/flow-runner/lib/auditOutbox'
-import { syncAllCatalogs } from '@processes/catalog-sync'
+import { syncAllCatalogs, syncCompletedAudits } from '@processes/catalog-sync'
 import { coldSyncAllFlows } from '@features/selector/application/usecases'
 import { registerOutboxSyncTrigger } from '@processes/sync/outboxTrigger'
 import { notifyFailedAuditsChanged } from '@processes/sync/failedAuditsSignal'
@@ -68,6 +71,7 @@ function createOutboxDispatcher() {
     if (item.type === AUDIT_DELTA_ENDPOINT) return handleAuditDeltaItem(item)
     if (item.type === AUDIT_SUBMIT_ENDPOINT) return handleAuditSubmitItem(item)
     if (item.type === PHOTO_UPLOAD_ENDPOINT) return handlePhotoUploadItem(item)
+    if (item.type === AUDIT_UPDATE_ENDPOINT) return handleAuditUpdateItem(item)
 
     // Tipo que esta versión no sabe procesar (p. ej. creado por un build más nuevo): se posterga
     // sin sumar intentos ni borrarlo, para que lo procese la versión que lo entienda.
@@ -125,6 +129,41 @@ async function handleAuditDeltaItem(
 }
 
 /**
+ * Tras enviarse una auditoría deja de estar en el outbox: se fuerza el sync de completados (salta
+ * el cooldown) para que pase a la cache sin desaparecer de "Review completed".
+ */
+function refreshCompletedAuditsCache(): void {
+  void syncCompletedAudits({ force: true }).catch(() => undefined)
+}
+
+/**
+ * Maneja un item de outbox de tipo AUDIT_UPDATE (edición de una auditoría ya enviada).
+ */
+async function handleAuditUpdateItem(
+  item: OutboxItem,
+): Promise<'success' | 'retry' | 'fail' | 'drop'> {
+  const auditId = (item.payload as { auditId?: string } | null)?.auditId
+  if (!auditId) return 'drop'
+
+  try {
+    const result = await syncAuditUpdate(auditId)
+    // Si el auditor guardó otra edición justo cuando terminaba esta corrida, `enqueueUnique` no
+    // creó item nuevo (este seguía `pending`): se conserva el item para que salga la edición.
+    if (result === 'success') {
+      const userId = getCurrentUserId()
+      const audit = userId ? await sqliteAuditRepo.getById(userId, auditId) : null
+      if (audit?.syncState === 'pending') return 'retry'
+    }
+    return result
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[SyncService] AUDIT_UPDATE error, retry', err)
+    }
+    return 'retry'
+  }
+}
+
+/**
  * Maneja un item de outbox de tipo PHOTO_UPLOAD (una foto de una auditoría V2).
  */
 async function handlePhotoUploadItem(
@@ -163,6 +202,7 @@ async function handleAuditSubmitItem(
       // Las fotos NO se borran acá: se conservan 7 días (o menos con poco espacio) para revisar o
       // editar offline lo reciente. De la limpieza se ocupa `runPhotoRetention`.
       await sqliteSubmissionRepo.markStatus(submissionId, 'submitted')
+      refreshCompletedAuditsCache()
 
       if (__DEV__) {
         console.log('[SyncService] AUDIT_SUBMIT submitted', submissionId)
@@ -228,6 +268,7 @@ async function handleAuditSubmissionItem(
       // Envío OK → limpiamos datos y archivos locales
       await cleanupSubmissionFiles(snapshot)
       await sqliteSubmissionRepo.delete(submissionId)
+      refreshCompletedAuditsCache()
 
       if (__DEV__) {
         console.log('[SyncService] AUDIT_SUBMISSION synced & cleaned', submissionId)
@@ -259,6 +300,17 @@ async function handleAuditSubmissionItem(
  * al agotar intentos hay que marcarla acá.
  */
 async function handleOutboxItemFailed(item: OutboxItem, reason: string): Promise<void> {
+  // Edición agotó intentos: queda `failed` en la cache (se ve en la lista con Retry)
+  if (item.type === AUDIT_UPDATE_ENDPOINT) {
+    const auditId = (item.payload as { auditId?: string } | null)?.auditId
+    const userId = getCurrentUserId()
+    if (auditId && userId) {
+      await sqliteAuditRepo.setEditState(userId, auditId, 'failed').catch(() => undefined)
+    }
+    if (__DEV__) console.warn('[SyncService] AUDIT_UPDATE agotó intentos', auditId, reason)
+    return
+  }
+
   if (!SUBMISSION_ITEM_TYPES.has(item.type)) return
 
   const payload = (item.payload ?? null) as Partial<AuditSubmissionOutboxPayload> | null
