@@ -18,6 +18,7 @@ import { styles } from './styles/flowRunner.styles'
 const FlowRunnerScreen: React.FC = () => {
   const {
     detail,
+    isEdit,
     loading,
     submissionId,
     zoomed,
@@ -43,10 +44,11 @@ const FlowRunnerScreen: React.FC = () => {
   const capturePhoto = useCallback(
     async (ctx: { stepId: string; fieldId: string }) => {
       const uri = await pickOrCapturePhoto(submissionId)
-      if (uri) await registerCapturedPhoto({ submissionId, ...ctx, uri })
+      // Al editar no hay submission: la foto nueva se sube al sincronizar la edición
+      if (uri && !isEdit) await registerCapturedPhoto({ submissionId, ...ctx, uri })
       return uri
     },
-    [submissionId],
+    [isEdit, submissionId],
   )
 
   const renderSelectStep = useCallback(
@@ -78,6 +80,11 @@ const FlowRunnerScreen: React.FC = () => {
     <View style={styles.screen}>
       <View style={styles.header}>
         <Text style={styles.title}>{detail.title}</Text>
+        {isEdit ? (
+          <Text style={styles.editHint}>
+            Editing a completed audit. After changing a step, tap Next or Submit on it.
+          </Text>
+        ) : null}
       </View>
 
       <ScrollView
@@ -95,7 +102,11 @@ const FlowRunnerScreen: React.FC = () => {
           if (!step && id === END_ID) {
             return (
               <View key={renderKey} style={styles.containerComponents}>
-                <EndView onFinish={onFinish} loading={submitting} />
+                <EndView
+                  onFinish={onFinish}
+                  loading={submitting}
+                  {...(isEdit ? { label: 'Save changes' } : {})}
+                />
               </View>
             )
           }
@@ -138,14 +149,20 @@ const FlowRunnerScreen: React.FC = () => {
 
               {step.type === 'End' && (
                 <>
-                  <PhotoEvidenceSection
-                    submissionId={submissionId}
-                    stepTitleOf={stepId => {
-                      const s = stepsById[stepId]
-                      return s && 'title' in s ? s.title : undefined
-                    }}
+                  {!isEdit && (
+                    <PhotoEvidenceSection
+                      submissionId={submissionId}
+                      stepTitleOf={stepId => {
+                        const s = stepsById[stepId]
+                        return s && 'title' in s ? s.title : undefined
+                      }}
+                    />
+                  )}
+                  <EndView
+                    onFinish={onFinish}
+                    loading={submitting}
+                    {...(isEdit ? { label: 'Save changes' } : {})}
                   />
-                  <EndView onFinish={onFinish} loading={submitting} />
                 </>
               )}
             </View>

@@ -734,8 +734,10 @@ export function isRecoverableStatus(status?: number): boolean {
 export function buildAnswersForApi(params: {
   answers: Record<string, SubmissionAnswer>
   uploadMap: Record<string, string>
+  /** Edición local: una foto que todavía no se subió conserva su `file://` en vez de fallar. */
+  keepLocalPhotos?: boolean
 }): AuditAnswerForApi[] {
-  const { answers, uploadMap } = params
+  const { answers, uploadMap, keepLocalPhotos = false } = params
 
   return Object.entries(answers).map(([stepId, ans]) => {
     if (!ans) {
@@ -779,6 +781,7 @@ export function buildAnswersForApi(params: {
         if (uri.startsWith('s3://') || uri.startsWith('https://')) return uri
         // Local: tiene que haberse subido; si no, error explícito (nunca viaja un file://)
         const url = uploadMap[photoUploadName(stepId, fieldId, uri)]
+        if (!url && keepLocalPhotos) return uri
         if (!url) throw new Error(`Photo not uploaded for step ${stepId}: ${uri}`)
         return url
       })

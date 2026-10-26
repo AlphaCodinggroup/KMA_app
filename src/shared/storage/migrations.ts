@@ -230,4 +230,55 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_photo_uploads_submission ON photo_uploads(submission_id);
     `,
   },
+  {
+    id: 8,
+    name: 'add_audits_cache_v1',
+    up: `
+      -- Cache de auditorías ya enviadas (9.M). El listado llena las columnas planas; el detalle
+      -- agrega answers_json y, si hace falta, flow_snapshot_json (steps de la versión del flow).
+      CREATE TABLE IF NOT EXISTS audits (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        flow_id TEXT,
+        flow_version INTEGER,
+        flow_name TEXT,
+        project_id TEXT,
+        project_name TEXT,
+        facility_id TEXT,
+        facility_name TEXT,
+        status TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        findings_count INTEGER,
+        created_at TEXT,
+        updated_at TEXT,
+        edited_at INTEGER,               -- ms; última edición local
+        answers_json TEXT,               -- NULL hasta bajar el detalle
+        flow_snapshot_json TEXT,
+        synced_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_audits_facility ON audits(user_id, facility_id, created_at);
+    `,
+  },
+  {
+    id: 9,
+    name: 'audits_edit_state_v1',
+    up: `
+      -- Edición local de una auditoría ya enviada. Con edited_at no nulo, answers_json
+      -- es la versión editada (el refresco desde el backend no la pisa) y estos son los pasos
+      -- que el auditor eliminó respecto de la versión del servidor.
+      ALTER TABLE audits ADD COLUMN deleted_step_ids_json TEXT;
+    `,
+  },
+  {
+    id: 10,
+    name: 'audits_edit_sync_v1',
+    up: `
+      -- Sync de la edición local (E4). edit_state: pending | synced | failed | locked.
+      -- edited_at queda como "última edición" aunque ya se haya enviado; edit_state dice si salió.
+      ALTER TABLE audits ADD COLUMN edit_state TEXT;
+      ALTER TABLE audits ADD COLUMN changed_step_ids_json TEXT; -- pasos a enviar en el PATCH
+      UPDATE audits SET edit_state = 'pending' WHERE edited_at IS NOT NULL;
+    `,
+  },
 ]

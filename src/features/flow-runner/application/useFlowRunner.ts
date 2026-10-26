@@ -25,10 +25,13 @@ import {
 } from './usecases'
 import { recordAnswerDelta } from './auditDeltas'
 import { finalizeAudit } from './auditSubmit'
-import { discardPrunedPhotos } from './photoUploads'
+import { discardCapturedPhoto, discardPrunedPhotos } from './photoUploads'
+import { loadAuditForEdit, saveEditedAudit } from './auditEdit'
+import { extractPhotoArray, photoUriOf } from '@entities/submission/lib/photos'
 import { END_ID, mapById, parseStepsParam, resolveInitialStepId } from '../lib/helpers'
 import {
   appendVisibleId,
+  applyEditedAnswer,
   bumpRenderVersions,
   getStepIdsAfter,
   getStoredQuestionState as readStoredQuestionState,
@@ -46,6 +49,9 @@ export type FlowRunnerRouteParams = {
   steps?: string | string[]
   projectId: string
   facilityId: string
+  /** `edit`: edita una auditoría completada (los steps y respuestas se cargan por `auditId`). */
+  mode?: string
+  auditId?: string
 }
 
 type StoredQuestionState = ReturnType<typeof readStoredQuestionState>
@@ -65,8 +71,25 @@ function askResumeDraft(): Promise<'resume' | 'restart'> {
   })
 }
 
+/** Edición: avisa antes de descartar respuestas de pasos que la nueva respuesta deja afuera. */
+function confirmDiscardAnswers(count: number): Promise<boolean> {
+  return new Promise(resolve => {
+    Alert.alert(
+      'Change this answer?',
+      `This will remove ${count} later ${count === 1 ? 'answer' : 'answers'}, including any photos or measurements entered there.`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'Change answer', style: 'destructive', onPress: () => resolve(true) },
+      ],
+      { cancelable: false },
+    )
+  })
+}
+
 export type UseFlowRunnerResult = {
   detail: FlowDetail | null
+  /** True al editar una auditoría ya completada. */
+  isEdit: boolean
   loading: boolean
   /** Id local de la corrida: una auditoría = una fila en `submissions` y un directorio de fotos. */
   submissionId: string
@@ -100,7 +123,10 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
     version,
     projectId,
     facilityId,
+    mode,
+    auditId,
   } = useLocalSearchParams<FlowRunnerRouteParams>()
+  const isEdit = mode === 'edit' && !!auditId
 
   const [detail, setDetail] = useState<FlowDetail | null>(null)
   const [visibleIds, setVisibleIds] = useState<string[]>([])
@@ -116,6 +142,11 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
   const answersRef = useRef<Record<string, SubmissionAnswer>>({})
   const submissionIdRef = useRef<string>(submissionId)
   const bootTokenRef = useRef(0)
+  // Edición: pasos con respuesta al abrir y eliminados por una edición anterior sin enviar
+  const baseAnswersRef = useRef<Record<string, SubmissionAnswer>>({})
+  const priorDeletedRef = useRef<string[]>([])
+  const priorChangedRef = useRef<string[]>([])
+  const editSavedRef = useRef(false)
   // El router no entra en las deps de `boot`: si su identidad cambia, no debe reiniciar la corrida
   const routerRef = useRef(router)
   routerRef.current = router
@@ -123,6 +154,29 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
   useEffect(() => {
     visibleIdsRef.current = visibleIds
   }, [visibleIds])
+
+  // Edición descartada (o sin cambios): las fotos nuevas que no estaban al abrir no se van a subir
+  useEffect(() => {
+    if (!isEdit) return
+    return () => {
+      if (editSavedRef.current) return
+      const localUris = (answers: Record<string, SubmissionAnswer>) => {
+        const out = new Set<string>()
+        for (const a of Object.values(answers)) {
+          if (a.type !== 'Form') continue
+          for (const p of extractPhotoArray(a.values)) {
+            const uri = photoUriOf(p)
+            if (uri.startsWith('file://')) out.add(uri)
+          }
+        }
+        return out
+      }
+      const base = localUris(baseAnswersRef.current)
+      for (const uri of localUris(answersRef.current)) {
+        if (!base.has(uri)) void discardCapturedPhoto(uri).catch(() => undefined)
+      }
+    }
+  }, [isEdit])
 
   useFocusEffect(
     useCallback(() => {
@@ -163,6 +217,24 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
     setLoading(true)
 
     try {
+      if (isEdit && auditId) {
+        const loaded = await loadAuditForEdit(auditId)
+        if (token !== bootTokenRef.current) return
+
+        if (!loaded.ok) {
+          Alert.alert('This audit cannot be edited', loaded.message)
+          if (routerRef.current.canGoBack()) routerRef.current.back()
+          return
+        }
+
+        baseAnswersRef.current = { ...loaded.answers }
+        priorDeletedRef.current = loaded.audit.deletedStepIds ?? []
+        priorChangedRef.current = loaded.audit.changedStepIds ?? []
+        // La sesión de edición usa un id propio: no es una submission ni toca el outbox
+        startRun(loaded.steps, `edit_${auditId}`, loaded.answers, loaded.path)
+        return
+      }
+
       const steps = parseStepsParam(rawSteps)
 
       // ¿Hay un draft de este flow + facility para reanudar?
@@ -223,7 +295,7 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
     } finally {
       if (token === bootTokenRef.current) setLoading(false)
     }
-  }, [facilityId, flowId, projectId, rawSteps, startRun, title, version])
+  }, [auditId, facilityId, flowId, isEdit, projectId, rawSteps, startRun, title, version])
 
   // Sólo al montar o cuando cambian los params: volver a enfocar la pantalla no reinicia la corrida
   useEffect(() => {
@@ -295,6 +367,46 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
     })
   }, [detail, facilityId, projectId, version])
 
+  /**
+   * Edición: aplica la respuesta sin cortar lo que sigue; sólo descarta los pasos que quedan fuera
+   * del camino nuevo, y pide confirmación si hay alguno. No toca el outbox ni `submissions`.
+   */
+  const commitEditedAnswer = useCallback(
+    async (stepId: string, answer: SubmissionAnswer, opts?: { remountOnCancel?: boolean }) => {
+      if (!detail) return
+      const result = applyEditedAnswer(detail.steps, answersRef.current, stepId, answer)
+
+      if (result.removedStepIds.length > 0) {
+        const accepted = await confirmDiscardAnswers(result.removedStepIds.length)
+        if (!accepted) {
+          // Las tarjetas de pregunta muestran la selección nueva: se vuelven a montar con la guardada
+          if (opts?.remountOnCancel) {
+            setStepRenderVersions(prev => bumpRenderVersions(prev, [stepId]))
+          }
+          return
+        }
+
+        // Fotos nuevas (locales) de los pasos descartados: ya no se van a subir
+        for (const id of result.removedStepIds) {
+          const old = answersRef.current[id]
+          if (old?.type !== 'Form') continue
+          for (const p of extractPhotoArray(old.values)) {
+            const uri = photoUriOf(p)
+            if (uri.startsWith('file://')) await discardCapturedPhoto(uri)
+          }
+        }
+        setStepRenderVersions(prev => bumpRenderVersions(prev, result.removedStepIds))
+      }
+
+      const grew = result.path.length > visibleIdsRef.current.length
+      answersRef.current = result.answers
+      visibleIdsRef.current = result.path
+      setVisibleIds(result.path)
+      if (grew) scrollToEnd()
+    },
+    [detail, scrollToEnd],
+  )
+
   const advanceFrom = useCallback(
     async (currentStepId: string, rawNext?: string | null) => {
       // Pasos que la nueva respuesta deja afuera (rama abandonada): V2 los borra también en el server
@@ -318,42 +430,50 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
 
   const onAnswer = useCallback(
     async (step: QuestionStep, answer: QuestionAnswerValue, extra?: { option?: string }) => {
-      answersRef.current[step.id] = {
+      const stored: SubmissionAnswer = {
         type: 'Question',
         answer,
         ...(extra?.option ? { option: extra.option } : {}),
       }
+      if (isEdit) {
+        await commitEditedAnswer(step.id, stored, { remountOnCancel: true })
+        return
+      }
+      answersRef.current[step.id] = stored
 
       const rawNext = resolveQuestionNextStep(step, answer, answersRef.current)
       await advanceFrom(step.id, rawNext ?? null)
     },
-    [advanceFrom],
+    [advanceFrom, commitEditedAnswer, isEdit],
   )
 
   const onSubmitForm = useCallback(
     async (step: FormStep, values: Record<string, unknown>) => {
-      answersRef.current[step.id] = {
-        type: 'Form',
-        values,
+      const stored: SubmissionAnswer = { type: 'Form', values }
+      if (isEdit) {
+        await commitEditedAnswer(step.id, stored)
+        return
       }
+      answersRef.current[step.id] = stored
 
       await advanceFrom(step.id, step.next ?? null)
     },
-    [advanceFrom],
+    [advanceFrom, commitEditedAnswer, isEdit],
   )
 
   const onSelectOption = useCallback(
     async (stepId: string, option: SelectOption) => {
-      answersRef.current[stepId] = {
-        type: 'Question',
-        answer: null,
-        option: option.label,
+      const stored: SubmissionAnswer = { type: 'Question', answer: null, option: option.label }
+      if (isEdit) {
+        await commitEditedAnswer(stepId, stored, { remountOnCancel: true })
+        return
       }
+      answersRef.current[stepId] = stored
 
       const rawNext = resolveSelectOptionNext(option, answersRef.current)
       await advanceFrom(stepId, rawNext ?? null)
     },
-    [advanceFrom],
+    [advanceFrom, commitEditedAnswer, isEdit],
   )
 
   const onFinish = useCallback(async () => {
@@ -361,6 +481,27 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
 
     try {
       setSubmitting(true)
+
+      if (isEdit && auditId) {
+        const queued = await saveEditedAudit({
+          auditId,
+          baseAnswers: baseAnswersRef.current,
+          priorDeletedStepIds: priorDeletedRef.current,
+          priorChangedStepIds: priorChangedRef.current,
+          answers: answersRef.current,
+        })
+        editSavedRef.current = queued
+        Alert.alert(
+          queued ? 'Changes saved' : 'No changes',
+          queued
+            ? online
+              ? 'Your changes are being sent.'
+              : 'Your changes will be sent as soon as there is a connection.'
+            : 'You did not change anything in this audit.',
+        )
+        if (routerRef.current.canGoBack()) routerRef.current.back()
+        return
+      }
 
       const ok = await finalizeAudit({
         submissionId: submissionIdRef.current,
@@ -388,10 +529,11 @@ export const useFlowRunner = (): UseFlowRunnerResult => {
     } finally {
       setSubmitting(false)
     }
-  }, [detail, facilityId, online, projectId, router, submitting, version])
+  }, [auditId, detail, facilityId, isEdit, online, projectId, router, submitting, version])
 
   return {
     detail,
+    isEdit,
     loading,
     submissionId,
     zoomed,
