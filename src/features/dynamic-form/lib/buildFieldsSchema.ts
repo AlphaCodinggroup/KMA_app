@@ -2,6 +2,9 @@ import { z } from 'zod'
 import type { FormField } from '@shared/validation/steps.schema'
 
 const NUMBER_RE = /^-?(\d+\.?\d*|\.\d+)$/
+const NOTES_RE = /\bnot(e|es|a|as)\b/i
+
+export const PHOTO_REQUIRED_MESSAGE = 'At least one photo is required'
 
 export const countPhotos = (v: unknown): number => {
   if (Array.isArray(v)) return v.length
@@ -9,28 +12,34 @@ export const countPhotos = (v: unknown): number => {
   return 0
 }
 
+/** Campo de notas (por id o label): es el único campo de datos opcional. */
+export const isNotesField = (f: FormField): boolean =>
+  (f.type === 'text' || f.type === 'number') &&
+  (NOTES_RE.test(f.id.replace(/[_-]/g, ' ')) || NOTES_RE.test(f.label))
+
+/**
+ * Regla de negocio: todos los campos de datos (text/number) son obligatorios salvo las notas,
+ * sin importar el `required` que mande el backend. Las fotos se validan a nivel form.
+ */
+export const isFieldRequired = (f: FormField): boolean =>
+  (f.type === 'text' || f.type === 'number') && !isNotesField(f)
+
 /** Valor de texto tolerante: undefined/null → '' y number → string (drafts o respuestas de backend). */
 const textLike = () =>
   z.preprocess(v => (v == null ? '' : typeof v === 'number' ? String(v) : v), z.string())
 
-/** True si algún field declara `required` (backend nuevo); si no, rige la regla legacy. */
-export const hasRequiredFields = (fields: readonly FormField[]): boolean =>
-  fields.some(f => f.required !== undefined)
-
 /**
  * Schema Zod dinámico para un Form step, con errores por campo.
- * - text: no vacío si `required`.
- * - number: si hay valor debe ser numérico; obligatorio si `required`.
- * - photo: al menos una foto si `required`.
+ * - text / number: obligatorios salvo el campo de notas.
+ * - number: si hay valor debe ser numérico.
+ * - photo: al menos una foto entre todos los campos photo del form (error en el primero).
  * - button: sin valor.
- * La regla legacy (al menos una foto entre todos los campos photo) la maneja el form cuando
- * ningún field trae `required`.
  */
 export function buildFieldsSchema(fields: readonly FormField[]) {
   const shape: Record<string, z.ZodType> = {}
 
   for (const f of fields) {
-    const required = f.required === true
+    const required = isFieldRequired(f)
     switch (f.type) {
       case 'text':
         shape[f.id] = textLike().refine(
@@ -54,15 +63,22 @@ export function buildFieldsSchema(fields: readonly FormField[]) {
           .transform(v => v.trim())
         break
       case 'photo':
-        shape[f.id] = z
-          .unknown()
-          .refine(v => !required || countPhotos(v) > 0, 'At least one photo is required')
+        shape[f.id] = z.unknown()
         break
       case 'button':
         break
     }
   }
 
+  const photoIds = fields.filter(f => f.type === 'photo').map(f => f.id)
+
   // loose: conserva claves no declaradas (no se pierden valores al enviar)
-  return z.looseObject(shape)
+  return z.looseObject(shape).superRefine((values, ctx) => {
+    const firstPhotoId = photoIds[0]
+    if (!firstPhotoId) return
+    const total = photoIds.reduce((acc, id) => acc + countPhotos(values[id]), 0)
+    if (total === 0) {
+      ctx.addIssue({ code: 'custom', message: PHOTO_REQUIRED_MESSAGE, path: [firstPhotoId] })
+    }
+  })
 }

@@ -7,14 +7,17 @@ import { styles } from './styles/dynamicForm.styles'
 import PhotoField from './fields/PhotoField'
 import type { PhotoBadgeStatus } from '@shared/ui/photo/PhotoSyncBadge'
 import { sortFields } from '../lib/sortFields'
-import { buildFieldsSchema, countPhotos, hasRequiredFields } from '../lib/buildFieldsSchema'
+import { buildFieldsSchema, isFieldRequired } from '../lib/buildFieldsSchema'
 
 type Field = FormField
 
 /** Id del step terminal. Sin `next` el runner también termina en END (ver `replayPath`). */
 const END_STEP_ID = 'END'
 
-const labelOf = (field: Field) => (field.required ? `${field.label} (required)` : field.label)
+const withRequiredMark = (label: string, required: boolean) =>
+  required ? `${label} (required)` : label
+
+const labelOf = (field: Field) => withRequiredMark(field.label, isFieldRequired(field))
 
 const FieldError: React.FC<{ message?: string | undefined }> = ({ message }) =>
   message ? <Text style={styles.fieldError}>{message}</Text> : null
@@ -83,27 +86,12 @@ function DynamicFormBase({
     mode: 'onBlur',
   })
 
-  // Con `required` en los fields rige la validación por campo; sin él, la regla legacy:
-  // al menos una foto cargada en cualquier campo 'photo'.
-  const legacyPhotoRule = !hasRequiredFields(fields)
+  // Con un solo campo de fotos se marca como obligatorio; con varios basta una foto en cualquiera
+  const singlePhotoField = fields.filter(f => f.type === 'photo').length === 1
 
-  const photoFieldIds = useMemo(
-    () => (legacyPhotoRule ? fields.filter(f => f.type === 'photo').map(f => f.id) : []),
-    [fields, legacyPhotoRule],
-  )
-
-  const watchedPhotoValues = watch(photoFieldIds) as unknown[] | undefined
-
-  const canSubmit = useMemo(() => {
-    if (!legacyPhotoRule || photoFieldIds.length === 0) return true
-    if (!watchedPhotoValues || watchedPhotoValues.length === 0) return false
-
-    return watchedPhotoValues.some(v => countPhotos(v) > 0)
-  }, [legacyPhotoRule, photoFieldIds.length, watchedPhotoValues])
-
-  const isSubmitDisabled = !canSubmit
-  const submitError =
-    legacyPhotoRule && !canSubmit ? 'You must upload at least one photo to continue.' : ''
+  // Botón habilitado solo cuando todos los obligatorios están completos y con valor válido
+  const currentValues = watch()
+  const canSubmit = schema.safeParse(currentValues).success
 
   const renderTextField = (field: Field) => (
     <Controller
@@ -234,13 +222,12 @@ function DynamicFormBase({
           rhf.onChange(next)
         }
 
-        const legacyError = legacyPhotoRule && !!submitError && list.length === 0
-        const errorMessage = legacyError ? submitError : fieldState.error?.message
+        const errorMessage = fieldState.error?.message
 
         return (
           <View style={styles.inputBlock}>
             <PhotoField
-              label={labelOf(field)}
+              label={withRequiredMark(field.label, singlePhotoField)}
               value={list}
               onAdd={onAdd}
               onRemoveAt={onRemoveAt}
@@ -301,8 +288,9 @@ function DynamicFormBase({
 
       <TouchableOpacity
         onPress={handleNextPress}
-        style={[styles.button, styles.primaryBtn, isSubmitDisabled && styles.btnDisabled]}
-        disabled={isSubmitDisabled}
+        style={[styles.button, styles.primaryBtn, !canSubmit && styles.btnDisabled]}
+        disabled={!canSubmit}
+        accessibilityState={{ disabled: !canSubmit }}
         accessibilityRole="button"
         accessibilityLabel={actionLabel}
       >
