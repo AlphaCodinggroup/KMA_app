@@ -15,11 +15,9 @@ import {
   mapProjectDetailResponseDto,
 } from '@entities/project/lib/mappers'
 
-/**
- * Resuelve la baseURL de la API. Prioriza Env, cae en EXPO_PUBLIC_ si no está mapeado.
- */
+/** Resuelve la baseURL de la API desde Env. */
 function getBaseUrl(): string {
-  return Env.apiBaseUrl || (process.env.EXPO_PUBLIC_API_BASE_URL as string) || ''
+  return Env.apiBaseUrl
 }
 
 /** Arma una URL segura respetando base y path (evita // dobles). */
@@ -30,8 +28,9 @@ function buildUrl(path: string): string {
 
 /** Dominio → API (status) */
 function toApiStatus(status?: ProjectStatus): 'ACTIVE' | 'ARCHIVED' | undefined {
-  if (!status) return undefined
-  return status === 'active' ? 'ACTIVE' : 'ARCHIVED'
+  // El dominio ya usa los mismos valores que la API ('ACTIVE' | 'ARCHIVED'). Antes se comparaba con
+  // 'active' (minúscula), nunca coincidía y 'ACTIVE' se enviaba como 'ARCHIVED'.
+  return status
 }
 
 /** Dominio → API (query params) */

@@ -86,6 +86,9 @@ function mapField(dto: StepFieldDTO): Field {
     label: dto.label,
     unit: dto.unit,
     placeholder: dto.placeholder,
+    required: dto.required,
+    multiline: dto.multiline,
+    order: dto.order,
   }
 }
 

@@ -30,8 +30,9 @@ export const AppToastProvider: React.FC<PropsWithChildren> = ({ children }) => {
 export function showAppToast({ type = 'info', title, message }: ShowToastParams): void {
   Toast.show({
     type,
-    text1: title, // si es undefined, la librería simplemente no muestra título
-    text2: message,
+    // si no hay título/mensaje, la librería simplemente no los muestra
+    ...(title !== undefined ? { text1: title } : {}),
+    ...(message !== undefined ? { text2: message } : {}),
     position: 'top',
     visibilityTime: 3000,
     autoHide: true,

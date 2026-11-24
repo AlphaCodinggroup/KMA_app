@@ -15,29 +15,29 @@ export interface Project {
   id: ProjectId
 
   // Código interno opcional (si el backend lo expone)
-  code?: string | null
+  code?: string | null | undefined
 
-  name?: string | null
-  description?: string | null
-  status?: ProjectStatus
+  name?: string | null | undefined
+  description?: string | null | undefined
+  status?: ProjectStatus | undefined
 
   // Resúmenes ricos (cuando vienen del API de proyectos)
-  users?: ProjectUserSummary[]
-  facilities?: ProjectFacilitySummary[]
+  users?: ProjectUserSummary[] | undefined
+  facilities?: ProjectFacilitySummary[] | undefined
 
   // Identificadores planos (cuando sólo tenemos cache local)
-  userIds?: string[]
-  facilityIds?: string[]
+  userIds?: string[] | undefined
+  facilityIds?: string[] | undefined
 
-  createdAt?: string
-  updatedAt?: string
-  createdBy?: string
+  createdAt?: string | undefined
+  updatedAt?: string | undefined
+  createdBy?: string | undefined
 }
 
 export interface ProjectsPage {
   items: Project[]
   limit: number
-  nextCursor?: string
+  nextCursor?: string | undefined
 }
 
 /**
@@ -48,17 +48,17 @@ export interface ProjectsPage {
  */
 export function createProject(params: {
   id: ProjectId
-  code?: string | null
-  name?: string | null
-  description?: string | null
-  status?: ProjectStatus
-  users?: ProjectUserSummary[]
-  facilities?: ProjectFacilitySummary[]
-  userIds?: string[]
-  facilityIds?: string[]
-  createdAt?: string
-  updatedAt?: string
-  createdBy?: string
+  code?: string | null | undefined
+  name?: string | null | undefined
+  description?: string | null | undefined
+  status?: ProjectStatus | undefined
+  users?: ProjectUserSummary[] | undefined
+  facilities?: ProjectFacilitySummary[] | undefined
+  userIds?: string[] | undefined
+  facilityIds?: string[] | undefined
+  createdAt?: string | undefined
+  updatedAt?: string | undefined
+  createdBy?: string | undefined
 }): Project {
   return {
     id: params.id,

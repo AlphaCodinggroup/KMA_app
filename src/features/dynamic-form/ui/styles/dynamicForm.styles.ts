@@ -32,6 +32,11 @@ export const styles = StyleSheet.create({
     paddingVertical: RFValue(10),
     fontSize: setResponsiveSize({ size: 10 }),
   },
+  inputRowMultiline: { alignItems: 'flex-start' },
+  textInputWithUnitMultiline: { minHeight: RFValue(90), textAlignVertical: 'top' },
+  textInputMultiline: { minHeight: RFValue(90), textAlignVertical: 'top' },
+  inputError: { borderColor: AppColors.Error },
+  fieldError: { color: AppColors.Error, fontSize: setResponsiveSize({ size: 11 }) },
   unitBadge: {
     paddingVertical: RFValue(8),
     paddingHorizontal: RFValue(10),

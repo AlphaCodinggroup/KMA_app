@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import { View, Text, Image, ScrollView, Alert, TouchableOpacity } from 'react-native'
 import { AppColors } from '@shared/ui/colors'
+import PhotoSyncBadge, { type PhotoBadgeStatus } from '@shared/ui/photo/PhotoSyncBadge'
 import { styles } from './photoFields.styles'
 
 type Props = {
@@ -12,6 +13,8 @@ type Props = {
   removeButtonText?: string
   testID?: string
   disabled?: boolean
+  /** Estado de backup por URI (sólo auditorías V2). Sin entrada no se muestra badge. */
+  statusByUri?: Readonly<Record<string, PhotoBadgeStatus>> | undefined
 }
 
 const isDisplayableUri = (uri?: string | null) =>
@@ -26,6 +29,7 @@ const PhotoFieldBase: React.FC<Props> = ({
   removeButtonText = 'Remove',
   testID,
   disabled = false,
+  statusByUri,
 }) => {
   const handleAdd = async () => {
     if (disabled) return
@@ -57,6 +61,11 @@ const PhotoFieldBase: React.FC<Props> = ({
                     <Text style={{ color: AppColors.MutedText }}>Selected image</Text>
                   </View>
                 )}
+                {statusByUri?.[uri] ? (
+                  <View style={styles.badgeSlot} pointerEvents="none">
+                    <PhotoSyncBadge status={statusByUri[uri]} />
+                  </View>
+                ) : null}
                 <TouchableOpacity
                   onPress={() => onRemoveAt(idx)}
                   style={styles.smallBtn}

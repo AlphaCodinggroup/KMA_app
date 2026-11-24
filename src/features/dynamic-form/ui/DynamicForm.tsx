@@ -1,26 +1,58 @@
 import React, { memo, useCallback, useMemo } from 'react'
 import { View, Text, TextInput, TouchableOpacity, Keyboard } from 'react-native'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useForm, type Resolver } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import type { FormField, FormStep } from '@shared/validation/steps.schema'
 import { styles } from './styles/dynamicForm.styles'
 import PhotoField from './fields/PhotoField'
+import type { PhotoBadgeStatus } from '@shared/ui/photo/PhotoSyncBadge'
+import { sortFields } from '../lib/sortFields'
+import { buildFieldsSchema, isFieldRequired } from '../lib/buildFieldsSchema'
 
 type Field = FormField
+
+/** Id del step terminal. Sin `next` el runner también termina en END (ver `replayPath`). */
+const END_STEP_ID = 'END'
+
+const withRequiredMark = (label: string, required: boolean) =>
+  required ? `${label} (required)` : label
+
+const labelOf = (field: Field) => withRequiredMark(field.label, isFieldRequired(field))
+
+const FieldError: React.FC<{ message?: string | undefined }> = ({ message }) =>
+  message ? <Text style={styles.fieldError}>{message}</Text> : null
 
 type Props = {
   step: FormStep
   onSubmit: (values: Record<string, unknown>) => void
-  capturePhoto?: () => Promise<string | null>
+  /** Valores previos (reanudar un draft): pisan los defaults de cada campo. */
+  initialValues?: Record<string, unknown> | undefined
+  /** Captura una foto para ese campo; el contexto permite registrarla (step + field). */
+  capturePhoto?: (ctx: { stepId: string; fieldId: string }) => Promise<string | null>
+  /** Estado de backup por URI de foto (auditorías V2); sin entrada no se muestra badge. */
+  photoStatusByUri?: Readonly<Record<string, PhotoBadgeStatus>> | undefined
+  /** Borra el archivo local de una foto quitada del form. */
+  discardPhoto?: (uri: string) => Promise<void>
 }
 
 /** DynamicForm
  * - Orquesta el render de cada field y delega UI específica a subcomponentes.
  * - Compatibilidad: si `photo` viniera como string desde datos antiguos, se normaliza a string[] solo en UI.
  */
-function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
+function DynamicFormBase({
+  step,
+  onSubmit,
+  capturePhoto,
+  discardPhoto,
+  initialValues,
+  photoStatusByUri,
+}: Props) {
+  // Orden configurado por el admin (defensa por `order`; normalmente ya viene ordenado)
+  const fields = useMemo(() => sortFields(step.fields), [step.fields])
+
   const defaultValues = React.useMemo(() => {
     const acc: Record<string, unknown> = {}
-    for (const f of step.fields) {
+    for (const f of fields) {
       switch (f.type) {
         case 'text':
         case 'number':
@@ -34,55 +66,60 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
           break
       }
     }
+    // Valores previos (draft reanudado) sobre los defaults
+    if (initialValues) {
+      for (const f of fields) {
+        if (f.id in acc && initialValues[f.id] !== undefined) acc[f.id] = initialValues[f.id]
+      }
+    }
     return acc
-  }, [step.fields])
+    // initialValues sólo se lee al montar el form
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fields])
+
+  const schema = useMemo(() => buildFieldsSchema(fields), [fields])
+  const resolver = useMemo(() => zodResolver(schema) as Resolver<Record<string, unknown>>, [schema])
 
   const { control, handleSubmit, watch } = useForm<Record<string, unknown>>({
     defaultValues,
+    resolver,
     mode: 'onBlur',
   })
 
-  // --- Habilitación del submit: al menos una foto cargada en cualquier campo 'photo'
-  const photoFieldIds = useMemo(
-    () => step.fields.filter(f => f.type === 'photo').map(f => f.id),
-    [step.fields],
-  )
+  // Con un solo campo de fotos se marca como obligatorio; con varios basta una foto en cualquiera
+  const singlePhotoField = fields.filter(f => f.type === 'photo').length === 1
 
-  const watchedPhotoValues = watch(photoFieldIds) as unknown[] | undefined
-
-  const canSubmit = useMemo(() => {
-    if (photoFieldIds.length === 0) return true
-    if (!watchedPhotoValues || watchedPhotoValues.length === 0) return false
-
-    const countPhotos = (v: unknown) => {
-      if (Array.isArray(v)) return v.length
-      if (typeof v === 'string') return v ? 1 : 0
-      return 0
-    }
-
-    return watchedPhotoValues.some(v => countPhotos(v) > 0)
-  }, [photoFieldIds.length, watchedPhotoValues])
-
-  const isSubmitDisabled = !canSubmit
-  const submitError = !canSubmit ? 'You must upload at least one photo to continue.' : ''
+  // Botón habilitado solo cuando todos los obligatorios están completos y con valor válido
+  const currentValues = watch()
+  const canSubmit = schema.safeParse(currentValues).success
 
   const renderTextField = (field: Field) => (
     <Controller
       key={field.id}
       control={control}
       name={field.id}
-      render={({ field: rhf }) => (
+      render={({ field: rhf, fieldState }) => (
         <View style={styles.inputBlock}>
-          <Text style={styles.label}>{field.label}</Text>
+          <Text style={styles.label}>{labelOf(field)}</Text>
           {field.unit ? (
-            <View style={styles.inputRow}>
+            <View
+              style={[
+                styles.inputRow,
+                field.multiline && styles.inputRowMultiline,
+                fieldState.error && styles.inputError,
+              ]}
+            >
               <TextInput
                 value={(rhf.value as string) ?? ''}
                 onChangeText={rhf.onChange}
                 onBlur={rhf.onBlur}
-                style={styles.textInputWithUnit}
-                returnKeyType="done"
+                style={[
+                  styles.textInputWithUnit,
+                  field.multiline && styles.textInputWithUnitMultiline,
+                ]}
+                returnKeyType={field.multiline ? 'default' : 'done'}
                 placeholder={field.placeholder}
+                multiline={field.multiline === true}
               />
               <View style={styles.unitBadge}>
                 <Text style={styles.unitText}>{field.unit}</Text>
@@ -93,11 +130,17 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
               value={(rhf.value as string) ?? ''}
               onChangeText={rhf.onChange}
               onBlur={rhf.onBlur}
-              style={styles.textInput}
-              returnKeyType="done"
+              style={[
+                styles.textInput,
+                field.multiline && styles.textInputMultiline,
+                fieldState.error && styles.inputError,
+              ]}
+              returnKeyType={field.multiline ? 'default' : 'done'}
               placeholder={field.placeholder}
+              multiline={field.multiline === true}
             />
           )}
+          <FieldError message={fieldState.error?.message} />
         </View>
       )}
     />
@@ -108,7 +151,7 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
       key={field.id}
       control={control}
       name={field.id}
-      render={({ field: rhf }) => {
+      render={({ field: rhf, fieldState }) => {
         // Normalizar coma a punto para decimales (teclado iOS español muestra coma)
         const handleNumericChange = (text: string) => {
           const normalized = text.replace(/,/g, '.')
@@ -117,9 +160,9 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
 
         return (
           <View style={styles.inputBlock}>
-            <Text style={styles.label}>{field.label}</Text>
+            <Text style={styles.label}>{labelOf(field)}</Text>
             {field.unit ? (
-              <View style={styles.inputRow}>
+              <View style={[styles.inputRow, fieldState.error && styles.inputError]}>
                 <TextInput
                   value={(rhf.value as string) ?? ''}
                   onChangeText={handleNumericChange}
@@ -139,11 +182,12 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
                 onChangeText={handleNumericChange}
                 onBlur={rhf.onBlur}
                 keyboardType="numeric"
-                style={styles.textInput}
+                style={[styles.textInput, fieldState.error && styles.inputError]}
                 returnKeyType="done"
                 placeholder={field.placeholder}
               />
             )}
+            <FieldError message={fieldState.error?.message} />
           </View>
         )
       }}
@@ -155,7 +199,7 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
       key={field.id}
       control={control}
       name={field.id}
-      render={({ field: rhf }) => {
+      render={({ field: rhf, fieldState }) => {
         const raw = rhf.value as unknown
         const list: string[] = Array.isArray(raw)
           ? (raw as string[])
@@ -165,31 +209,34 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
 
         const onAdd = async () => {
           if (!capturePhoto) return null
-          const uri = await capturePhoto()
+          const uri = await capturePhoto({ stepId: step.id, fieldId: field.id })
           if (uri) rhf.onChange([...list, uri])
           return uri ?? null
         }
 
         const onRemoveAt = (index: number) => {
           if (index < 0 || index >= list.length) return
+          const removed = list[index]
           const next = list.slice(0, index).concat(list.slice(index + 1))
+          if (removed && discardPhoto) void discardPhoto(removed)
           rhf.onChange(next)
         }
 
-        const shouldShowError = !!submitError && list.length === 0
+        const errorMessage = fieldState.error?.message
 
         return (
           <View style={styles.inputBlock}>
             <PhotoField
-              label={field.label}
+              label={withRequiredMark(field.label, singlePhotoField)}
               value={list}
               onAdd={onAdd}
               onRemoveAt={onRemoveAt}
+              statusByUri={photoStatusByUri}
               addButtonText="Add another photo"
               removeButtonText="Remove"
               testID={`photo-field-${field.id}`}
             />
-            {shouldShowError && <Text style={styles.errorText}>{submitError}</Text>}
+            {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
           </View>
         )
       }}
@@ -233,18 +280,21 @@ function DynamicFormBase({ step, onSubmit, capturePhoto }: Props) {
     [handleSubmit, onSubmit],
   )
 
+  const actionLabel = !step.next || step.next === END_STEP_ID ? 'Submit' : 'Next'
+
   return (
     <View style={styles.container}>
-      <View style={styles.formFields}>{step.fields.map(renderField)}</View>
+      <View style={styles.formFields}>{fields.map(renderField)}</View>
 
       <TouchableOpacity
         onPress={handleNextPress}
-        style={[styles.button, styles.primaryBtn, isSubmitDisabled && styles.btnDisabled]}
-        disabled={isSubmitDisabled}
+        style={[styles.button, styles.primaryBtn, !canSubmit && styles.btnDisabled]}
+        disabled={!canSubmit}
+        accessibilityState={{ disabled: !canSubmit }}
         accessibilityRole="button"
-        accessibilityLabel="Next"
+        accessibilityLabel={actionLabel}
       >
-        <Text style={[styles.btnText, styles.primaryBtnText]}>NEXT</Text>
+        <Text style={[styles.btnText, styles.primaryBtnText]}>{actionLabel.toUpperCase()}</Text>
       </TouchableOpacity>
     </View>
   )

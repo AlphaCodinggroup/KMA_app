@@ -56,6 +56,11 @@ target 'KMAapp' do
         if target.name == 'fmt'
           build_configuration.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
         end
+        # Xcode 27 solo soporta deployment target >= 15.0; subir los pods que declaran uno menor.
+        current = build_configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+        if current && Gem::Version.new(current) < Gem::Version.new('15.0')
+          build_configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
+        end
       end
     end
 

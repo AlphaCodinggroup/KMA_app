@@ -1,6 +1,7 @@
 import { SessionError } from '@entities/user/model'
 
-export function normalizeAuthError(e): string {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function normalizeAuthError(e: any): string {
   // Errores de dominio
   if (e instanceof SessionError) {
     if (e.code === 'PERSISTENCE_FAILED') {

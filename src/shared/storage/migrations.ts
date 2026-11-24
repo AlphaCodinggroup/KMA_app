@@ -124,4 +124,161 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE flows ADD COLUMN updatedAt TEXT;
     `,
   },
+  {
+    id: 4,
+    name: 'outbox_submission_states_v1',
+    up: `
+      -- Estado de submissions: draft | queued | failed | legacy
+      ALTER TABLE submissions ADD COLUMN status TEXT NOT NULL DEFAULT 'legacy';
+      ALTER TABLE submissions ADD COLUMN last_error TEXT;
+      ALTER TABLE submissions ADD COLUMN user_id TEXT;
+      ALTER TABLE submissions ADD COLUMN updated_at INTEGER;
+
+      -- Estado del outbox: pending | failed
+      ALTER TABLE outbox ADD COLUMN status TEXT NOT NULL DEFAULT 'pending';
+      ALTER TABLE outbox ADD COLUMN next_attempt_at INTEGER;
+      ALTER TABLE outbox ADD COLUMN user_id TEXT;
+
+      -- Submissions con item en outbox pasan a 'queued'; el resto queda 'legacy'
+      UPDATE submissions SET status = 'queued'
+        WHERE id IN (SELECT json_extract(payload_json, '$.submissionId') FROM outbox);
+
+      CREATE INDEX IF NOT EXISTS idx_outbox_ready ON outbox(status, next_attempt_at, created_at);
+      CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions(status, flow_id);
+    `,
+  },
+  {
+    id: 5,
+    name: 'submissions_without_flow_fk_v1',
+    up: `
+      -- submissions tenía FOREIGN KEY (flow_id) ... ON DELETE CASCADE: al refrescar o podar el
+      -- catálogo de flows se borraban drafts y auditorías pendientes. Se recrea la tabla sin FK.
+      CREATE TABLE submissions_new (
+        id TEXT PRIMARY KEY,
+        flow_id TEXT NOT NULL,
+        step_id TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        has_files INTEGER NOT NULL DEFAULT 0,
+        synced INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'legacy',
+        last_error TEXT,
+        user_id TEXT,
+        updated_at INTEGER
+      );
+
+      INSERT INTO submissions_new (
+        id, flow_id, step_id, payload_json, has_files, synced, created_at,
+        status, last_error, user_id, updated_at
+      )
+      SELECT
+        id, flow_id, step_id, payload_json, has_files, synced, created_at,
+        status, last_error, user_id, updated_at
+      FROM submissions;
+
+      DROP TABLE submissions;
+      ALTER TABLE submissions_new RENAME TO submissions;
+
+      CREATE INDEX IF NOT EXISTS idx_submissions_sync ON submissions(synced, created_at);
+      CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions(status, flow_id);
+    `,
+  },
+  {
+    id: 6,
+    name: 'audit_v2_state_v1',
+    up: `
+      -- Estado local del ciclo de vida V2 (RFC Auditorías V2). Las filas existentes quedan en
+      -- pipeline 'v1': siguen por el camino actual. Nada escribe estas columnas con AUDITS_V2 apagado.
+      ALTER TABLE submissions ADD COLUMN audit_id TEXT;            -- id generado por el móvil (BE-7)
+      ALTER TABLE submissions ADD COLUMN server_version INTEGER;   -- versión confirmada por backend
+      ALTER TABLE submissions ADD COLUMN server_status TEXT;       -- audit_in_progress | draft_report_pending_review | ...
+      ALTER TABLE submissions ADD COLUMN pipeline TEXT NOT NULL DEFAULT 'v1'; -- v1 | v2
+      ALTER TABLE submissions ADD COLUMN answer_sync_json TEXT;    -- { [step_id]: 'pending' | 'synced' }
+      ALTER TABLE submissions ADD COLUMN deleted_step_ids_json TEXT; -- step_ids podados pendientes de confirmar
+
+      -- Dependencias entre items del outbox (las usa C4)
+      ALTER TABLE outbox ADD COLUMN depends_on TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_submissions_audit ON submissions(audit_id);
+    `,
+  },
+  {
+    id: 7,
+    name: 'add_photo_uploads_v1',
+    up: `
+      -- Una fila por foto capturada (8.M). Registra el archivo local y su estado de subida.
+      CREATE TABLE IF NOT EXISTS photo_uploads (
+        id TEXT PRIMARY KEY,
+        submission_id TEXT NOT NULL,
+        audit_id TEXT,
+        step_id TEXT NOT NULL,
+        field_id TEXT NOT NULL,
+        local_uri TEXT NOT NULL,
+        upload_name TEXT NOT NULL,
+        remote_url TEXT,
+        s3_key TEXT,
+        upload_url TEXT,
+        expires_at INTEGER,              -- ms (backend lo envía en segundos)
+        status TEXT NOT NULL,            -- pending | uploading | uploaded | failed
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_photo_uploads_status ON photo_uploads(status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_photo_uploads_submission ON photo_uploads(submission_id);
+    `,
+  },
+  {
+    id: 8,
+    name: 'add_audits_cache_v1',
+    up: `
+      -- Cache de auditorías ya enviadas (9.M). El listado llena las columnas planas; el detalle
+      -- agrega answers_json y, si hace falta, flow_snapshot_json (steps de la versión del flow).
+      CREATE TABLE IF NOT EXISTS audits (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        flow_id TEXT,
+        flow_version INTEGER,
+        flow_name TEXT,
+        project_id TEXT,
+        project_name TEXT,
+        facility_id TEXT,
+        facility_name TEXT,
+        status TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        findings_count INTEGER,
+        created_at TEXT,
+        updated_at TEXT,
+        edited_at INTEGER,               -- ms; última edición local
+        answers_json TEXT,               -- NULL hasta bajar el detalle
+        flow_snapshot_json TEXT,
+        synced_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_audits_facility ON audits(user_id, facility_id, created_at);
+    `,
+  },
+  {
+    id: 9,
+    name: 'audits_edit_state_v1',
+    up: `
+      -- Edición local de una auditoría ya enviada. Con edited_at no nulo, answers_json
+      -- es la versión editada (el refresco desde el backend no la pisa) y estos son los pasos
+      -- que el auditor eliminó respecto de la versión del servidor.
+      ALTER TABLE audits ADD COLUMN deleted_step_ids_json TEXT;
+    `,
+  },
+  {
+    id: 10,
+    name: 'audits_edit_sync_v1',
+    up: `
+      -- Sync de la edición local (E4). edit_state: pending | synced | failed | locked.
+      -- edited_at queda como "última edición" aunque ya se haya enviado; edit_state dice si salió.
+      ALTER TABLE audits ADD COLUMN edit_state TEXT;
+      ALTER TABLE audits ADD COLUMN changed_step_ids_json TEXT; -- pasos a enviar en el PATCH
+      UPDATE audits SET edit_state = 'pending' WHERE edited_at IS NOT NULL;
+    `,
+  },
 ]

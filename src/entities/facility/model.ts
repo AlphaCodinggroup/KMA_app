@@ -13,23 +13,23 @@ export interface GeoPoint {
 
 export interface Facility {
   id: FacilityId
-  projectId?: ProjectId
-  name?: string
-  address?: string
-  city?: string
-  geo?: GeoPoint
-  notes?: string
-  status?: FacilityStatus
-  userIds?: string[]
-  createdAt?: string
-  updatedAt?: string
-  createdBy?: string
-  updatedBy?: string
+  projectId?: ProjectId | undefined
+  name?: string | undefined
+  address?: string | undefined
+  city?: string | undefined
+  geo?: GeoPoint | undefined
+  notes?: string | undefined
+  status?: FacilityStatus | undefined
+  userIds?: string[] | undefined
+  createdAt?: string | undefined
+  updatedAt?: string | undefined
+  createdBy?: string | undefined
+  updatedBy?: string | undefined
 }
 
 /** Página/colección paginada en dominio (útil para repos). */
 export interface FacilitiesPage {
   items: Facility[]
-  limit?: number
-  nextCursor?: string
+  limit?: number | undefined
+  nextCursor?: string | undefined
 }

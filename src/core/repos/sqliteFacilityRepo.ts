@@ -25,8 +25,8 @@ type FacilityRow = {
 }
 
 type ListFilter = {
-  status?: FacilityStatus
-  search?: string
+  status?: FacilityStatus | undefined
+  search?: string | undefined
 }
 
 /**
@@ -215,8 +215,8 @@ export const sqliteFacilityRepo = {
       [id],
     )
 
-    if (!rows.length) return null
-    return mapRowToDomain(rows[0])
+    const row = rows[0]
+    return row ? mapRowToDomain(row) : null
   },
 
   /**

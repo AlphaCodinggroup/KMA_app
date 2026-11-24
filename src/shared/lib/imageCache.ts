@@ -14,7 +14,7 @@ const warnedUnsupportedUrls = new Set<string>()
 
 function getUriScheme(url: string): string | null {
   const match = url.trim().match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/)
-  return match ? match[1].toLowerCase() : null
+  return match?.[1]?.toLowerCase() ?? null
 }
 
 function warnUnsupportedUrlOnce(url: string, reason: string): void {
@@ -75,7 +75,7 @@ function getUrlBasename(url: string): string {
 
 function getFilenameExtension(name: string): string {
   const match = name.match(/(\.[a-zA-Z0-9]{1,10})$/)
-  return match ? match[1].toLowerCase() : ''
+  return match?.[1]?.toLowerCase() ?? ''
 }
 
 function sanitizeFilenamePart(value: string): string {
@@ -112,7 +112,7 @@ function getFilenameFromUrl(url: string): string {
 }
 
 function getLegacyFilenameFromUrl(url: string): string {
-  const [base] = url.split('?')
+  const base = url.split('?')[0] ?? url
   return encodeURIComponent(base)
 }
 

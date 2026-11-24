@@ -16,8 +16,8 @@ type ProjectRow = {
 }
 
 type ListFilter = {
-  status?: ProjectStatus
-  search?: string
+  status?: ProjectStatus | undefined
+  search?: string | undefined
 }
 
 /**
@@ -189,8 +189,8 @@ export const sqliteProjectRepo = {
       [id],
     )
 
-    if (!rows.length) return null
-    return mapRowToDomain(rows[0])
+    const row = rows[0]
+    return row ? mapRowToDomain(row) : null
   },
 
   /**

@@ -4,22 +4,56 @@ import * as FileSystem from 'expo-file-system'
 
 import { initDatabase } from '@shared/storage/db'
 import { registerBackgroundSync, unregisterBackgroundSync } from '@shared/workers/background'
-import { getSnapshot, initSession, subscribe } from '@shared/session/session'
+import { getCurrentUserId, getSnapshot, initSession, subscribe } from '@shared/session/session'
 
 import { SyncService, type OutboxRepo, type OutboxItem } from '@processes/sync/SyncService'
 import { sqliteOutboxRepo } from '@core/repos/sqliteOutboxRepo'
 import { sqliteSubmissionRepo } from '@core/repos/sqliteSubmissionRepo'
 import type { SubmissionSnapshot } from '@entities/submission/ports'
-import { submitAuditOnlineFromSnapshot } from '@features/flow-runner/application/usecases'
-import { syncAllCatalogs } from '@processes/catalog-sync'
+import { extractPhotoArray, photoUriOf } from '@entities/submission/lib/photos'
+import {
+  createRemoteAuditDraft,
+  submitAuditOnlineFromSnapshot,
+} from '@features/flow-runner/application/usecases'
+import { syncAuditDeltas } from '@features/flow-runner/application/auditDeltas'
+import { uploadPhotoItem } from '@features/flow-runner/application/photoUploads'
+import { syncAuditUpdate } from '@features/flow-runner/application/auditUpdate'
+import { AUDIT_UPDATE_ENDPOINT } from '@features/audits/lib/outbox'
+import { sqliteAuditRepo } from '@core/repos/sqliteAuditRepo'
+import {
+  enqueueAuditSubmitChain,
+  submitRemoteAudit,
+} from '@features/flow-runner/application/auditSubmit'
+import {
+  AUDIT_CREATE_ENDPOINT,
+  AUDIT_DELTA_ENDPOINT,
+  AUDIT_SUBMIT_ENDPOINT,
+  PHOTO_UPLOAD_ENDPOINT,
+} from '@features/flow-runner/lib/auditOutbox'
+import { syncAllCatalogs, syncCompletedAudits } from '@processes/catalog-sync'
 import { coldSyncAllFlows } from '@features/selector/application/usecases'
 import { registerOutboxSyncTrigger } from '@processes/sync/outboxTrigger'
-import { initNetworkWatcher } from '@shared/lib/network'
+import { notifyFailedAuditsChanged } from '@processes/sync/failedAuditsSignal'
+import { PHOTOS_ROOT, discardPhotoGroup } from '@features/camera'
+import { migrateCachedPhotos } from './migratePhotos'
+import { registerPendingPhotoUploads } from './registerPhotoUploads'
+import { runPhotoRetention } from '@processes/retention/photoRetention'
+import { sqlitePhotoUploadRepo } from '@core/repos/sqlitePhotoUploadRepo'
+import { initNetworkWatcher, isOnlineOnce } from '@shared/lib/network'
 
 let _bootPromise: Promise<void> | null = null
 let _cleanup: (() => void) | null = null
 
 const AUDIT_SUBMISSION_ENDPOINT = 'AUDIT_SUBMISSION'
+
+/** Items del outbox que cuelgan de una submission (`payload.submissionId`). */
+const SUBMISSION_ITEM_TYPES = new Set<string>([
+  AUDIT_SUBMISSION_ENDPOINT,
+  AUDIT_CREATE_ENDPOINT,
+  AUDIT_DELTA_ENDPOINT,
+  AUDIT_SUBMIT_ENDPOINT,
+  PHOTO_UPLOAD_ENDPOINT,
+])
 
 type AuditSubmissionOutboxPayload = {
   submissionId: string
@@ -29,24 +63,167 @@ type AuditSubmissionOutboxPayload = {
  * Dispatcher del SyncService.
  */
 function createOutboxDispatcher() {
-  return async (item: OutboxItem): Promise<'success' | 'retry' | 'drop'> => {
+  return async (item: OutboxItem): Promise<'success' | 'retry' | 'fail' | 'drop' | 'defer'> => {
+    // Camino v1: se mantiene mientras existan dispositivos/outbox con auditorías v1. Se retira
+    // cuando backend confirme la fecha de corte; ver el checklist de C5 en el plan.
     if (item.type === AUDIT_SUBMISSION_ENDPOINT) return handleAuditSubmissionItem(item)
+    if (item.type === AUDIT_CREATE_ENDPOINT) return handleAuditCreateItem(item)
+    if (item.type === AUDIT_DELTA_ENDPOINT) return handleAuditDeltaItem(item)
+    if (item.type === AUDIT_SUBMIT_ENDPOINT) return handleAuditSubmitItem(item)
+    if (item.type === PHOTO_UPLOAD_ENDPOINT) return handlePhotoUploadItem(item)
+    if (item.type === AUDIT_UPDATE_ENDPOINT) return handleAuditUpdateItem(item)
 
+    // Tipo que esta versión no sabe procesar (p. ej. creado por un build más nuevo): se posterga
+    // sin sumar intentos ni borrarlo, para que lo procese la versión que lo entienda.
     if (__DEV__) {
-      console.log('[SyncService] dispatch (noop):', {
+      console.log('[SyncService] tipo de outbox desconocido, defer:', {
         id: item.id,
         type: item.type,
       })
     }
 
-    return 'success'
+    return 'defer'
+  }
+}
+
+/**
+ * Maneja un item de outbox de tipo AUDIT_CREATE (create temprano del borrador V2).
+ * Si el borrador local ya no existe (descartado / enviado por v1) no hay nada que crear.
+ */
+async function handleAuditCreateItem(
+  item: OutboxItem,
+): Promise<'success' | 'retry' | 'fail' | 'drop'> {
+  const submissionId = (item.payload as { submissionId?: string } | null)?.submissionId
+  if (!submissionId) return 'drop'
+
+  const snapshot = await sqliteSubmissionRepo.getById(submissionId)
+  if (!snapshot || snapshot.pipeline !== 'v2' || !snapshot.auditId) return 'drop'
+
+  try {
+    return await createRemoteAuditDraft(snapshot)
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[SyncService] AUDIT_CREATE error, retry', err)
+    }
+    return 'retry'
+  }
+}
+
+/**
+ * Maneja un item de outbox de tipo AUDIT_DELTA (`PATCH` de respuestas de una auditoría V2).
+ */
+async function handleAuditDeltaItem(
+  item: OutboxItem,
+): Promise<'success' | 'retry' | 'fail' | 'drop'> {
+  const submissionId = (item.payload as { submissionId?: string } | null)?.submissionId
+  if (!submissionId) return 'drop'
+
+  try {
+    return await syncAuditDeltas(submissionId)
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[SyncService] AUDIT_DELTA error, retry', err)
+    }
+    return 'retry'
+  }
+}
+
+/**
+ * Tras enviarse una auditoría deja de estar en el outbox: se fuerza el sync de completados (salta
+ * el cooldown) para que pase a la cache sin desaparecer de "Review completed".
+ */
+function refreshCompletedAuditsCache(): void {
+  void syncCompletedAudits({ force: true }).catch(() => undefined)
+}
+
+/**
+ * Maneja un item de outbox de tipo AUDIT_UPDATE (edición de una auditoría ya enviada).
+ */
+async function handleAuditUpdateItem(
+  item: OutboxItem,
+): Promise<'success' | 'retry' | 'fail' | 'drop'> {
+  const auditId = (item.payload as { auditId?: string } | null)?.auditId
+  if (!auditId) return 'drop'
+
+  try {
+    const result = await syncAuditUpdate(auditId)
+    // Si el auditor guardó otra edición justo cuando terminaba esta corrida, `enqueueUnique` no
+    // creó item nuevo (este seguía `pending`): se conserva el item para que salga la edición.
+    if (result === 'success') {
+      const userId = getCurrentUserId()
+      const audit = userId ? await sqliteAuditRepo.getById(userId, auditId) : null
+      if (audit?.syncState === 'pending') return 'retry'
+    }
+    return result
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[SyncService] AUDIT_UPDATE error, retry', err)
+    }
+    return 'retry'
+  }
+}
+
+/**
+ * Maneja un item de outbox de tipo PHOTO_UPLOAD (una foto de una auditoría V2).
+ */
+async function handlePhotoUploadItem(
+  item: OutboxItem,
+): Promise<'success' | 'retry' | 'fail' | 'drop'> {
+  const photoId = (item.payload as { photoId?: string } | null)?.photoId
+  if (!photoId) return 'drop'
+
+  try {
+    return await uploadPhotoItem(photoId)
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[SyncService] PHOTO_UPLOAD error, retry', err)
+    }
+    return 'retry'
+  }
+}
+
+/**
+ * Maneja un item de outbox de tipo AUDIT_SUBMIT (cierre de una auditoría V2).
+ * Tras el 2xx se borran las fotos locales y la fila queda `submitted` con su `server_version`.
+ */
+async function handleAuditSubmitItem(
+  item: OutboxItem,
+): Promise<'success' | 'retry' | 'fail' | 'drop' | 'defer'> {
+  const submissionId = (item.payload as { submissionId?: string } | null)?.submissionId
+  if (!submissionId) return 'drop'
+
+  const snapshot = await sqliteSubmissionRepo.getById(submissionId)
+  if (!snapshot || snapshot.pipeline !== 'v2' || !snapshot.auditId) return 'drop'
+
+  try {
+    const result = await submitRemoteAudit(snapshot)
+
+    if (result === 'success') {
+      // Las fotos NO se borran acá: se conservan 7 días (o menos con poco espacio) para revisar o
+      // editar offline lo reciente. De la limpieza se ocupa `runPhotoRetention`.
+      await sqliteSubmissionRepo.markStatus(submissionId, 'submitted')
+      refreshCompletedAuditsCache()
+
+      if (__DEV__) {
+        console.log('[SyncService] AUDIT_SUBMIT submitted', submissionId)
+      }
+    }
+
+    return result
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[SyncService] AUDIT_SUBMIT error, retry', err)
+    }
+    return 'retry'
   }
 }
 
 /**
  * Maneja un item de outbox de tipo AUDIT_SUBMISSION.
  */
-async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 'retry' | 'drop'> {
+async function handleAuditSubmissionItem(
+  item: OutboxItem,
+): Promise<'success' | 'retry' | 'fail' | 'drop'> {
   const payload = (item.payload ?? null) as Partial<AuditSubmissionOutboxPayload> | null
   const submissionId = payload?.submissionId
 
@@ -69,6 +246,21 @@ async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 
     return 'drop'
   }
 
+  // Una fila V2 nunca debe ir por el camino v1: `/uploads` generaría otro id y `POST /audits`
+  // crearía una segunda auditoría. Se la reencauza por la cadena V2 y se descarta este item.
+  if (snapshot.pipeline === 'v2') {
+    if (__DEV__) {
+      console.warn('[SyncService] AUDIT_SUBMISSION con fila v2, reencauzando', submissionId)
+    }
+    try {
+      await enqueueAuditSubmitChain(submissionId)
+      return 'drop'
+    } catch (err) {
+      if (__DEV__) console.warn('[SyncService] No se pudo reencauzar a V2, retry', err)
+      return 'retry'
+    }
+  }
+
   try {
     const result = await submitAuditOnlineFromSnapshot(snapshot)
 
@@ -76,6 +268,7 @@ async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 
       // Envío OK → limpiamos datos y archivos locales
       await cleanupSubmissionFiles(snapshot)
       await sqliteSubmissionRepo.delete(submissionId)
+      refreshCompletedAuditsCache()
 
       if (__DEV__) {
         console.log('[SyncService] AUDIT_SUBMISSION synced & cleaned', submissionId)
@@ -84,11 +277,11 @@ async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 
       return 'success'
     }
 
-    if (result === 'drop') {
+    if (result === 'fail') {
       if (__DEV__) {
-        console.warn('[SyncService] AUDIT_SUBMISSION drop (4xx)', submissionId)
+        console.warn('[SyncService] AUDIT_SUBMISSION fail (4xx)', submissionId)
       }
-      return 'drop'
+      return 'fail'
     }
 
     // retry
@@ -102,27 +295,76 @@ async function handleAuditSubmissionItem(item: OutboxItem): Promise<'success' | 
 }
 
 /**
- * Borra todas las fotos locales (file://...) asociadas a una submission.
+ * Un item del outbox pasó a `failed`: la submission asociada debe quedar `failed`
+ * (con motivo) para listarse en la UI. El resultado `fail` ya la marcó con el error del backend;
+ * al agotar intentos hay que marcarla acá.
+ */
+async function handleOutboxItemFailed(item: OutboxItem, reason: string): Promise<void> {
+  // Edición agotó intentos: queda `failed` en la cache (se ve en la lista con Retry)
+  if (item.type === AUDIT_UPDATE_ENDPOINT) {
+    const auditId = (item.payload as { auditId?: string } | null)?.auditId
+    const userId = getCurrentUserId()
+    if (auditId && userId) {
+      await sqliteAuditRepo.setEditState(userId, auditId, 'failed').catch(() => undefined)
+    }
+    if (__DEV__) console.warn('[SyncService] AUDIT_UPDATE agotó intentos', auditId, reason)
+    return
+  }
+
+  if (!SUBMISSION_ITEM_TYPES.has(item.type)) return
+
+  const payload = (item.payload ?? null) as Partial<AuditSubmissionOutboxPayload> | null
+  const submissionId = payload?.submissionId
+  if (!submissionId) return
+
+  const snapshot = await sqliteSubmissionRepo.getById(submissionId)
+  if (!snapshot) return
+
+  if (snapshot.status !== 'failed') {
+    await sqliteSubmissionRepo.markStatus(
+      submissionId,
+      'failed',
+      JSON.stringify({
+        status: null,
+        error: 'max_attempts',
+        message: 'The audit could not be sent after several attempts.',
+        detail: reason,
+      }),
+    )
+  }
+
+  notifyFailedAuditsChanged()
+}
+
+/**
+ * Backfill de dueño: las filas sin `user_id` (creadas con la 1.0.8) se asignan al usuario de la
+ * sesión actual. Asume un solo auditor por dispositivo (a confirmar con el cliente).
+ */
+async function claimOrphanRows(): Promise<void> {
+  const userId = getCurrentUserId()
+  if (!userId) return
+  try {
+    await sqliteSubmissionRepo.assignOwner(userId)
+    await sqliteOutboxRepo.assignOwner(userId)
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[bootstrap] claimOrphanRows failed', err)
+    }
+  }
+}
+
+/**
+ * Borra todas las fotos locales (file://...) asociadas a una submission y su directorio.
  */
 async function cleanupSubmissionFiles(snapshot: SubmissionSnapshot): Promise<void> {
-  const answers = snapshot.answers ?? {}
   const fileUris = new Set<string>()
 
-  Object.values(answers).forEach(ans => {
+  Object.values(snapshot.answers ?? {}).forEach(ans => {
     if (!ans || ans.type !== 'Form') return
-
-    const values = ans.values ?? {}
-    const photos = extractPhotoArrayFromValues(values)
-
-    photos.forEach(p => {
-      const uri: string =
-        (typeof p === 'string' ? p : (p as any)?.uri || (p as any)?.localUri || (p as any)?.url) ??
-        ''
-
-      if (typeof uri === 'string' && uri.startsWith('file://')) {
-        fileUris.add(uri)
-      }
-    })
+    for (const p of extractPhotoArray(ans.values)) {
+      const uri = photoUriOf(p)
+      if (uri.startsWith('file://')) fileUris.add(uri)
+    }
   })
 
   for (const uri of fileUris) {
@@ -134,16 +376,22 @@ async function cleanupSubmissionFiles(snapshot: SubmissionSnapshot): Promise<voi
       }
     }
   }
-}
 
-/**
- * Extrae un array de posibles fotos desde values.{photo|photos}.
- */
-function extractPhotoArrayFromValues(values: Record<string, unknown>): unknown[] {
-  const v = values ?? {}
-  if (Array.isArray(v.photos)) return v.photos
-  if (Array.isArray(v.photo)) return v.photo
-  return []
+  // El directorio de la submission se borra completo (incluye fotos descartadas que hayan quedado)
+  await discardPhotoGroup(snapshot.id)
+  await sqlitePhotoUploadRepo.deleteBySubmission(snapshot.id).catch(() => undefined)
+
+  // Fotos de la 1.0.8 en directorios ajenos: se borran si quedaron vacíos
+  const dirs = new Set([...fileUris].map(u => u.slice(0, u.lastIndexOf('/'))))
+  for (const dir of dirs) {
+    if (!PHOTOS_ROOT || !dir.startsWith(`${PHOTOS_ROOT}/`)) continue
+    try {
+      const left = await FileSystem.readDirectoryAsync(dir)
+      if (left.length === 0) await FileSystem.deleteAsync(dir, { idempotent: true })
+    } catch {
+      // el directorio ya no existe
+    }
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -157,11 +405,19 @@ export async function bootstrapApp(): Promise<void> {
   _bootPromise = (async () => {
     await initDatabase()
     await initSession()
+    await claimOrphanRows()
+    await migrateCachedPhotos()
+    await registerPendingPhotoUploads()
+    // Una subida que quedó `uploading` con el proceso muerto vuelve a la cola (el PUT es idempotente)
+    await sqlitePhotoUploadRepo.resetUploading().catch(() => undefined)
 
     const outbox: OutboxRepo = sqliteOutboxRepo
     const sync = new SyncService({
       outbox,
       dispatch: createOutboxDispatcher(),
+      getUserId: getCurrentUserId,
+      isOnline: isOnlineOnce,
+      onFailed: handleOutboxItemFailed,
     })
 
     const hasAuthenticatedSession = () => Boolean(getSnapshot().refreshToken)
@@ -204,11 +460,17 @@ export async function bootstrapApp(): Promise<void> {
         })
     }
 
+    // Limpieza de fotos ya respaldadas: no bloquea el arranque y corre como máximo una vez por día
+    void runPhotoRetention()
+
     const handleAppStateChange = (state: AppStateStatus) => {
       if (state === 'active') {
-        forceOutboxSync()
+        // Foreground: respeta el backoff persistido. El reset queda para red recuperada,
+        // login, refresh de sesión y el Retry manual; si no, cada apertura de la app consumiría intentos.
+        queueOutboxSync()
         queueCatalogSync()
         queueFlowsSync()
+        void runPhotoRetention()
       }
     }
     const appStateSub = AppState.addEventListener('change', handleAppStateChange)
@@ -229,7 +491,7 @@ export async function bootstrapApp(): Promise<void> {
 
     const unsubscribeSession = subscribe(e => {
       if (e.type === 'login') {
-        forceOutboxSync()
+        claimOrphanRows().finally(forceOutboxSync)
         queueCatalogSync()
         queueFlowsSync()
       }

@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react'
 import { TouchableOpacity } from 'react-native'
 import { RFValue } from 'react-native-responsive-fontsize'
-import { Stack, useRouter } from 'expo-router'
+import { Stack, useGlobalSearchParams, useRouter } from 'expo-router'
 
 import { AppColors } from '@shared/ui/colors'
 import Icon from '@shared/ui/icons/Icon'
@@ -10,6 +10,8 @@ import ConfirmModal from '@shared/ui/modal/ConfirmModal'
 
 const AppLayout: React.FC = () => {
   const router = useRouter()
+  const { mode } = useGlobalSearchParams<{ mode?: string }>()
+  const isEditing = mode === 'edit'
 
   const [exitAuditModalVisible, setExitAuditModalVisible] = useState<boolean>(false)
 
@@ -59,7 +61,7 @@ const AppLayout: React.FC = () => {
         hitSlop={12}
         accessibilityRole="button"
         accessibilityLabel="Open profile"
-        style={{ paddingRight: RFValue(8), paddingLeft: RFValue(4), marginRight:RFValue(12)}}
+        style={{ paddingRight: RFValue(8), paddingLeft: RFValue(4), marginRight: RFValue(12) }}
       >
         <Icon name="person" color={AppColors.Primary} size={RFValue(18)} />
       </TouchableOpacity>
@@ -80,13 +82,37 @@ const AppLayout: React.FC = () => {
         >
           <Stack.Screen
             name="projects"
-            options={{ title: 'Select Project', headerBackVisible: false, headerRight: ProfileButton }}
+            options={{
+              title: 'Select Project',
+              headerBackVisible: false,
+              headerRight: ProfileButton,
+            }}
           />
 
           <Stack.Screen
             name="facilities"
             options={{
               title: 'Select Facility',
+              headerLeft: BackButton,
+              headerBackVisible: false,
+              headerRight: ProfileButton,
+            }}
+          />
+
+          <Stack.Screen
+            name="facility/[facilityId]"
+            options={{
+              title: 'Facility',
+              headerLeft: BackButton,
+              headerBackVisible: false,
+              headerRight: ProfileButton,
+            }}
+          />
+
+          <Stack.Screen
+            name="completed"
+            options={{
+              title: 'Completed audits',
               headerLeft: BackButton,
               headerBackVisible: false,
               headerRight: ProfileButton,
@@ -124,13 +150,16 @@ const AppLayout: React.FC = () => {
 
         <ConfirmModal
           visible={exitAuditModalVisible}
-          title="Do you want to exit the audit?"
-          message="If you go back, you will lose all your progress."
+          title={isEditing ? 'Discard your changes?' : 'Leave the audit?'}
+          message={
+            isEditing
+              ? 'Your changes have not been saved. If you leave now they will be lost.'
+              : 'Your progress is saved. You can resume this audit later.'
+          }
           cancelLabel="Stay here"
-          confirmLabel="Exit and lose everything"
+          confirmLabel={isEditing ? 'Discard' : 'Leave'}
           onCancel={closeExitModal}
           onConfirm={handleConfirmExitAudit}
-          destructive
         />
       </>
     </AuthGuard>

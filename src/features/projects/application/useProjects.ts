@@ -59,7 +59,7 @@ export function useProjects(opts: UseProjectsOptions = {}) {
    * - El cursor se pasa explícitamente como argumento cuando se quiere paginar.
    */
   const fetchPage = useCallback(
-    async ({ reset, cursorOverride }: { reset: boolean; cursorOverride?: string }) => {
+    async ({ reset, cursorOverride }: { reset: boolean; cursorOverride?: string | undefined }) => {
       // Cancelar request previo (si lo hubiera)
       abortRef.current?.abort()
       const controller = new AbortController()

@@ -42,6 +42,18 @@ const EnvSchema = z.object({
 
   EXPO_PUBLIC_SYNC_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(10),
 
+  // Ciclo de vida V2 de auditorías (create temprano + deltas + submit). Apagado por defecto.
+  EXPO_PUBLIC_AUDITS_V2: z
+    .string()
+    .optional()
+    .transform(v => ['true', '1'].includes((v ?? '').trim().toLowerCase())),
+
+  // Subida de fotos apenas se capturan (8.M escenario B). Requiere EXPO_PUBLIC_AUDITS_V2.
+  EXPO_PUBLIC_PHOTO_BG_UPLOAD: z
+    .string()
+    .optional()
+    .transform(v => ['true', '1'].includes((v ?? '').trim().toLowerCase())),
+
   EAS_PROJECT_ID: z.string().optional(),
 })
 
@@ -58,6 +70,8 @@ const raw = {
   EXPO_PUBLIC_RETRY_MAX_ATTEMPTS: readEnv('EXPO_PUBLIC_RETRY_MAX_ATTEMPTS'),
   EXPO_PUBLIC_RETRY_BASE_DELAY_MS: readEnv('EXPO_PUBLIC_RETRY_BASE_DELAY_MS'),
   EXPO_PUBLIC_SYNC_BATCH_SIZE: readEnv('EXPO_PUBLIC_SYNC_BATCH_SIZE'),
+  EXPO_PUBLIC_AUDITS_V2: readEnv('EXPO_PUBLIC_AUDITS_V2'),
+  EXPO_PUBLIC_PHOTO_BG_UPLOAD: readEnv('EXPO_PUBLIC_PHOTO_BG_UPLOAD'),
 
   EAS_PROJECT_ID: readEnv('EAS_PROJECT_ID'),
 }
@@ -81,6 +95,9 @@ if (!parsed.success) {
       `  EXPO_PUBLIC_RETRY_BASE_DELAY_MS -> backoff base ms (default 600)\n\n` +
       `Sync offline:\n` +
       `  EXPO_PUBLIC_SYNC_BATCH_SIZE     -> tamaño de batch para sync offline (default 10)\n\n` +
+      `Flags:\n` +
+      `  EXPO_PUBLIC_AUDITS_V2           -> "true" activa el ciclo de vida V2 de auditorías (default false)\n` +
+      `  EXPO_PUBLIC_PHOTO_BG_UPLOAD     -> "true" sube las fotos al capturarlas; requiere AUDITS_V2 (default false)\n\n` +
       `Build:\n` +
       `  EAS_PROJECT_ID                  -> usado por EAS (opcional en runtime)\n`,
   )
@@ -105,6 +122,17 @@ export const Env = Object.freeze({
   },
   sync: {
     batchSize: parsed.data.EXPO_PUBLIC_SYNC_BATCH_SIZE,
+  },
+  flags: {
+    auditsV2: parsed.data.EXPO_PUBLIC_AUDITS_V2,
+    // Sin AUDITS_V2 no hay auditoría remota a la que subir fotos: el flag no tiene efecto.
+    photoBackgroundUpload:
+      parsed.data.EXPO_PUBLIC_AUDITS_V2 && parsed.data.EXPO_PUBLIC_PHOTO_BG_UPLOAD,
+  },
+  app: {
+    // Versión que se muestra al usuario (login): sale de `version` en app.config.ts, la misma
+    // que usan iOS y Android, así que subirla no obliga a tocar la UI.
+    version: Constants.expoConfig?.version ?? '',
   },
   eas: {
     projectId: parsed.data.EAS_PROJECT_ID ?? null,

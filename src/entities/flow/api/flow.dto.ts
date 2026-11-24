@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { lenientBoolean, lenientNumber } from '@shared/validation/optionalFields'
 
 /**
  * DTOs Zod para GET /flows
@@ -13,6 +14,10 @@ export const StepFieldDtoSchema = z.object({
   label: z.string(),
   unit: z.string().optional(),
   placeholder: z.string().optional(),
+  // Opcionales: backend los incorpora de forma gradual. null se trata como ausente.
+  required: lenientBoolean,
+  multiline: lenientBoolean,
+  order: lenientNumber,
 })
 export type StepFieldDTO = z.infer<typeof StepFieldDtoSchema>
 
@@ -139,3 +144,11 @@ export const FlowsResponseDtoSchema = z.object({
   offset: z.number(),
 })
 export type FlowsResponseDTO = z.infer<typeof FlowsResponseDtoSchema>
+
+/**
+ * Envoltura laxa de GET /flows: valida sólo que `flows` sea un array. Cada item se valida por
+ * separado (`FlowItemDtoSchema.safeParse`) para que un flow inválido no invalide todo el catálogo.
+ */
+export const FlowsEnvelopeDtoSchema = z.object({
+  flows: z.array(z.unknown()),
+})

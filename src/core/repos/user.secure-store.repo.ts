@@ -67,11 +67,11 @@ async function secureSet(key: string, value: string | null): Promise<void> {
     await SecureStore.deleteItemAsync(key, baseOpts)
     // guardar cada chunk
     for (let i = 0; i < parts.length; i++) {
-      await SecureStore.setItemAsync(`${key}.${i}`, parts[i], baseOpts)
+      await SecureStore.setItemAsync(`${key}.${i}`, parts[i] ?? '', baseOpts)
     }
     // meta con cantidad de chunks
     await SecureStore.setItemAsync(key + CHUNK_META_SUFFIX, String(parts.length), baseOpts)
-  } catch (err) {
+  } catch {
     throw new SessionError('PERSISTENCE_FAILED', `Secure write failed for ${key}`)
   }
 }
@@ -95,7 +95,7 @@ async function secureGet(key: string): Promise<string | null> {
       parts.push(part ?? '')
     }
     return parts.join('')
-  } catch (err) {
+  } catch {
     throw new SessionError('PERSISTENCE_FAILED', `Secure read failed for ${key}`)
   }
 }

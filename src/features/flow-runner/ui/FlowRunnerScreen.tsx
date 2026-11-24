@@ -5,9 +5,11 @@ import type { SelectStep } from '@shared/validation/steps.schema'
 import { QuestionCard } from '@features/question'
 import { DynamicForm } from '@features/dynamic-form'
 import { pickOrCapturePhoto } from '@features/camera'
+import { PhotoEvidenceSection, usePhotoSyncStatus } from '@features/photo-sync'
 import Loader from '@shared/ui/loader/Loader'
 
 import { useFlowRunner } from '../application/useFlowRunner'
+import { discardCapturedPhoto, registerCapturedPhoto } from '../application/photoUploads'
 import EndView from './EndView'
 import StepIllustration from './StepIllustration'
 import { END_ID, toVirtualQuestion } from '../lib/helpers'
@@ -16,7 +18,9 @@ import { styles } from './styles/flowRunner.styles'
 const FlowRunnerScreen: React.FC = () => {
   const {
     detail,
+    isEdit,
     loading,
+    submissionId,
     zoomed,
     submitting,
     visibleIds,
@@ -25,11 +29,27 @@ const FlowRunnerScreen: React.FC = () => {
     scrollRef,
     setZoomed,
     getStoredQuestionState,
+    getStoredFormValues,
     onAnswer,
     onSubmitForm,
     onSelectOption,
     onFinish,
   } = useFlowRunner()
+
+  // Estado de backup de cada foto de la corrida (sólo auditorías V2; vacío en v1)
+  const { badgeByUri } = usePhotoSyncStatus(submissionId)
+
+  // Las fotos de la corrida viven en un directorio propio: kma/photos/<submissionId>
+  // y cada foto se registra en `photo_uploads` (step + field) apenas se captura
+  const capturePhoto = useCallback(
+    async (ctx: { stepId: string; fieldId: string }) => {
+      const uri = await pickOrCapturePhoto(submissionId)
+      // Al editar no hay submission: la foto nueva se sube al sincronizar la edición
+      if (uri && !isEdit) await registerCapturedPhoto({ submissionId, ...ctx, uri })
+      return uri
+    },
+    [isEdit, submissionId],
+  )
 
   const renderSelectStep = useCallback(
     (step: SelectStep) => {
@@ -60,6 +80,11 @@ const FlowRunnerScreen: React.FC = () => {
     <View style={styles.screen}>
       <View style={styles.header}>
         <Text style={styles.title}>{detail.title}</Text>
+        {isEdit ? (
+          <Text style={styles.editHint}>
+            Editing a completed audit. After changing a step, tap Next or Submit on it.
+          </Text>
+        ) : null}
       </View>
 
       <ScrollView
@@ -77,7 +102,11 @@ const FlowRunnerScreen: React.FC = () => {
           if (!step && id === END_ID) {
             return (
               <View key={renderKey} style={styles.containerComponents}>
-                <EndView onFinish={onFinish} loading={submitting} />
+                <EndView
+                  onFinish={onFinish}
+                  loading={submitting}
+                  {...(isEdit ? { label: 'Save changes' } : {})}
+                />
               </View>
             )
           }
@@ -109,13 +138,33 @@ const FlowRunnerScreen: React.FC = () => {
                 <DynamicForm
                   step={step}
                   onSubmit={values => onSubmitForm(step, values)}
-                  capturePhoto={pickOrCapturePhoto}
+                  initialValues={getStoredFormValues(step.id)}
+                  capturePhoto={capturePhoto}
+                  discardPhoto={discardCapturedPhoto}
+                  photoStatusByUri={badgeByUri}
                 />
               )}
 
               {step.type === 'Select' && renderSelectStep(step)}
 
-              {step.type === 'End' && <EndView onFinish={onFinish} loading={submitting} />}
+              {step.type === 'End' && (
+                <>
+                  {!isEdit && (
+                    <PhotoEvidenceSection
+                      submissionId={submissionId}
+                      stepTitleOf={stepId => {
+                        const s = stepsById[stepId]
+                        return s && 'title' in s ? s.title : undefined
+                      }}
+                    />
+                  )}
+                  <EndView
+                    onFinish={onFinish}
+                    loading={submitting}
+                    {...(isEdit ? { label: 'Save changes' } : {})}
+                  />
+                </>
+              )}
             </View>
           )
         })}

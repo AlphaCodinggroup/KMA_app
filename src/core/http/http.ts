@@ -1,7 +1,7 @@
 import axios, { AxiosHeaders } from 'axios'
 import type { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios'
 import { Env } from '@shared/config/env'
-import { clearSession, getValidToken } from '@shared/session/session'
+import { getSnapshot, getValidToken } from '@shared/session/session'
 import { isOnlineOnce } from '@shared/lib/network'
 import { showAuthExpiredToast } from '@shared/ui/toast/AppToast'
 /**
@@ -17,17 +17,14 @@ import { showAuthExpiredToast } from '@shared/ui/toast/AppToast'
  * 2. Manejo de expiración de sesión:
  *    - Cada request intenta inyectar Authorization.
  *    - Si el backend responde 401, se intenta renovar el token una sola vez
- *      (cola de refresh). Si no se puede, se limpia la sesión.
+ *      (cola de refresh). Si Cognito rechaza el refresh token (NotAuthorized),
+ *      `getValidToken()` limpia la sesión y se avisa con un toast. Si el refresh falla
+ *      por red/timeout, el error se propaga como recuperable: no se desloguea.
  *
  * 3. Resiliencia de red en campo:
  *    - Reintentos con backoff exponencial en 429 / 5xx.
  *
- * 4. Helper `putPresignedBinary`:
- *    - Sube binarios (fotos) directo a S3 usando la upload_url presignada
- *      que devolvió el backend en /uploads.
- *    - NO manda Authorization (la URL ya viene firmada).
- *    - Retrys sólo en errores temporales (5xx / 429). 403 no se reintenta
- *      porque indica URL expirada/firma inválida.
+ * La subida de fotos a S3 (URL presignada) vive en `fileUploader.ts`.
  *
  */
 
@@ -49,16 +46,14 @@ const RETRIED_401 = Symbol('retried401')
 let authExpiredToastShown = false
 
 // ------------------- Refresh con cola (una sola renovación) -------------------
-let refreshPromise: Promise<string | null> | null = null
+let refreshPromise: Promise<string> | null = null
 
-function scheduleRefresh(): Promise<string | null> {
+/** Propaga el motivo del fallo: el caller decide si fue sesión inválida o un error transitorio. */
+function scheduleRefresh(): Promise<string> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
       try {
-        const token = await getValidToken()
-        return token ?? null
-      } catch {
-        return null
+        return await getValidToken()
       } finally {
         refreshPromise = null
       }
@@ -78,7 +73,9 @@ http.interceptors.request.use(async config => {
   try {
     const token = await getValidToken()
     if (token) {
-      const headers = new AxiosHeaders(config.headers)
+      const headers = new AxiosHeaders(
+        config.headers as unknown as ConstructorParameters<typeof AxiosHeaders>[0],
+      )
       headers.set('Authorization', `Bearer ${token}`)
       config.headers = headers
     }
@@ -114,12 +111,13 @@ function isRetryableStatus(status?: number) {
   return false
 }
 
-function isUploadsPresignRequest(cfg?: AxiosRequestConfig) {
+function isNoRetryRequest(cfg?: AxiosRequestConfig) {
   if (!cfg?.url) return false
-  const url = String(cfg.url).toLowerCase()
+  const url = String(cfg.url).toLowerCase().split('?')[0] ?? ''
   const method = String(cfg.method ?? 'get').toLowerCase()
-  // Nunca reintentar presign de /uploads
-  return url.endsWith('/uploads') && method === 'post'
+  // Nunca reintentar el presign de /uploads ni el create de /audits: la reentrega la maneja el
+  // outbox (un reintento tras un timeout podría crear la auditoría dos veces).
+  return method === 'post' && (url.endsWith('/uploads') || url.endsWith('/audits'))
 }
 
 // --- Interceptor de respuesta
@@ -136,36 +134,39 @@ http.interceptors.response.use(
     if (status === 401 && config && !config[RETRIED_401]) {
       config[RETRIED_401] = true
 
-      const newToken = await scheduleRefresh()
-
-      if (newToken) {
-        const headers = new AxiosHeaders(config.headers)
-        headers.set('Authorization', `Bearer ${newToken}`)
-        config.headers = headers
-        return http.request(config)
-      }
-
-      // No se pudo renovar el token → limpiamos sesión y avisamos al usuario
+      let newToken: string
       try {
-        await clearSession()
-      } catch {
-        // ignore
+        newToken = await scheduleRefresh()
+      } catch (refreshErr) {
+        // `getValidToken()` sólo limpia la sesión ante NotAuthorized (refresh token inválido).
+        // Sin refresh token: sesión realmente expirada → toast una sola vez.
+        if (!getSnapshot().refreshToken) {
+          if (!authExpiredToastShown) {
+            authExpiredToastShown = true
+            showAuthExpiredToast()
+            // Pequeña ventana para evitar spamear toasts si llegan varios 401 seguidos
+            setTimeout(() => {
+              authExpiredToastShown = false
+            }, 3000)
+          }
+          return Promise.reject(error)
+        }
+
+        // Con refresh token vigente el fallo es transitorio (red, timeout, Cognito caído):
+        // rechazamos como recuperable, sin logout ni toast, para que el outbox reintente.
+        return Promise.reject(refreshErr)
       }
 
-      if (!authExpiredToastShown) {
-        authExpiredToastShown = true
-        showAuthExpiredToast()
-        // Pequeña ventana para evitar spamear toasts si llegan varios 401 seguidos
-        setTimeout(() => {
-          authExpiredToastShown = false
-        }, 3000)
-      }
-
-      return Promise.reject(error)
+      const headers = new AxiosHeaders(
+        config.headers as unknown as ConstructorParameters<typeof AxiosHeaders>[0],
+      )
+      headers.set('Authorization', `Bearer ${newToken}`)
+      config.headers = headers
+      return http.request(config)
     }
 
     // ------------------------- Retry/backoff 429 y 5xx ----------------------
-    if (config && !isUploadsPresignRequest(config)) {
+    if (config && !isNoRetryRequest(config)) {
       const retryableBase = isRetryableStatus(status) || isTimeout(error) || isNetworkError(error)
 
       if (retryableBase) {
@@ -193,49 +194,4 @@ http.interceptors.response.use(
 export async function request<T = unknown>(cfg: AxiosRequestConfig): Promise<T> {
   const { data } = await http.request<T>(cfg)
   return data
-}
-
-// ------------------------ putPresignedBinary ------------------------
-export interface PutPresignedBinaryArgs {
-  url: string
-  data: Blob | ArrayBuffer | Uint8Array
-  contentType: string
-  timeoutMs?: number
-  maxAttempts?: number
-}
-
-export async function putPresignedBinary({
-  url,
-  data,
-  contentType,
-  timeoutMs = 20_000,
-  maxAttempts = Env.retry.maxAttempts,
-}: PutPresignedBinaryArgs): Promise<void> {
-  const baseDelayMs = Env.retry.baseDelayMs
-  let attempt = 0
-
-  for (;;) {
-    try {
-      await axios.put(url, data, {
-        headers: { 'Content-Type': contentType },
-        timeout: timeoutMs,
-        maxBodyLength: Infinity,
-        maxContentLength: Infinity,
-      })
-      return
-    } catch (err: any) {
-      const status: number | undefined = err?.response?.status
-
-      const retryable =
-        status === 429 || (typeof status === 'number' && status >= 500 && status !== 501) || !status
-
-      if (!retryable || attempt >= maxAttempts) {
-        throw err
-      }
-
-      const delay = expoBackoffDelay(attempt, baseDelayMs) + Math.floor(Math.random() * 100)
-      attempt += 1
-      await sleep(delay)
-    }
-  }
 }
